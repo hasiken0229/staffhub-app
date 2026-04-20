@@ -46,6 +46,28 @@ final class ReportExportApiTest extends TestCase
         $this->assertStringNotContainsString('7時間00分', $payrollCsv);
     }
 
+    public function test_attendance_pdf_exports_return_pdf_content(): void
+    {
+        $token = $this->adminToken();
+        $employeeId = $this->seedDailyAttendance();
+
+        $dailyPdf = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->get('/api/admin/reports/daily-pdf?targetMonth=2026-04')
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf')
+            ->getContent();
+
+        $this->assertStringStartsWith('%PDF', $dailyPdf);
+
+        $monthlyWorksPdf = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->get('/api/admin/reports/monthly-works-pdf?employeeId=' . $employeeId . '&targetMonth=2026-04')
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf')
+            ->getContent();
+
+        $this->assertStringStartsWith('%PDF', $monthlyWorksPdf);
+    }
+
     private function adminToken(): string
     {
         DB::table('users')->insert([
@@ -63,7 +85,7 @@ final class ReportExportApiTest extends TestCase
         ])->json('data.accessToken');
     }
 
-    private function seedDailyAttendance(): void
+    private function seedDailyAttendance(): int
     {
         $employeeId = (int) DB::table('employees')->insertGetId([
             'employee_code' => 'R100',
@@ -108,5 +130,7 @@ final class ReportExportApiTest extends TestCase
             'manual_edited_at' => now(),
             'updated_at' => now(),
         ]);
+
+        return $employeeId;
     }
 }
