@@ -1,0 +1,73 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.key
+*.pem
+*.ppk
+*.p12
+*.pfx
+*.crt
+
+# Local databases and runtime data
+*.sqlite
+*.sqlite3
+*.db
+*.log
+
+# Dependencies
+node_modules/
+vendor/
+
+# Frontend build output
+.next/
+out/
+out-login/
+dist/
+build/
+coverage/
+
+# Laravel runtime output
+src/backend-laravel-app/bootstrap/cache/*.php
+!src/backend-laravel-app/bootstrap/cache/.gitignore
+src/backend-laravel-app/storage/app/*
+!src/backend-laravel-app/storage/app/.gitignore
+src/backend-laravel-app/storage/app/private/*
+!src/backend-laravel-app/storage/app/private/.gitignore
+src/backend-laravel-app/storage/app/public/*
+!src/backend-laravel-app/storage/app/public/.gitignore
+src/backend-laravel-app/storage/framework/cache/*
+!src/backend-laravel-app/storage/framework/cache/.gitignore
+src/backend-laravel-app/storage/framework/cache/data/*
+!src/backend-laravel-app/storage/framework/cache/data/.gitignore
+src/backend-laravel-app/storage/framework/sessions/*
+!src/backend-laravel-app/storage/framework/sessions/.gitignore
+src/backend-laravel-app/storage/framework/testing/*
+!src/backend-laravel-app/storage/framework/testing/.gitignore
+src/backend-laravel-app/storage/framework/views/*
+!src/backend-laravel-app/storage/framework/views/.gitignore
+src/backend-laravel-app/storage/logs/*
+!src/backend-laravel-app/storage/logs/.gitignore
+src/backend/StaffHub.Api/App_Data/
+src/windows-punch/StaffHub.PunchApp/punchsettings.json
+
+# Local workspace/runtime folders
+.appdata/
+.dotnet-cli-home/
+.nuget/
+.playwright-cli/
+.runlogs/
+tmp/
+output/
+composer.phar
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+
+# .NET artifacts
+bin/
+obj/

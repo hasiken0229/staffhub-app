@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title>勤怠ポータル</title>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7090e5"/>
+      <stop offset="52%" stop-color="#95acf7"/>
+      <stop offset="100%" stop-color="#b8c8ff"/>
+    </linearGradient>
+    <linearGradient id="pill" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#e9a6c7"/>
+      <stop offset="100%" stop-color="#f3c0d8"/>
+    </linearGradient>
+    <linearGradient id="dot" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c5a1e8"/>
+      <stop offset="100%" stop-color="#a886ea"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+  <rect x="40" y="44" width="176" height="168" rx="28" fill="#ffffff" opacity="0.95"/>
+  <rect x="56" y="72" width="144" height="18" rx="9" fill="url(#pill)"/>
+  <rect x="56" y="110" width="72" height="20" rx="10" fill="#7e99ea"/>
+  <rect x="56" y="146" width="144" height="16" rx="8" fill="#d8e2ff"/>
+  <rect x="56" y="174" width="110" height="16" rx="8" fill="#e8edff"/>
+  <circle cx="178" cy="120" r="24" fill="url(#dot)"/>
+  <path d="M178 106v14l10 8" fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round" stroke-width="8"/>
+</svg>
