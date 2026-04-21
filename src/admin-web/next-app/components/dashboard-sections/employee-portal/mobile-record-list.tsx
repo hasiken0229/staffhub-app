@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 type MobileRecordListProps<T> = {
+  id?: string;
   title: string;
   rows: T[];
   emptyMessage: string;
@@ -16,7 +17,7 @@ type MobileRecordListProps<T> = {
 
 export function MobileRecordList<T>(props: MobileRecordListProps<T>) {
   return (
-    <section className="panel mobile-record-list">
+    <section id={props.id} className="panel mobile-record-list">
       <div className="panel-header">
         <div>
           <p className="panel-kicker">モバイル表示</p>

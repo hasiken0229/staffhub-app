@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
-import { MetricCard } from "@/components/metric-card";
 import { PortalModeTabs } from "@/components/portal-mode-tabs";
+import { EmployeePortalHomeCards } from "./employee-portal-home-cards";
 import type { EmployeePortalSectionProps } from "./employee-portal-types";
 
 type EmployeePortalShellProps = {
   employeeName: string;
   data: EmployeePortalSectionProps["data"];
   actions: Pick<EmployeePortalSectionProps["actions"], "onLogout" | "onModeChange" | "onRefresh">;
+  formatters: EmployeePortalSectionProps["formatters"];
   children: ReactNode;
 };
 
@@ -51,17 +52,16 @@ export function EmployeePortalShell(props: EmployeePortalShellProps) {
           </div>
         </header>
 
-        <section className="metrics section-enter delay-1">
-          <MetricCard label="未承認申請" value={props.data.employeePortal.home.pendingLeaveCount} />
-          <MetricCard label="有給残日数" value={props.data.employeePortal.home.paidLeaveBalance} />
-          <MetricCard label="未読通知" value={props.data.employeePortal.home.unreadNotificationCount} />
-          <MetricCard label="公開済み明細" value={props.data.employeePortal.payroll.length} />
-        </section>
+        <EmployeePortalHomeCards data={props.data} formatters={props.formatters} />
 
         {props.data.errorMessage ? <p className="banner">{props.data.errorMessage}</p> : null}
 
         {props.children}
       </div>
+
+      <a className="portal-fab mobile-only" href="#leave-request-form" aria-label="休暇申請へ移動">
+        休暇申請
+      </a>
     </main>
   );
 }

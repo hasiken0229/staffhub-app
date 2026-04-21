@@ -3,9 +3,11 @@ import type { LeaveDayUnit, LeaveHalfDayType } from "@/types";
 import { DailyEditRequestForm } from "./employee-portal/daily-edit-request-form";
 import { EmployeePortalLists } from "./employee-portal/employee-portal-lists";
 import { EmployeePortalShell } from "./employee-portal/employee-portal-shell";
-import type { EmployeePortalSectionProps, LeaveRequestCategory, TimeLeaveType } from "./employee-portal/employee-portal-types";
+import type { EmployeePortalLeaveType, EmployeePortalSectionProps, LeaveRequestCategory, TimeLeaveType } from "./employee-portal/employee-portal-types";
 import { toDateInputValue } from "./employee-portal/employee-portal-utils";
-import { LeaveRequestForm } from "./employee-portal/leave-request-form";
+import { LeaveRequestForm, type LeaveBalancePreview } from "./employee-portal/leave-request-form";
+
+const DEFAULT_STANDARD_DAY_MINUTES = 480;
 
 export function EmployeePortalSection(props: EmployeePortalSectionProps) {
   const employeeName = props.data.employeePortal.home.employee?.name ?? props.data.currentUserName ?? "職員";
@@ -37,6 +39,35 @@ export function EmployeePortalSection(props: EmployeePortalSectionProps) {
   const [isEditRequestSubmitting, setIsEditRequestSubmitting] = useState(false);
   const selectedLeaveType = leaveTypes.find((item) => item.code === leaveTypeCode) ?? null;
   const allowsHalfDay = Boolean(selectedLeaveType?.allowsHalfDay);
+  const leaveBalancePreview = useMemo(
+    () =>
+      buildLeaveBalancePreview({
+        currentBalance: props.data.employeePortal.home.paidLeaveBalance ?? 0,
+        pendingLeaveCount: props.data.employeePortal.home.pendingLeaveCount ?? 0,
+        leaveTypes,
+        selectedLeaveType,
+        requestCategory,
+        dayUnit,
+        startDate,
+        endDate,
+        startTime,
+        endTime,
+        timeLeaveType,
+      }),
+    [
+      props.data.employeePortal.home.paidLeaveBalance,
+      props.data.employeePortal.home.pendingLeaveCount,
+      leaveTypes,
+      selectedLeaveType,
+      requestCategory,
+      dayUnit,
+      startDate,
+      endDate,
+      startTime,
+      endTime,
+      timeLeaveType,
+    ],
+  );
 
   useEffect(() => {
     if (leaveTypes.length === 0) {
@@ -216,10 +247,11 @@ export function EmployeePortalSection(props: EmployeePortalSectionProps) {
   }
 
   return (
-    <EmployeePortalShell employeeName={employeeName} data={props.data} actions={props.actions}>
+    <EmployeePortalShell employeeName={employeeName} data={props.data} actions={props.actions} formatters={props.formatters}>
       <LeaveRequestForm
         leaveTypes={leaveTypes}
         selectedLeaveType={selectedLeaveType}
+        balancePreview={leaveBalancePreview}
         allowsHalfDay={allowsHalfDay}
         values={{
           leaveTypeCode,
@@ -282,4 +314,133 @@ export function EmployeePortalSection(props: EmployeePortalSectionProps) {
       <EmployeePortalLists data={props.data} actions={props.actions} formatters={props.formatters} />
     </EmployeePortalShell>
   );
+}
+
+type LeaveBalancePreviewInput = {
+  currentBalance: number;
+  pendingLeaveCount: number;
+  leaveTypes: EmployeePortalLeaveType[];
+  selectedLeaveType: EmployeePortalLeaveType | null;
+  requestCategory: LeaveRequestCategory;
+  dayUnit: LeaveDayUnit;
+  startDate: string;
+  endDate: string;
+  startTime: string;
+  endTime: string;
+  timeLeaveType: TimeLeaveType;
+};
+
+function buildLeaveBalancePreview(input: LeaveBalancePreviewInput): LeaveBalancePreview {
+  const balanceType =
+    input.requestCategory === "TIME_LEAVE"
+      ? input.leaveTypes.find((leaveType) => leaveType.code === timeLeaveTypeToLeaveTypeCode(input.timeLeaveType))
+      : input.selectedLeaveType;
+  const requestedDays =
+    input.requestCategory === "TIME_LEAVE"
+      ? calculateTimeLeaveDays(input.startTime, input.endTime)
+      : calculateLeaveDays(input.startDate, input.dayUnit === "HALF" ? input.startDate : input.endDate, input.dayUnit);
+  const consumesBalance =
+    input.requestCategory === "TIME_LEAVE" && input.timeLeaveType === "PAID_HOURLY"
+      ? balanceType?.requiresBalance ?? true
+      : Boolean(balanceType?.requiresBalance);
+  const projectedBalance = roundDays(input.currentBalance - (consumesBalance ? requestedDays : 0));
+  const isOverBalance = consumesBalance && requestedDays > 0 && projectedBalance < 0;
+
+  return {
+    currentBalance: roundDays(input.currentBalance),
+    requestedDays,
+    projectedBalance,
+    consumesBalance,
+    isOverBalance,
+    note: buildBalanceNote({
+      consumesBalance,
+      isOverBalance,
+      requestedDays,
+      pendingLeaveCount: input.pendingLeaveCount,
+      requestCategory: input.requestCategory,
+      timeLeaveType: input.timeLeaveType,
+    }),
+  };
+}
+
+function buildBalanceNote(input: {
+  consumesBalance: boolean;
+  isOverBalance: boolean;
+  requestedDays: number;
+  pendingLeaveCount: number;
+  requestCategory: LeaveRequestCategory;
+  timeLeaveType: TimeLeaveType;
+}) {
+  if (!input.consumesBalance) {
+    return "この休暇区分は有給残数を消費しません。";
+  }
+
+  if (input.requestedDays <= 0) {
+    return input.requestCategory === "TIME_LEAVE" ? "時間帯を入力すると申請量を表示します。" : "日付を入力すると申請量を表示します。";
+  }
+
+  if (input.isOverBalance) {
+    return "有給残数を超えています。日数や休暇区分を確認してください。";
+  }
+
+  if (input.pendingLeaveCount > 0) {
+    return `承認待ちの申請が ${input.pendingLeaveCount} 件あります。最終的な残数判定は送信時に再確認されます。`;
+  }
+
+  if (input.requestCategory === "TIME_LEAVE" && input.timeLeaveType === "PAID_HOURLY") {
+    return "時間有給は8時間を1日として換算した目安です。最終的な残数判定は送信時に再確認されます。";
+  }
+
+  return "送信前の目安です。最終的な残数判定は送信時に再確認されます。";
+}
+
+function calculateLeaveDays(startDate: string, endDate: string, dayUnit: LeaveDayUnit) {
+  if (dayUnit === "HALF") {
+    return 0.5;
+  }
+
+  const startTime = dateInputToTime(startDate);
+  const endTime = dateInputToTime(endDate);
+  if (startTime === null || endTime === null || endTime < startTime) {
+    return 0;
+  }
+
+  return roundDays((endTime - startTime) / 86_400_000 + 1);
+}
+
+function calculateTimeLeaveDays(startTime: string, endTime: string) {
+  const minutes = timeInputToMinutes(endTime) - timeInputToMinutes(startTime);
+  if (minutes <= 0) {
+    return 0;
+  }
+
+  return roundDays(minutes / DEFAULT_STANDARD_DAY_MINUTES);
+}
+
+function timeLeaveTypeToLeaveTypeCode(timeLeaveType: TimeLeaveType) {
+  return timeLeaveType === "PAID_HOURLY" ? "PAID" : "SPECIAL";
+}
+
+function dateInputToTime(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return null;
+  }
+
+  const [, year, month, day] = match;
+  return Date.UTC(Number(year), Number(month) - 1, Number(day));
+}
+
+function timeInputToMinutes(value: string) {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) {
+    return 0;
+  }
+
+  const [, hour, minute] = match;
+  return Number(hour) * 60 + Number(minute);
+}
+
+function roundDays(value: number) {
+  return Math.round(value * 100) / 100;
 }

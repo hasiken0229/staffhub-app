@@ -19,6 +19,7 @@ type LeaveRequestFormValues = {
 type LeaveRequestFormProps = {
   leaveTypes: EmployeePortalLeaveType[];
   selectedLeaveType: EmployeePortalLeaveType | null;
+  balancePreview: LeaveBalancePreview;
   allowsHalfDay: boolean;
   values: LeaveRequestFormValues;
   formError: string;
@@ -40,11 +41,20 @@ type LeaveRequestFormProps = {
   onReasonChange: (value: string) => void;
 };
 
+export type LeaveBalancePreview = {
+  currentBalance: number;
+  requestedDays: number;
+  projectedBalance: number;
+  consumesBalance: boolean;
+  isOverBalance: boolean;
+  note: string;
+};
+
 export function LeaveRequestForm(props: LeaveRequestFormProps) {
   const { values } = props;
 
   return (
-    <section className="panel action-panel section-enter delay-2">
+    <section id="leave-request-form" className="panel action-panel section-enter delay-2">
       <div className="panel-header">
         <div>
           <p className="panel-kicker">Leave Request</p>
@@ -183,6 +193,24 @@ export function LeaveRequestForm(props: LeaveRequestFormProps) {
           </div>
         )}
 
+        <div className={props.balancePreview.isOverBalance ? "leave-balance-preview is-warning" : "leave-balance-preview"}>
+          <div className="summary-strip">
+            <div>
+              <span className="detail-label">現在の有給残数</span>
+              <strong>{formatDays(props.balancePreview.currentBalance)}日</strong>
+            </div>
+            <div>
+              <span className="detail-label">今回の申請量</span>
+              <strong>{formatDays(props.balancePreview.requestedDays)}日</strong>
+            </div>
+            <div>
+              <span className="detail-label">申請後の目安</span>
+              <strong>{formatDays(props.balancePreview.projectedBalance)}日</strong>
+            </div>
+          </div>
+          <p>{props.balancePreview.note}</p>
+        </div>
+
         <label>
           申請理由
           <textarea
@@ -197,7 +225,12 @@ export function LeaveRequestForm(props: LeaveRequestFormProps) {
         <div className="button-row">
           <button
             type="submit"
-            disabled={props.isSubmitting || props.isPending || (values.requestCategory === "LEAVE" && props.leaveTypes.length === 0)}
+            disabled={
+              props.isSubmitting ||
+              props.isPending ||
+              props.balancePreview.isOverBalance ||
+              (values.requestCategory === "LEAVE" && props.leaveTypes.length === 0)
+            }
           >
             {props.isSubmitting ? "申請を送信中..." : "この内容で申請する"}
           </button>
@@ -211,4 +244,8 @@ export function LeaveRequestForm(props: LeaveRequestFormProps) {
       {props.formMessage ? <p className="feedback">{props.formMessage}</p> : null}
     </section>
   );
+}
+
+function formatDays(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }

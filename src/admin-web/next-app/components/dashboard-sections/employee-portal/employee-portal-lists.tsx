@@ -1,4 +1,5 @@
 import { DataTable } from "@/components/data-table";
+import { ApprovalStatusBadge, ReadStatusBadge } from "@/components/status-badge";
 import type { EmployeePortalSectionProps } from "./employee-portal-types";
 import { MobileRecordList } from "./mobile-record-list";
 
@@ -39,7 +40,7 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
                 header: "日数/分",
                 render: (row) => (row.requestCategory === "TIME_LEAVE" ? `${row.quantityMinutes ?? "-"}分` : `${row.quantityDays ?? "-"}日`),
               },
-              { key: "status", header: "状態", render: (row) => props.formatters.formatApprovalStatus(row.status) },
+              { key: "status", header: "状態", render: (row) => <ApprovalStatusBadge value={row.status} format={props.formatters.formatApprovalStatus} /> },
             ]}
           />
           <DataTable
@@ -49,7 +50,7 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
             columns={[
               { key: "targetDate", header: "対象日", render: (row) => props.formatters.formatDateOnly(row.targetDate) },
               { key: "time", header: "出退勤", render: (row) => `${row.clockInTime ?? "-"} - ${row.clockOutTime ?? "-"}` },
-              { key: "status", header: "状態", render: (row) => props.formatters.formatApprovalStatus(row.status) },
+              { key: "status", header: "状態", render: (row) => <ApprovalStatusBadge value={row.status} format={props.formatters.formatApprovalStatus} /> },
               { key: "comment", header: "コメント", render: (row) => row.decisionComment ?? row.employeeComment ?? "-" },
             ]}
           />
@@ -83,11 +84,12 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
 
       <div className="mobile-only stack-section section-enter delay-2">
         <MobileRecordList
+          id="employee-leave-list-mobile"
           title="休暇申請の一覧"
           rows={props.data.employeePortal.leaveRequests}
           emptyMessage="休暇申請はまだありません"
           renderTitle={(row) => (row.requestCategory === "TIME_LEAVE" ? "時間休暇" : row.leaveTypeName)}
-          renderMeta={(row) => props.formatters.formatApprovalStatus(row.status)}
+          renderMeta={(row) => <ApprovalStatusBadge value={row.status} format={props.formatters.formatApprovalStatus} />}
           renderBody={(row) => row.reason ?? "申請理由の入力はありません"}
           renderFields={(row) => [
             {
@@ -117,7 +119,7 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
           rows={props.data.employeePortal.attendanceDailyEditRequests ?? []}
           emptyMessage="日次修正申請はまだありません"
           renderTitle={(row) => props.formatters.formatDateOnly(row.targetDate)}
-          renderMeta={(row) => props.formatters.formatApprovalStatus(row.status)}
+          renderMeta={(row) => <ApprovalStatusBadge value={row.status} format={props.formatters.formatApprovalStatus} />}
           renderBody={(row) => row.employeeComment ?? row.remark ?? "申請コメントの入力はありません"}
           renderFields={(row) => [
             {
@@ -136,6 +138,7 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
         />
 
         <MobileRecordList
+          id="employee-payroll-list-mobile"
           title="給与・賞与明細"
           rows={props.data.employeePortal.payroll}
           emptyMessage="公開済みの明細はありません"
@@ -189,7 +192,7 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
                 header: "既読",
                 render: (row) =>
                   row.isRead ? (
-                    "既読"
+                    <ReadStatusBadge isRead={row.isRead} />
                   ) : (
                     <button type="button" className="table-action" onClick={() => void props.actions.onNotificationRead(row.id, row.sourceType)}>
                       既読にする
@@ -215,11 +218,12 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
 
       <div className="mobile-only stack-section section-enter delay-3">
         <MobileRecordList
+          id="employee-notices-list-mobile"
           title="お知らせ"
           rows={props.data.employeePortal.notifications}
           emptyMessage="お知らせはありません"
           renderTitle={(row) => row.title}
-          renderMeta={(row) => (row.isRead ? "既読" : "未読")}
+          renderMeta={(row) => <ReadStatusBadge isRead={row.isRead} />}
           renderBody={(row) => row.body}
           renderFields={(row) => [
             {
