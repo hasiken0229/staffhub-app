@@ -5,7 +5,8 @@
         Height="720"
         Width="1200"
         WindowStartupLocation="CenterScreen"
-        Foreground="#27344D">
+        Foreground="#27344D"
+        Background="{Binding FeedbackBackground}">
     <Window.Resources>
         <Style x:Key="GradientButtonStyle" TargetType="Button">
             <Setter Property="BorderThickness" Value="0" />
@@ -33,14 +34,7 @@
             </Setter>
         </Style>
     </Window.Resources>
-    <Window.Background>
-        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#F7FAFF" Offset="0" />
-            <GradientStop Color="#E8EFFF" Offset="0.58" />
-            <GradientStop Color="#EEF1FF" Offset="1" />
-        </LinearGradientBrush>
-    </Window.Background>
-    <Grid Margin="24">
+    <Grid Margin="24" Background="{Binding FeedbackBackground}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -60,14 +54,14 @@
                         </LinearGradientBrush>
                     </Button.Background>
                 </Button>
-                <Border CornerRadius="18" Padding="16,8">
-                    <Border.Background>
-                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                            <GradientStop Color="#6F8FE5" Offset="0" />
-                            <GradientStop Color="#94ABF7" Offset="1" />
-                        </LinearGradientBrush>
-                    </Border.Background>
-                    <TextBlock Text="{Binding NetworkStatus}" Foreground="White" FontSize="16" FontWeight="SemiBold" />
+                <Border CornerRadius="18" Padding="18,9" Background="{Binding OfflineWarningBackground}" BorderBrush="{Binding FeedbackAccent}" BorderThickness="2">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="●" Foreground="{Binding FeedbackAccent}" FontSize="20" FontWeight="Bold" Margin="0,0,8,0" />
+                        <TextBlock Text="{Binding NetworkStatus}" Foreground="#27344D" FontSize="17" FontWeight="Bold" Margin="0,0,12,0" />
+                        <TextBlock Text="未送信 " Foreground="#27344D" FontSize="17" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding PendingCount}" Foreground="{Binding FeedbackAccent}" FontSize="20" FontWeight="Bold" />
+                        <TextBlock Text=" 件" Foreground="#27344D" FontSize="17" FontWeight="SemiBold" />
+                    </StackPanel>
                 </Border>
             </StackPanel>
         </DockPanel>
@@ -78,13 +72,28 @@
                 <ColumnDefinition Width="1*" />
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#DDE6FA" BorderThickness="1" CornerRadius="24" Padding="36" Margin="0,0,20,0">
+            <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="{Binding FeedbackAccent}" BorderThickness="3" CornerRadius="24" Padding="36" Margin="0,0,20,0">
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="{Binding CurrentClockText}" FontSize="64" FontWeight="Bold" Foreground="#000000" TextAlignment="Center" Margin="0,0,0,24" />
-                    <TextBlock Text="{Binding ResultHeadline}" FontSize="36" FontWeight="Bold" TextAlignment="Center" TextWrapping="Wrap" LineHeight="46" Margin="0,0,0,14" />
-                    <TextBlock Text="{Binding ResultDetail}" FontSize="22" Foreground="#7083A0" TextAlignment="Center" TextWrapping="Wrap" Margin="0,0,0,20" />
-                    <TextBlock Text="{Binding EmployeeName}" FontSize="34" FontWeight="SemiBold" TextAlignment="Center" Margin="0,0,0,10" />
-                    <TextBlock Text="{Binding LastEventType}" FontSize="24" Foreground="#D87790" TextAlignment="Center" />
+                    <Border Width="104" Height="104" CornerRadius="52" Background="{Binding FeedbackAccent}" HorizontalAlignment="Center" Margin="0,0,0,14">
+                        <TextBlock x:Name="ResultGlyphText"
+                                   Text="{Binding ResultGlyph}"
+                                   Foreground="White"
+                                   FontSize="68"
+                                   FontWeight="Black"
+                                   TextAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   RenderTransformOrigin="0.5,0.5">
+                            <TextBlock.RenderTransform>
+                                <ScaleTransform ScaleX="1" ScaleY="1" />
+                            </TextBlock.RenderTransform>
+                        </TextBlock>
+                    </Border>
+                    <TextBlock Text="{Binding FeedbackStateLabel}" FontSize="24" Foreground="{Binding FeedbackAccent}" FontWeight="Bold" TextAlignment="Center" Margin="0,0,0,6" />
+                    <TextBlock Text="{Binding CurrentClockText}" FontSize="82" FontWeight="Black" Foreground="#000000" TextAlignment="Center" Margin="0,0,0,16" />
+                    <TextBlock Text="{Binding ResultHeadline}" FontSize="40" FontWeight="Black" TextAlignment="Center" TextWrapping="Wrap" LineHeight="48" Margin="0,0,0,10" />
+                    <TextBlock Text="{Binding ResultDetail}" FontSize="24" Foreground="#53647F" TextAlignment="Center" TextWrapping="Wrap" Margin="0,0,0,16" />
+                    <TextBlock Text="{Binding EmployeeName}" FontSize="60" FontWeight="Black" TextAlignment="Center" TextWrapping="Wrap" LineHeight="66" Margin="0,0,0,8" />
+                    <TextBlock Text="{Binding LastEventType}" FontSize="32" Foreground="{Binding FeedbackAccent}" FontWeight="Bold" TextAlignment="Center" />
                 </StackPanel>
             </Border>
 

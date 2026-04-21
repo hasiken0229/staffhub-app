@@ -1,8 +1,10 @@
 using System.ComponentModel;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Media;
 using System.Runtime.CompilerServices;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Threading;
 using StaffHub.PunchApp.Models;
 using StaffHub.PunchApp.Services;
@@ -24,9 +26,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private string _resultDetail = "RC-S380 の読取待機中";
     private string _employeeName = "-";
     private string _lastEventType = "-";
+    private string _resultGlyph = "●";
+    private string _feedbackStateLabel = "待機中";
+    private Brush _feedbackBackground = new SolidColorBrush(Color.FromRgb(247, 250, 255));
+    private Brush _feedbackAccent = new SolidColorBrush(Color.FromRgb(111, 143, 229));
+    private Brush _offlineWarningBackground = new SolidColorBrush(Color.FromRgb(238, 244, 255));
     private string _simulatedCardUid = "0123456789ABCDEF";
     private string _readerStatus = "初期化中";
     private string _lastCardUid = "-";
+    private int _resultPulseKey;
 
     public MainWindowViewModel()
     {
@@ -115,6 +123,42 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         set => SetField(ref _lastEventType, value);
     }
 
+    public string ResultGlyph
+    {
+        get => _resultGlyph;
+        set => SetField(ref _resultGlyph, value);
+    }
+
+    public string FeedbackStateLabel
+    {
+        get => _feedbackStateLabel;
+        set => SetField(ref _feedbackStateLabel, value);
+    }
+
+    public Brush FeedbackBackground
+    {
+        get => _feedbackBackground;
+        set => SetField(ref _feedbackBackground, value);
+    }
+
+    public Brush FeedbackAccent
+    {
+        get => _feedbackAccent;
+        set => SetField(ref _feedbackAccent, value);
+    }
+
+    public Brush OfflineWarningBackground
+    {
+        get => _offlineWarningBackground;
+        set => SetField(ref _offlineWarningBackground, value);
+    }
+
+    public int ResultPulseKey
+    {
+        get => _resultPulseKey;
+        set => SetField(ref _resultPulseKey, value);
+    }
+
     public string SimulatedCardUid
     {
         get => _simulatedCardUid;
@@ -166,6 +210,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         ResultHeadline = "カードをかざしてください";
         ResultDetail = "RC-S380 の読取待機中";
+        SetFeedbackState(FeedbackState.Ready);
 
         if (!NeedsReaderReconnect(_deviceReader.StatusText))
         {
@@ -215,6 +260,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             ResultDetail = $"{result.OccurredAt:HH:mm:ss}";
             EmployeeName = result.Employee?.Name ?? "-";
             LastEventType = FormatEventType(result.EventType);
+            SetFeedbackState(FeedbackState.Success);
+            PlaySuccessSound();
             AddHistory(result.OccurredAt, result.Employee?.Name ?? "-", FormatEventType(result.EventType), result.ResultMessage, "送信済");
         }
         catch (AttendanceApiException ex)
@@ -228,12 +275,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             {
                 ResultHeadline = "未登録カードです";
                 ResultDetail = $"{cardUid} を管理画面で登録してください";
+                SetFeedbackState(FeedbackState.Error);
+                PlayErrorSound();
                 AddHistory(DateTimeOffset.Now, "未登録", "-", "未登録カード", cardUid);
                 return;
             }
 
             ResultHeadline = "打刻を受け付けできませんでした";
             ResultDetail = ex.Message;
+            SetFeedbackState(FeedbackState.Error);
+            PlayErrorSound();
             AddHistory(DateTimeOffset.Now, "-", "-", ex.Message, "拒否");
         }
         catch
@@ -245,6 +296,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             ResultDetail = $"{pending.OccurredAt:HH:mm:ss} / 未送信キューへ退避";
             EmployeeName = "-";
             LastEventType = "-";
+            SetFeedbackState(FeedbackState.Offline);
+            PlayOfflineSound();
             AddHistory(pending.OccurredAt, "-", "-", "通信失敗", "未送信");
             OnPropertyChanged(nameof(PendingPunches));
             OnPropertyChanged(nameof(PendingCount));
@@ -284,6 +337,52 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         CurrentClockText = now.ToString("HH:mm:ss");
     }
 
+    private void SetFeedbackState(FeedbackState state)
+    {
+        switch (state)
+        {
+            case FeedbackState.Success:
+                ResultGlyph = "✓";
+                FeedbackStateLabel = "打刻完了";
+                FeedbackBackground = BrushFromRgb(230, 250, 239);
+                FeedbackAccent = BrushFromRgb(22, 128, 76);
+                OfflineWarningBackground = BrushFromRgb(230, 250, 239);
+                break;
+            case FeedbackState.Error:
+                ResultGlyph = "!";
+                FeedbackStateLabel = "確認が必要";
+                FeedbackBackground = BrushFromRgb(255, 235, 238);
+                FeedbackAccent = BrushFromRgb(190, 45, 70);
+                OfflineWarningBackground = BrushFromRgb(255, 235, 238);
+                break;
+            case FeedbackState.Offline:
+                ResultGlyph = "!";
+                FeedbackStateLabel = "オフライン保存";
+                FeedbackBackground = BrushFromRgb(255, 247, 214);
+                FeedbackAccent = BrushFromRgb(158, 108, 0);
+                OfflineWarningBackground = BrushFromRgb(255, 236, 153);
+                break;
+            default:
+                ResultGlyph = "●";
+                FeedbackStateLabel = "待機中";
+                FeedbackBackground = BrushFromRgb(247, 250, 255);
+                FeedbackAccent = BrushFromRgb(111, 143, 229);
+                OfflineWarningBackground = BrushFromRgb(238, 244, 255);
+                break;
+        }
+
+        ResultPulseKey++;
+    }
+
+    private static SolidColorBrush BrushFromRgb(byte red, byte green, byte blue)
+        => new(Color.FromRgb(red, green, blue));
+
+    private static void PlaySuccessSound() => SystemSounds.Asterisk.Play();
+
+    private static void PlayErrorSound() => SystemSounds.Hand.Play();
+
+    private static void PlayOfflineSound() => SystemSounds.Exclamation.Play();
+
     private static string FormatEventType(string? eventType) => eventType switch
     {
         "CLOCK_IN" => "出勤",
@@ -304,6 +403,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+}
+
+internal enum FeedbackState
+{
+    Ready,
+    Success,
+    Error,
+    Offline,
 }
 
 public sealed record PunchHistoryItem(
