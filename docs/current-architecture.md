@@ -13,7 +13,7 @@
 
 - `src/admin-web/next-app/components/admin-dashboard.tsx`
   - 画面全体の container。認証状態、現在セクション、データ読込の配線を担う。
-  - 初期の約 2953 行から、現在は約 844 行まで分割済み。
+  - 初期の約 2953 行から、現在は 774 行まで分割済み。
   - 行数最小化より、各 section に `data / filters / form / actions / formatters` を束で渡す配線を優先している。
 - `src/admin-web/next-app/components/admin-portal-shell.tsx`
   - 管理画面の共通 shell。
@@ -34,6 +34,7 @@
   - `leave-section.tsx`
   - `notices-section.tsx`
   - `payroll-section.tsx`
+  - `payroll/`
   - `reports-section.tsx`
   - `system-section.tsx`
 
@@ -59,6 +60,13 @@
 - 画面初期化と導出値
   - `use-admin-dashboard-effects.ts`
   - `use-admin-dashboard-derived-data.ts`
+- セクション props 配線
+  - `use-dashboard-section-props.tsx`
+  - `dashboard-section-props/admin-builders.ts`
+  - `dashboard-section-props/attendance-leave-builders.ts`
+  - `dashboard-section-props/payroll-report-builders.ts`
+  - `dashboard-section-props/portal-builder.tsx`
+  - `dashboard-section-props/types.ts`
 - 画面初期値・セクション定義
   - `src/admin-web/next-app/lib/dashboard-defaults.ts`
 
@@ -67,10 +75,14 @@
 - 監査ログ
   - `app/Services/AuditLogService.php`
   - `app/Http/Controllers/Api/Admin/AuditLogAdminController.php`
-- 通知メール
+- 通知/Google Chat
   - `app/Services/NotificationMailService.php`
+  - `app/Services/GoogleChatNotificationService.php`
+  - `app/Services/GoogleChatTokenService.php`
+  - `app/Services/GoogleChatRecipientResolver.php`
   - `app/Mail/SystemNotificationMail.php`
   - `resources/views/emails/system-notification-text.blade.php`
+  - Google Chat 通知は `NotificationMailService` を façade として、休暇申請/休暇判定/お知らせ/給与明細公開から発火する。
 - 打刻異常検知
   - `app/Services/AttendanceService.php`
   - `未退勤`, `打刻漏れ`, `短時間の連続打刻` を付与
@@ -98,6 +110,12 @@
   - 管理画面の静的試作。参照用の旧資産。
 - `src/backend-laravel-skeleton`
   - Laravel 初期骨組み。参照用の旧資産。
+
+## 運用手順
+
+- Google Chat 通知
+  - `docs/google-chat-operations-checklist.md`
+  - 本番 `.env`、credentials JSON、スペースID、職員 `google_chat_user_id`、送信ログの確認手順をまとめている。
 
 ## 運用方針
 
