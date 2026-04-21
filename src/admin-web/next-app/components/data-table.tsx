@@ -1,6 +1,6 @@
 type Column<T> = {
   key: string;
-  header: string;
+  header: React.ReactNode;
   render: (row: T) => React.ReactNode;
 };
 
@@ -10,9 +10,10 @@ type DataTableProps<T> = {
   rows: T[];
   columns: Column<T>[];
   emptyMessage?: string;
+  rowClassName?: (row: T) => string | undefined;
 };
 
-export function DataTable<T>({ id, title, rows, columns, emptyMessage = "データがありません" }: DataTableProps<T>) {
+export function DataTable<T>({ id, title, rows, columns, emptyMessage = "データがありません", rowClassName }: DataTableProps<T>) {
   return (
     <section id={id} className="panel anchor-panel">
       <div className="panel-header">
@@ -38,7 +39,7 @@ export function DataTable<T>({ id, title, rows, columns, emptyMessage = "デー�
               </tr>
             ) : (
               rows.map((row, index) => (
-                <tr key={index}>
+                <tr key={index} className={rowClassName?.(row)}>
                   {columns.map((column) => (
                     <td key={column.key}>{column.render(row)}</td>
                   ))}

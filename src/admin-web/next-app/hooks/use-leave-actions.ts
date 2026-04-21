@@ -59,8 +59,11 @@ export function useLeaveActions(params: UseLeaveActionsParams) {
     }
   }
 
-  async function handleBulkWorkProcedureDecision(decision: "approve" | "return") {
-    const ids = params.dashboard.workProcedures.map((row) => row.id);
+  async function handleBulkWorkProcedureDecision(decision: "approve" | "return", selectedIds?: number[]) {
+    const ids =
+      selectedIds !== undefined
+        ? selectedIds
+        : params.dashboard.workProcedures.filter((row) => row.status === "PENDING").map((row) => row.id);
     if (ids.length === 0) {
       params.setDecisionResult("一括処理の対象がありません。");
       return;

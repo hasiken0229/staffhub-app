@@ -1,4 +1,5 @@
 import { DataTable } from "@/components/data-table";
+import { ApprovalStatusBadge } from "@/components/status-badge";
 import type { AttendanceApproval, AttendanceDaily, Employee, ImportHistory, PaidLeaveReportRow } from "@/types";
 
 type ReportsSectionProps = {
@@ -108,7 +109,7 @@ export function ReportsSection(props: ReportsSectionProps) {
             { key: "employeeName", header: "氏名", render: (row) => row.employeeName },
             { key: "clockInAt", header: "出勤", render: (row) => props.formatters.formatTimeOnly(row.clockInAt) },
             { key: "clockOutAt", header: "退勤", render: (row) => props.formatters.formatTimeOnly(row.clockOutAt) },
-            { key: "approvalStatus", header: "承認", render: (row) => props.formatters.formatApprovalStatus(row.approvalStatus) },
+            { key: "approvalStatus", header: "承認", render: (row) => <ApprovalStatusBadge value={row.approvalStatus} format={props.formatters.formatApprovalStatus} /> },
           ]}
         />
       ) : null}
@@ -121,7 +122,7 @@ export function ReportsSection(props: ReportsSectionProps) {
           columns={[
             { key: "targetDate", header: "日付", render: (row) => props.formatters.formatDateOnly(row.targetDate) },
             { key: "employeeName", header: "職員", render: (row) => row.employeeName },
-            { key: "approvalStatus", header: "状態", render: (row) => props.formatters.formatApprovalStatus(row.approvalStatus) },
+            { key: "approvalStatus", header: "状態", render: (row) => <ApprovalStatusBadge value={row.approvalStatus} format={props.formatters.formatApprovalStatus} /> },
             { key: "approvedAt", header: "処理日時", render: (row) => props.formatters.formatDateTime(row.approvedAt) },
             { key: "approvalComment", header: "コメント", render: (row) => row.approvalComment ?? "-" },
           ]}

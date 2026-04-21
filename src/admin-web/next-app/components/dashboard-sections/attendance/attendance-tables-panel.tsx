@@ -2,6 +2,8 @@ import { DailyAttendanceGraph } from "@/components/daily-attendance-graph";
 import { DataTable } from "@/components/data-table";
 import type { AttendanceSectionProps } from "@/components/dashboard-sections/attendance/attendance-section-types";
 import { formatErrorHistory, formatHandlingStatus } from "@/components/dashboard-sections/attendance/attendance-section-utils";
+import { ApprovalStatusBadge, ReceiveStatusBadge } from "@/components/status-badge";
+import type { AttendanceDaily, AttendanceErrorReportRow } from "@/types";
 
 type AttendanceTablesPanelProps = {
   activePanel: string;
@@ -21,12 +23,15 @@ type AttendanceTablesPanelProps = {
 
 export function AttendanceTablesPanel({ activePanel, data, filters, actions, formatters, onOpenDailyEditor }: AttendanceTablesPanelProps) {
   if (activePanel === "attendance-daily-list") {
+    const dailyRows = [...data.dashboard.dailyGrid].sort((left, right) => Number(hasDailyAlert(right)) - Number(hasDailyAlert(left)));
+
     return (
       <DataTable
         id="attendance-daily-list"
         title="日次勤怠一覧"
-        rows={data.dashboard.dailyGrid}
+        rows={dailyRows}
         emptyMessage="対象月の日次勤怠はありません"
+        rowClassName={(row) => (hasDailyAlert(row) ? "table-row-alert" : undefined)}
         columns={[
           { key: "employeeCode", header: "職員番号", render: (row) => row.employeeCode },
           { key: "employeeName", header: "氏名", render: (row) => row.employeeName },
@@ -38,7 +43,7 @@ export function AttendanceTablesPanel({ activePanel, data, filters, actions, for
           { key: "graph", header: "勤務グラフ", render: (row) => <DailyAttendanceGraph row={row} /> },
           { key: "alerts", header: "アラート", render: (row) => row.alertSummary ?? "-" },
           { key: "manual", header: "補正", render: (row) => (row.isManuallyEdited ? "手動" : "-") },
-          { key: "approvalStatus", header: "承認", render: (row) => formatters.formatApprovalStatus(row.approvalStatus) },
+          { key: "approvalStatus", header: "承認", render: (row) => <ApprovalStatusBadge value={row.approvalStatus} format={formatters.formatApprovalStatus} /> },
           { key: "closeStatus", header: "月締", render: (row) => formatters.formatCloseStatus(row.closeStatus) },
           {
             key: "edit",
@@ -137,6 +142,7 @@ export function AttendanceTablesPanel({ activePanel, data, filters, actions, for
           title="勤怠エラーレポート"
           rows={data.dashboard.attendanceErrors ?? []}
           emptyMessage="該当する勤怠エラーはありません"
+          rowClassName={(row) => errorRowClassName(row)}
           columns={[
             { key: "targetDate", header: "日付", render: (row) => formatters.formatDateOnly(row.targetDate) },
             { key: "errorName", header: "エラー名", render: (row) => row.errorName },
@@ -144,7 +150,7 @@ export function AttendanceTablesPanel({ activePanel, data, filters, actions, for
             { key: "employeeName", header: "氏名", render: (row) => row.employeeName },
             { key: "departmentName", header: "部門", render: (row) => row.departmentName ?? "-" },
             { key: "locationName", header: "拠点", render: (row) => row.locationName ?? "-" },
-            { key: "approvalStatus", header: "承認", render: (row) => formatters.formatApprovalStatus(row.approvalStatus) },
+            { key: "approvalStatus", header: "承認", render: (row) => <ApprovalStatusBadge value={row.approvalStatus} format={formatters.formatApprovalStatus} /> },
             { key: "handlingStatus", header: "対応", render: (row) => formatHandlingStatus(row.handlingStatus) },
             { key: "history", header: "対応履歴", render: (row) => formatErrorHistory(row, formatters.formatDateTime) },
             {
@@ -244,7 +250,7 @@ export function AttendanceTablesPanel({ activePanel, data, filters, actions, for
           { key: "occurredAt", header: "時刻", render: (row) => formatters.formatDateTime(row.occurredAt) },
           { key: "employeeName", header: "職員", render: (row) => row.employeeName ?? "-" },
           { key: "eventType", header: "種別", render: (row) => formatters.formatEventType(row.eventType) },
-          { key: "receiveStatus", header: "状態", render: (row) => formatters.formatReceiveStatus(row.receiveStatus) },
+          { key: "receiveStatus", header: "状態", render: (row) => <ReceiveStatusBadge value={row.receiveStatus} format={formatters.formatReceiveStatus} /> },
           { key: "deviceName", header: "端末", render: (row) => row.deviceName },
           { key: "cardUid", header: "カードUID", render: (row) => row.cardUid },
         ]}
@@ -253,4 +259,16 @@ export function AttendanceTablesPanel({ activePanel, data, filters, actions, for
   }
 
   return null;
+}
+
+function hasDailyAlert(row: AttendanceDaily): boolean {
+  return Boolean(row.alertSummary && row.alertSummary !== "-") || Boolean(row.alerts?.length);
+}
+
+function errorRowClassName(row: AttendanceErrorReportRow): string {
+  if (row.handlingStatus === "RESOLVED" || row.handlingStatus === "IGNORED") {
+    return "table-row-muted";
+  }
+
+  return "table-row-alert";
 }

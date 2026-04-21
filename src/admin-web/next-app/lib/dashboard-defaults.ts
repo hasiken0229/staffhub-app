@@ -123,6 +123,7 @@ export type AdminSectionKey = keyof typeof sectionLabels;
 export const sectionSubNavItems: Partial<Record<AdminSectionKey, Array<{ label: string; targetId: string }>>> = {
   dashboard: [
     { label: "本日の勤怠状況", targetId: "dashboard-today-attendance" },
+    { label: "部門別サマリー", targetId: "dashboard-department-summary" },
     { label: "承認待ちの届出", targetId: "dashboard-pending-requests" },
   ],
   employees: [
