@@ -37,41 +37,43 @@ export function AdminPortalShell(props: AdminPortalShellProps) {
         <SectionNav activeSection={props.activeSection} onChange={props.onActiveSectionChange} badges={props.navBadges} />
       </aside>
 
-      <header className="app-topbar">
-        <div className="brand app-topbar-brand">
-          <div>
-            <h1>勤怠管理システム</h1>
-            <p>利用中のアカウント: <strong>{props.currentUserName ?? "管理者"}</strong></p>
+      <div className="admin-content-column">
+        <header className="app-topbar">
+          <div className="brand app-topbar-brand">
+            <div>
+              <h1>勤怠管理システム</h1>
+              <p>利用中のアカウント: <strong>{props.currentUserName ?? "管理者"}</strong></p>
+            </div>
           </div>
-        </div>
-        <div className="app-topbar-actions">
-          <PortalModeTabs
-            currentMode={props.currentMode}
-            canUseEmployeePortal={props.canUseEmployeePortal}
-            onModeChange={props.onModeChange}
-          />
-          <button type="button" className="secondary" onClick={props.onLogout}>
-            ログアウト
-          </button>
-        </div>
-      </header>
-
-      <div className="main-column">
-        <header className="workspace-hero section-enter">
-          <div>
-            <h2>{props.currentSectionTitle}</h2>
-          </div>
-          <PageSubNav items={props.subNavItems} activeTargetId={props.activeSubNavId} onChange={props.onSubNavChange} />
-          <div className="workspace-actions">
-            <button onClick={props.onRefresh} type="button">
-              {props.isPending ? "読み込み中..." : "最新情報を再読込"}
+          <div className="app-topbar-actions">
+            <PortalModeTabs
+              currentMode={props.currentMode}
+              canUseEmployeePortal={props.canUseEmployeePortal}
+              onModeChange={props.onModeChange}
+            />
+            <button type="button" className="secondary" onClick={props.onLogout}>
+              ログアウト
             </button>
           </div>
         </header>
 
-        {props.errorMessage ? <p className="banner">{props.errorMessage}</p> : null}
-        {props.isPending ? <LoadingSkeleton /> : null}
-        {props.children}
+        <div className="main-column">
+          <header className="workspace-hero section-enter">
+            <div>
+              <h2>{props.currentSectionTitle}</h2>
+            </div>
+            <PageSubNav items={props.subNavItems} activeTargetId={props.activeSubNavId} onChange={props.onSubNavChange} />
+            <div className="workspace-actions">
+              <button onClick={props.onRefresh} type="button">
+                {props.isPending ? "読み込み中..." : "最新情報を再読込"}
+              </button>
+            </div>
+          </header>
+
+          {props.errorMessage ? <p className="banner">{props.errorMessage}</p> : null}
+          {props.isPending ? <LoadingSkeleton /> : null}
+          {props.children}
+        </div>
       </div>
     </main>
   );
