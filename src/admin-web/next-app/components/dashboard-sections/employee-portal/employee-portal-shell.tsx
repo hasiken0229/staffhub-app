@@ -55,13 +55,26 @@ export function EmployeePortalShell(props: EmployeePortalShellProps) {
         <EmployeePortalHomeCards data={props.data} formatters={props.formatters} />
 
         {props.data.errorMessage ? <p className="banner">{props.data.errorMessage}</p> : null}
+        {props.data.isPending ? <EmployeeLoadingSkeleton /> : null}
 
         {props.children}
       </div>
 
-      <a className="portal-fab mobile-only" href="#leave-request-form" aria-label="休暇申請へ移動">
-        休暇申請
-      </a>
+      <nav className="portal-bottom-nav mobile-only" aria-label="職員ポータルメニュー">
+        <a href="#employee-portal-home"><span aria-hidden="true">H</span>ホーム</a>
+        <a href="#leave-request-form"><span aria-hidden="true">休</span>休暇申請</a>
+        <a href="#employee-payroll-list-mobile"><span aria-hidden="true">給</span>給与明細</a>
+      </nav>
     </main>
+  );
+}
+
+function EmployeeLoadingSkeleton() {
+  return (
+    <section className="panel skeleton-panel" aria-label="読み込み中">
+      <span />
+      <span />
+      <span />
+    </section>
   );
 }

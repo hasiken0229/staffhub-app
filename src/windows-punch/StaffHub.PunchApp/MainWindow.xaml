@@ -43,7 +43,7 @@
 
         <DockPanel Grid.Row="0" LastChildFill="False" Margin="0,0,0,24">
             <StackPanel DockPanel.Dock="Left">
-                <TextBlock Text="職員打刻アプリ" FontSize="36" FontWeight="Bold" Foreground="#27344D" />
+                <TextBlock x:Name="AppTitleText" Text="職員打刻アプリ" FontSize="36" FontWeight="Bold" Foreground="#27344D" Cursor="Hand" />
             </StackPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <Button x:Name="StartPunchButton" Content="打刻を開始する" Width="150" Height="44" Margin="0,0,12,0" Style="{StaticResource GradientButtonStyle}" Foreground="White">
@@ -69,10 +69,10 @@
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="2*" />
-                <ColumnDefinition Width="1*" />
+                <ColumnDefinition x:Name="MaintenanceColumn" Width="1*" />
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="{Binding FeedbackAccent}" BorderThickness="3" CornerRadius="24" Padding="36" Margin="0,0,20,0">
+            <Border x:Name="ResultPanel" Grid.Column="0" Background="#FFFFFF" BorderBrush="{Binding FeedbackAccent}" BorderThickness="3" CornerRadius="24" Padding="36" Margin="0,0,20,0">
                 <StackPanel VerticalAlignment="Center">
                     <Border Width="104" Height="104" CornerRadius="52" Background="{Binding FeedbackAccent}" HorizontalAlignment="Center" Margin="0,0,0,14">
                         <TextBlock x:Name="ResultGlyphText"
@@ -97,7 +97,7 @@
                 </StackPanel>
             </Border>
 
-            <Border Grid.Column="1" Background="#F9FBFF" BorderBrush="#DDE6FA" BorderThickness="1" CornerRadius="24" Padding="24">
+            <Border x:Name="MaintenancePanel" Grid.Column="1" Background="#F9FBFF" BorderBrush="#DDE6FA" BorderThickness="1" CornerRadius="24" Padding="24">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <TextBlock Text="保守・試験パネル" FontSize="24" FontWeight="Bold" Margin="0,0,0,16" />

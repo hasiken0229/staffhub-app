@@ -14,6 +14,7 @@ type AdminPortalShellProps = {
   activeSubNavId: string;
   isPending: boolean;
   errorMessage: string;
+  navBadges?: Record<string, number>;
   onModeChange: (mode: AuthAudience) => void;
   onActiveSectionChange: (section: string) => void;
   onSubNavChange: (targetId: string) => void;
@@ -24,7 +25,18 @@ type AdminPortalShellProps = {
 
 export function AdminPortalShell(props: AdminPortalShellProps) {
   return (
-    <main className="admin-shell">
+    <main className="admin-shell admin-shell-with-sidebar">
+      <aside className="admin-sidebar">
+        <div className="sidebar-brand">
+          <span className="sidebar-logo" aria-hidden="true">勤</span>
+          <div>
+            <strong>StaffHub</strong>
+            <span>管理メニュー</span>
+          </div>
+        </div>
+        <SectionNav activeSection={props.activeSection} onChange={props.onActiveSectionChange} badges={props.navBadges} />
+      </aside>
+
       <header className="app-topbar">
         <div className="brand app-topbar-brand">
           <div>
@@ -42,7 +54,6 @@ export function AdminPortalShell(props: AdminPortalShellProps) {
             ログアウト
           </button>
         </div>
-        <SectionNav activeSection={props.activeSection} onChange={props.onActiveSectionChange} />
       </header>
 
       <div className="main-column">
@@ -59,8 +70,19 @@ export function AdminPortalShell(props: AdminPortalShellProps) {
         </header>
 
         {props.errorMessage ? <p className="banner">{props.errorMessage}</p> : null}
+        {props.isPending ? <LoadingSkeleton /> : null}
         {props.children}
       </div>
     </main>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <section className="panel skeleton-panel" aria-label="読み込み中">
+      <span />
+      <span />
+      <span />
+    </section>
   );
 }

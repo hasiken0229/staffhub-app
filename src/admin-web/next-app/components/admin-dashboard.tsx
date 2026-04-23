@@ -733,6 +733,10 @@ export function AdminDashboard() {
     system: <SystemSection {...systemSectionProps} />,
     audit: <AuditSection {...auditSectionProps} />,
   } satisfies Record<AdminSectionKey, ReactNode>;
+  const navBadges = {
+    attendance: dashboard.attendanceApprovals.length,
+    leave: dashboard.reportsHub.pendingLeaveCount || dashboard.workProcedures.filter((row) => row.status === "PENDING").length,
+  };
 
   if (!isAuthenticated) {
     return (
@@ -762,6 +766,7 @@ export function AdminDashboard() {
       activeSubNavId={currentSubNavId}
       isPending={isPending}
       errorMessage={errorMessage}
+      navBadges={navBadges}
       onModeChange={handlePortalModeChange}
       onActiveSectionChange={handleAdminSectionChange}
       onSubNavChange={handleSubNavChange}

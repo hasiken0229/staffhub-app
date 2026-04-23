@@ -18,6 +18,7 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
       <div className="desktop-only">
         <section className="split section-enter delay-2">
           <DataTable
+            id="employee-leave-list"
             title="休暇申請の一覧"
             rows={props.data.employeePortal.leaveRequests}
             emptyMessage="休暇申請はまだありません"
@@ -55,6 +56,7 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
             ]}
           />
           <DataTable
+            id="employee-payroll-list"
             title="給与・賞与明細"
             rows={props.data.employeePortal.payroll}
             emptyMessage="公開済みの明細はありません"
@@ -180,6 +182,7 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
       <div className="desktop-only">
         <section className="split section-enter delay-3">
           <DataTable
+            id="employee-notices-list"
             title="お知らせ"
             rows={props.data.employeePortal.notifications}
             emptyMessage="お知らせはありません"

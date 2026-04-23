@@ -12,7 +12,7 @@ export function EmployeePortalHomeCards({ data, formatters }: EmployeePortalHome
   const latestNotification = data.employeePortal.notifications[0] ?? null;
 
   return (
-    <section className="portal-home-grid section-enter delay-1" aria-label="職員ホーム">
+    <section id="employee-portal-home" className="portal-home-grid section-enter delay-1" aria-label="職員ホーム">
       <a className="portal-home-card portal-home-card-primary" href="#leave-request-form">
         <span className="portal-card-label">有給残日数</span>
         <strong>{data.employeePortal.home.paidLeaveBalance}日</strong>
