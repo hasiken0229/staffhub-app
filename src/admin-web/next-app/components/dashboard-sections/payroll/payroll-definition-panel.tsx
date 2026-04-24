@@ -8,7 +8,7 @@ type PayrollDefinitionPanelProps = {
 
 export function PayrollDefinitionPanel({ data, form, actions }: PayrollDefinitionPanelProps) {
   return (
-    <section id="payroll-definitions" className="panel action-panel anchor-panel">
+    <section id="payroll-definitions" className="panel action-panel anchor-panel payroll-definition-panel">
       <div className="panel-header">
         <div>
           <p className="panel-kicker">定義</p>

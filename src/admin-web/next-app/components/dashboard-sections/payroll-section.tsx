@@ -3,7 +3,6 @@ import { PayrollBatchDetailPanel } from "@/components/dashboard-sections/payroll
 import { PayrollBatchListPanel } from "@/components/dashboard-sections/payroll/payroll-batch-list-panel";
 import { PayrollDefinitionPanel } from "@/components/dashboard-sections/payroll/payroll-definition-panel";
 import { PayrollHistoryPanel } from "@/components/dashboard-sections/payroll/payroll-history-panel";
-import { PayrollOperationPanel } from "@/components/dashboard-sections/payroll/payroll-operation-panel";
 import { PayrollRegisterPanel } from "@/components/dashboard-sections/payroll/payroll-register-panel";
 import { PayrollStatementListPanel } from "@/components/dashboard-sections/payroll/payroll-statement-list-panel";
 import { PayrollTypeSwitchPanel } from "@/components/dashboard-sections/payroll/payroll-type-switch-panel";
@@ -11,13 +10,21 @@ import type { PayrollSectionProps } from "@/components/dashboard-sections/payrol
 
 export function PayrollSection(props: PayrollSectionProps) {
   const activePanel = props.data.activePanel || "payroll-type";
+  const isWorkspacePanel = activePanel === "payroll-definitions" || activePanel === "payroll-register";
 
   return (
     <section className="stack-section section-enter delay-3">
       {activePanel === "payroll-type" ? <PayrollTypeSwitchPanel form={props.form} actions={props.actions} /> : null}
 
+      {isWorkspacePanel ? (
+        <section className="payroll-workspace">
+          {activePanel === "payroll-definitions" ? <PayrollDefinitionPanel data={props.data} form={props.form} actions={props.actions} /> : null}
+          {activePanel === "payroll-register" ? <PayrollRegisterPanel data={props.data} form={props.form} actions={props.actions} /> : null}
+        </section>
+      ) : null}
+
       {activePanel !== "payroll-type" ? (
-        <section className="payroll-layout">
+        <section className={isWorkspacePanel ? "payroll-layout is-hidden" : "payroll-layout"}>
           <div className="payroll-main stack-section">
             {activePanel === "payroll-history" ? (
               <PayrollHistoryPanel data={props.data} actions={props.actions} formatters={props.formatters} />
@@ -49,9 +56,6 @@ export function PayrollSection(props: PayrollSectionProps) {
           </div>
 
           <div className="payroll-side stack-section">
-            {activePanel === "payroll-definitions" ? <PayrollDefinitionPanel data={props.data} form={props.form} actions={props.actions} /> : null}
-            {activePanel === "payroll-register" ? <PayrollRegisterPanel data={props.data} form={props.form} actions={props.actions} /> : null}
-            {activePanel === "payroll-operation" ? <PayrollOperationPanel data={props.data} form={props.form} /> : null}
           </div>
         </section>
       ) : null}

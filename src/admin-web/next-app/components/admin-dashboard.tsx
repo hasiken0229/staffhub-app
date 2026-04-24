@@ -440,7 +440,9 @@ export function AdminDashboard() {
 
   const currentSectionTitle = sectionLabels[activeSection];
   const currentSubNavItems = sectionSubNavItems[activeSection] ?? [];
-  const currentSubNavId = activeSubSectionBySection[activeSection] ?? currentSubNavItems[0]?.targetId ?? "";
+  const storedSubNavId = activeSubSectionBySection[activeSection];
+  const defaultSubNavId = currentSubNavItems[0]?.targetId ?? "";
+  const currentSubNavId = storedSubNavId && currentSubNavItems.some((item) => item.targetId === storedSubNavId) ? storedSubNavId : defaultSubNavId;
   const handleRefresh = () => startTransition(() => void refresh());
   const canUseEmployeePortal = Boolean(currentUser?.isAdmin && currentUser.canUseEmployeePortal);
 
@@ -460,10 +462,13 @@ export function AdminDashboard() {
     }
 
     const nextSection = section as AdminSectionKey;
+    const nextSubNavItems = sectionSubNavItems[nextSection] ?? [];
     setActiveSection(nextSection);
     setActiveSubSectionBySection((current) => ({
       ...current,
-      [nextSection]: current[nextSection] ?? sectionSubNavItems[nextSection]?.[0]?.targetId ?? "",
+      [nextSection]: nextSubNavItems.some((item) => item.targetId === current[nextSection])
+        ? current[nextSection]
+        : nextSubNavItems[0]?.targetId ?? "",
     }));
   }
 

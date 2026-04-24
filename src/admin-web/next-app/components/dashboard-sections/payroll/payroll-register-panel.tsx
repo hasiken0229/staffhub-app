@@ -8,7 +8,7 @@ type PayrollRegisterPanelProps = {
 
 export function PayrollRegisterPanel({ data, form, actions }: PayrollRegisterPanelProps) {
   return (
-    <section id="payroll-register" className="panel action-panel anchor-panel">
+    <section id="payroll-register" className="panel action-panel anchor-panel payroll-register-panel">
       <div className="panel-header">
         <div>
           <p className="panel-kicker">登録</p>

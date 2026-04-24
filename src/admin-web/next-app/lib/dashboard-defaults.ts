@@ -163,7 +163,6 @@ export const sectionSubNavItems: Partial<Record<AdminSectionKey, Array<{ label: 
     { label: "公開済み", targetId: "payroll-statements" },
     { label: "データ定義", targetId: "payroll-definitions" },
     { label: "CSV登録", targetId: "payroll-register" },
-    { label: "PDF運用", targetId: "payroll-operation" },
   ],
   reports: [
     { label: "レポート出力", targetId: "reports-export" },

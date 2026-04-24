@@ -100,7 +100,7 @@ export function EmployeesSection(props: EmployeesSectionProps) {
   }
 
   return (
-    <section className="split section-enter delay-3">
+    <section className="stack-section employee-section section-enter delay-3">
       {activePanel === "employees-list" ? (
       <section id="employees-list" className="panel anchor-panel">
         <div className="panel-header">
@@ -111,7 +111,7 @@ export function EmployeesSection(props: EmployeesSectionProps) {
           <span className="panel-meta">{props.data.employees.length} 件</span>
         </div>
         {editMessage && editingEmployeeId === null ? <p className="feedback">{editMessage}</p> : null}
-        <div className="table-wrap inline-edit-table">
+        <div className="table-wrap inline-edit-table employee-table-wrap">
           <table>
             <thead>
               <tr>
