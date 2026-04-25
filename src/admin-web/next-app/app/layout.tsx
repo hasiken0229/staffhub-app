@@ -2,6 +2,14 @@ import type { Metadata } from "next";
 import { NEXT_PUBLIC_BASE_PATH, withBasePath } from "@/lib/base-path";
 import { PwaRegister } from "@/components/pwa-register";
 import "./globals.css";
+import "./auth.css";
+import "./shell.css";
+import "./dashboard.css";
+import "./tables.css";
+import "./forms.css";
+import "./domain.css";
+import "./motion.css";
+import "./responsive.css";
 
 export const metadata: Metadata = {
   title: "勤怠管理システム",

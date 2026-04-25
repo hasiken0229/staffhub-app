@@ -16,7 +16,17 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
   return (
     <>
       <div className="desktop-only">
-        <section className="split section-enter delay-2">
+        <section className="portal-list-group section-enter delay-2">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">REQUESTS</p>
+              <h3>申請状況</h3>
+            </div>
+            <span className="panel-meta">
+              休暇 {props.data.employeePortal.leaveRequests.length} 件 / 修正 {props.data.employeePortal.attendanceDailyEditRequests?.length ?? 0} 件
+            </span>
+          </div>
+          <div className="split">
           <DataTable
             id="employee-leave-list"
             title="休暇申請の一覧"
@@ -55,6 +65,20 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
               { key: "comment", header: "コメント", render: (row) => row.decisionComment ?? row.employeeComment ?? "-" },
             ]}
           />
+          </div>
+        </section>
+
+        <section className="portal-list-group section-enter delay-3">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">PAYROLL</p>
+              <h3>明細・通知</h3>
+            </div>
+            <span className="panel-meta">
+              明細 {props.data.employeePortal.payroll.length} 件 / 通知 {props.data.employeePortal.notifications.length} 件
+            </span>
+          </div>
+          <div className="split">
           <DataTable
             id="employee-payroll-list"
             title="給与・賞与明細"
@@ -79,6 +103,52 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
                   </div>
                 ),
               },
+            ]}
+          />
+          <DataTable
+            id="employee-notices-list"
+            title="お知らせ"
+            rows={props.data.employeePortal.notifications}
+            emptyMessage="お知らせはありません"
+            columns={[
+              { key: "title", header: "件名", render: (row) => row.title },
+              { key: "sentAt", header: "配信日時", render: (row) => props.formatters.formatDateTime(row.sentAt) },
+              { key: "sourceType", header: "種別", render: (row) => row.sourceType },
+              {
+                key: "read",
+                header: "既読",
+                render: (row) =>
+                  row.isRead ? (
+                    <ReadStatusBadge isRead={row.isRead} />
+                  ) : (
+                    <button type="button" className="table-action" onClick={() => void props.actions.onNotificationRead(row.id, row.sourceType)}>
+                      既読にする
+                    </button>
+                  ),
+              },
+            ]}
+          />
+          </div>
+        </section>
+
+        <section className="portal-list-group section-enter delay-4">
+          <div className="panel-header">
+            <div>
+              <p className="panel-kicker">LEDGER</p>
+              <h3>有給台帳</h3>
+            </div>
+            <span className="panel-meta">{props.data.employeePortal.leaveLedger.length} 件</span>
+          </div>
+          <DataTable
+            title="有給台帳"
+            rows={props.data.employeePortal.leaveLedger}
+            emptyMessage="有給台帳はまだありません"
+            columns={[
+              { key: "occurredOn", header: "日付", render: (row) => props.formatters.formatDateOnly(row.occurredOn) },
+              { key: "entryType", header: "区分", render: (row) => props.formatters.formatLeaveLedgerEntryType(row.entryType) },
+              { key: "daysDelta", header: "増減", render: (row) => `${row.daysDelta}日` },
+              { key: "balanceAfter", header: "残高", render: (row) => `${row.balanceAfter ?? "-"}日` },
+              { key: "note", header: "備考", render: (row) => row.note ?? "-" },
             ]}
           />
         </section>
@@ -178,46 +248,6 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
       </div>
 
       {props.data.selectedPayrollDetailCard ? <section className="section-enter delay-3">{props.data.selectedPayrollDetailCard}</section> : null}
-
-      <div className="desktop-only">
-        <section className="split section-enter delay-3">
-          <DataTable
-            id="employee-notices-list"
-            title="お知らせ"
-            rows={props.data.employeePortal.notifications}
-            emptyMessage="お知らせはありません"
-            columns={[
-              { key: "title", header: "件名", render: (row) => row.title },
-              { key: "sentAt", header: "配信日時", render: (row) => props.formatters.formatDateTime(row.sentAt) },
-              { key: "sourceType", header: "種別", render: (row) => row.sourceType },
-              {
-                key: "read",
-                header: "既読",
-                render: (row) =>
-                  row.isRead ? (
-                    <ReadStatusBadge isRead={row.isRead} />
-                  ) : (
-                    <button type="button" className="table-action" onClick={() => void props.actions.onNotificationRead(row.id, row.sourceType)}>
-                      既読にする
-                    </button>
-                  ),
-              },
-            ]}
-          />
-          <DataTable
-            title="有給台帳"
-            rows={props.data.employeePortal.leaveLedger}
-            emptyMessage="有給台帳はまだありません"
-            columns={[
-              { key: "occurredOn", header: "日付", render: (row) => props.formatters.formatDateOnly(row.occurredOn) },
-              { key: "entryType", header: "区分", render: (row) => props.formatters.formatLeaveLedgerEntryType(row.entryType) },
-              { key: "daysDelta", header: "増減", render: (row) => `${row.daysDelta}日` },
-              { key: "balanceAfter", header: "残高", render: (row) => `${row.balanceAfter ?? "-"}日` },
-              { key: "note", header: "備考", render: (row) => row.note ?? "-" },
-            ]}
-          />
-        </section>
-      </div>
 
       <div className="mobile-only stack-section section-enter delay-3">
         <MobileRecordList

@@ -1,0 +1,288 @@
+@media (max-width: 1260px) {
+  .login-shell,
+  .admin-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-shell-with-sidebar {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+
+  .admin-content-column {
+    grid-column: 2;
+  }
+
+  .admin-sidebar {
+    height: calc(100vh - 32px);
+    padding: 10px;
+  }
+
+  .sidebar-brand {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .sidebar-brand div,
+  .nav-label,
+  .nav-group-toggle {
+    display: none;
+  }
+
+  .section-nav {
+    align-items: center;
+  }
+
+  .nav-item {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    padding: 7px;
+  }
+
+  .nav-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+  }
+
+  .login-shell.is-simple {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
+    height: auto;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1080px) {
+  .split,
+  .payroll-layout,
+  .detail-grid,
+  .summary-strip,
+  .form-grid-3,
+  .payroll-detail-card .split {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .login-shell,
+  .admin-shell {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .login-card,
+  .login-poster,
+  .login-rail,
+  .sidebar,
+  .admin-sidebar,
+  .app-topbar,
+  .workspace-hero,
+  .panel {
+    padding: 18px;
+    border-radius: 22px;
+  }
+
+  .login-points,
+  .metrics,
+  .portal-home-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .login-rail {
+    min-height: auto;
+  }
+
+  .filter-grid,
+  .filter-grid-compact,
+  .form-grid,
+  .payroll-layout,
+  .payroll-detail-card .split {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-card {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .metric-card:last-child {
+    border-bottom: 0;
+  }
+
+  .workspace-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-shell-with-sidebar {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .admin-content-column {
+    display: contents;
+  }
+
+  .admin-shell-with-sidebar {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-shell-with-sidebar .app-topbar,
+  .admin-shell-with-sidebar .main-column,
+  .admin-sidebar {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .admin-shell-with-sidebar .app-topbar {
+    order: 1;
+  }
+
+  .admin-sidebar {
+    position: static;
+    order: 2;
+    height: auto;
+    max-height: 260px;
+  }
+
+  .admin-shell-with-sidebar .main-column {
+    order: 3;
+  }
+
+  .sidebar-brand {
+    display: none;
+  }
+
+  .section-nav {
+    flex-direction: row;
+    align-items: stretch;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scroll-snap-type: x proximity;
+  }
+
+  .nav-group {
+    min-width: 168px;
+    scroll-snap-align: start;
+  }
+
+  .nav-group-toggle {
+    display: inline-flex;
+  }
+
+  .nav-group-toggle span:first-child,
+  .nav-group-mark,
+  .nav-label {
+    display: inline;
+  }
+
+  .nav-group-items {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .nav-item {
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    justify-items: stretch;
+    min-height: 42px;
+  }
+
+  .page-subnav {
+    width: 100%;
+  }
+
+  .app-topbar {
+    position: static;
+    grid-template-columns: 1fr;
+  }
+
+  .app-topbar-actions {
+    align-items: stretch;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .portal-mode-tabs {
+    width: 100%;
+  }
+
+  .portal-mode-tab {
+    flex: 1 0 auto;
+  }
+
+  .workspace-actions {
+    align-items: stretch;
+  }
+
+  .panel-toolbar {
+    align-items: stretch;
+  }
+
+  .desktop-only {
+    display: none;
+  }
+
+  .mobile-only {
+    display: flex;
+  }
+
+  .portal-home-card {
+    min-height: 112px;
+  }
+
+  .portal-fab {
+    display: none;
+  }
+
+  .portal-bottom-nav {
+    display: flex;
+  }
+
+  .main-column {
+    padding-bottom: 86px;
+  }
+
+  .segmented-control {
+    width: 100%;
+  }
+
+  .segmented-item {
+    min-width: 0;
+  }
+
+  table {
+    min-width: 480px;
+  }
+}
+
+@media (max-width: 420px) {
+  .mobile-record-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mobile-record-header {
+    flex-direction: column;
+  }
+
+  .mobile-record-meta {
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

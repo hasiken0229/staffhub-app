@@ -1,8 +1,7 @@
 "use client";
 
 import { type ReactNode, useState, useTransition } from "react";
-import { AdminPortalShell } from "@/components/admin-portal-shell";
-import { LoginSection } from "@/components/login-section";
+import { AdminDashboardView } from "@/components/admin-dashboard-view";
 import { useAdminDashboardDerivedData } from "@/hooks/use-admin-dashboard-derived-data";
 import { useAdminDashboardEffects } from "@/hooks/use-admin-dashboard-effects";
 import { useAdminUtilityActions } from "@/hooks/use-admin-utility-actions";
@@ -13,6 +12,7 @@ import { useAuditFilterState } from "@/hooks/use-audit-filter-state";
 import { useAuthState } from "@/hooks/use-auth-state";
 import { useCardAssignmentState } from "@/hooks/use-card-assignment-state";
 import { useDashboardSessionActions } from "@/hooks/use-dashboard-session-actions";
+import { useEmployeePortalActions } from "@/hooks/use-employee-portal-actions";
 import { useLeaveActions } from "@/hooks/use-leave-actions";
 import { useLeaveAdminState } from "@/hooks/use-leave-admin-state";
 import { useNoticeFormState } from "@/hooks/use-notice-form-state";
@@ -33,23 +33,11 @@ import { NoticesSection } from "@/components/dashboard-sections/notices-section"
 import { PayrollSection } from "@/components/dashboard-sections/payroll-section";
 import { ReportsSection } from "@/components/dashboard-sections/reports-section";
 import { SystemSection } from "@/components/dashboard-sections/system-section";
-import {
-  createEmployeeAttendanceDailyEditRequest,
-  createEmployeeLeaveRequest,
-  loadEmployeeLeaveLedger,
-  loadEmployeeAttendanceDailyEditRequests,
-  loadEmployeeLeaveRequests,
-  loadEmployeePortalHome,
-  updateEmployee,
-} from "@/lib/api";
 import type {
   AuthAudience,
-  AttendanceDailyEditRequestCreatePayload,
   CurrentUser,
   DashboardData,
   EmployeePortalData,
-  EmployeeUpdatePayload,
-  LeaveRequestCreatePayload,
 } from "@/types";
 
 export function AdminDashboard() {
@@ -479,40 +467,15 @@ export function AdminDashboard() {
     }));
   }
 
-  async function syncEmployeeLeavePortalSummary() {
-    const [home, leaveRequests, attendanceDailyEditRequests, leaveLedger] = await Promise.all([
-      loadEmployeePortalHome(),
-      loadEmployeeLeaveRequests(),
-      loadEmployeeAttendanceDailyEditRequests(),
-      loadEmployeeLeaveLedger(),
-    ]);
-
-    setEmployeePortal((current) => ({
-      ...current,
-      home,
-      leaveRequests,
-      attendanceDailyEditRequests,
-      leaveLedger,
-    }));
-  }
-
-  async function handleEmployeeLeaveRequestCreate(payload: LeaveRequestCreatePayload) {
-    setErrorMessage("");
-    await createEmployeeLeaveRequest(payload);
-    await syncEmployeeLeavePortalSummary();
-  }
-
-  async function handleEmployeeAttendanceDailyEditRequestCreate(payload: AttendanceDailyEditRequestCreatePayload) {
-    setErrorMessage("");
-    await createEmployeeAttendanceDailyEditRequest(payload);
-    await syncEmployeeLeavePortalSummary();
-  }
-
-  async function handleEmployeeUpdate(id: number, payload: EmployeeUpdatePayload) {
-    setErrorMessage("");
-    await updateEmployee(id, payload);
-    await refresh();
-  }
+  const {
+    handleEmployeeAttendanceDailyEditRequestCreate,
+    handleEmployeeLeaveRequestCreate,
+    handleEmployeeUpdate,
+  } = useEmployeePortalActions({
+    setEmployeePortal,
+    setErrorMessage,
+    onRefresh: refresh,
+  });
 
   useAdminDashboardEffects({
     adminUrl,
@@ -743,42 +706,38 @@ export function AdminDashboard() {
     leave: dashboard.reportsHub.pendingLeaveCount || dashboard.workProcedures.filter((row) => row.status === "PENDING").length,
   };
 
-  if (!isAuthenticated) {
-    return (
-      <LoginSection
-        loginId={loginId}
-        password={password}
-        authMessage={authMessage}
-        onLoginIdChange={setLoginId}
-        onPasswordChange={setPassword}
-        onLogin={handleLogin}
-      />
-    );
-  }
-
-  if (currentAudience === "EMPLOYEE") {
-    return <EmployeePortalSection {...employeePortalSectionProps} />;
-  }
-
   return (
-    <AdminPortalShell
+    <AdminDashboardView
+      isAuthenticated={isAuthenticated}
+      loginProps={{
+        loginId,
+        password,
+        authMessage,
+        onLoginIdChange: setLoginId,
+        onPasswordChange: setPassword,
+        onLogin: handleLogin,
+      }}
+      currentAudience={currentAudience}
+      employeePortalSectionProps={employeePortalSectionProps}
+      adminShellProps={{
+        activeSection,
+        currentSectionTitle,
+        currentUserName: currentUser?.name,
+        currentMode: currentAudience || "ADMIN",
+        canUseEmployeePortal,
+        subNavItems: currentSubNavItems,
+        activeSubNavId: currentSubNavId,
+        isPending,
+        errorMessage,
+        navBadges,
+        onModeChange: handlePortalModeChange,
+        onActiveSectionChange: handleAdminSectionChange,
+        onSubNavChange: handleSubNavChange,
+        onRefresh: handleRefresh,
+        onLogout: handleLogout,
+      }}
+      adminSections={adminSections}
       activeSection={activeSection}
-      currentSectionTitle={currentSectionTitle}
-      currentUserName={currentUser?.name}
-      currentMode={currentAudience || "ADMIN"}
-      canUseEmployeePortal={canUseEmployeePortal}
-      subNavItems={currentSubNavItems}
-      activeSubNavId={currentSubNavId}
-      isPending={isPending}
-      errorMessage={errorMessage}
-      navBadges={navBadges}
-      onModeChange={handlePortalModeChange}
-      onActiveSectionChange={handleAdminSectionChange}
-      onSubNavChange={handleSubNavChange}
-      onRefresh={handleRefresh}
-      onLogout={handleLogout}
-    >
-      {adminSections[activeSection]}
-    </AdminPortalShell>
+    />
   );
 }

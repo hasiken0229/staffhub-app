@@ -53,6 +53,9 @@ function toEditPayload(employee: Employee): EmployeeUpdatePayload {
 
 export function EmployeesSection(props: EmployeesSectionProps) {
   const activePanel = props.data.activePanel || "employees-list";
+  const activeEmployees = props.data.employees.filter((employee) => employee.status === "ACTIVE").length;
+  const retiredEmployees = props.data.employees.filter((employee) => employee.status === "RETIRED").length;
+  const chatLinkedEmployees = props.data.employees.filter((employee) => Boolean(employee.googleChatUserId)).length;
   const [editingEmployeeId, setEditingEmployeeId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<EmployeeUpdatePayload | null>(null);
   const [editMessage, setEditMessage] = useState("");
@@ -109,6 +112,20 @@ export function EmployeesSection(props: EmployeesSectionProps) {
             <h3>職員一覧</h3>
           </div>
           <span className="panel-meta">{props.data.employees.length} 件</span>
+        </div>
+        <div className="summary-strip employee-summary-strip">
+          <div>
+            <span className="detail-label">在職</span>
+            <strong>{activeEmployees} 件</strong>
+          </div>
+          <div>
+            <span className="detail-label">退職</span>
+            <strong>{retiredEmployees} 件</strong>
+          </div>
+          <div>
+            <span className="detail-label">Chat連携</span>
+            <strong>{chatLinkedEmployees} 件</strong>
+          </div>
         </div>
         {editMessage && editingEmployeeId === null ? <p className="feedback">{editMessage}</p> : null}
         <div className="table-wrap inline-edit-table employee-table-wrap">
@@ -272,47 +289,49 @@ export function EmployeesSection(props: EmployeesSectionProps) {
       <section id="employees-import" className="panel action-panel anchor-panel">
         <div className="panel-header">
           <div>
+            <p className="panel-kicker">IMPORT</p>
             <h3>職員 CSV 取込</h3>
           </div>
+          <button type="button" className="secondary table-action" onClick={() => void props.actions.onTemplateDownload("employees")}>
+            雛形 CSV
+          </button>
         </div>
         <form className="stack-form" action={async (formData) => void props.actions.onEmployeeImport(formData)}>
-          <div className="button-row">
-            <button type="button" className="secondary" onClick={() => void props.actions.onTemplateDownload("employees")}>
-              雛形 CSV をダウンロード
-            </button>
+          <div className="form-grid">
+            <label>
+              初期所属
+              <input name="defaultDepartmentName" defaultValue="未設定" />
+            </label>
+            <label>
+              雇用区分
+              <select name="defaultEmploymentType" defaultValue="FULL_TIME">
+                {employmentTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              状態
+              <select name="defaultStatus" defaultValue="ACTIVE">
+                {statusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              入職日
+              <input name="defaultJoinedOn" type="date" defaultValue="2024-04-01" />
+            </label>
           </div>
-          <label>
-            初期所属
-            <input name="defaultDepartmentName" defaultValue="未設定" />
-          </label>
-          <label>
-            雇用区分
-            <select name="defaultEmploymentType" defaultValue="FULL_TIME">
-              {employmentTypeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            状態
-            <select name="defaultStatus" defaultValue="ACTIVE">
-              {statusOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            入職日
-            <input name="defaultJoinedOn" type="date" defaultValue="2024-04-01" />
-          </label>
           <label>
             CSVファイル
             <input name="file" type="file" accept=".csv,text/csv" />
           </label>
+          <p className="compact-empty">未入力の所属・雇用区分・状態・入職日は、この初期値で補完されます。</p>
           <button type="submit">職員マスタへ取り込む</button>
         </form>
         {props.form.employeeImportResult ? <p className="feedback">{props.form.employeeImportResult}</p> : null}
