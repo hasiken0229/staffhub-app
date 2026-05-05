@@ -18,7 +18,6 @@ export function DataTable<T>({ id, title, rows, columns, emptyMessage = "デー�
     <section id={id} className="panel anchor-panel">
       <div className="panel-header">
         <div>
-          <p className="panel-kicker">一覧</p>
           <h3>{title}</h3>
         </div>
         <span className="panel-meta">{rows.length} 件</span>
@@ -35,7 +34,9 @@ export function DataTable<T>({ id, title, rows, columns, emptyMessage = "デー�
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={columns.length}>{emptyMessage}</td>
+                <td colSpan={columns.length} className="table-empty-cell">
+                  {emptyMessage}
+                </td>
               </tr>
             ) : (
               rows.map((row, index) => (

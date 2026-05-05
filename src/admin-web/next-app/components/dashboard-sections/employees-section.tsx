@@ -43,6 +43,7 @@ function toEditPayload(employee: Employee): EmployeeUpdatePayload {
     name: employee.name,
     kana: employee.kana ?? "",
     departmentName: employee.departmentName ?? "",
+    locationName: employee.locationName ?? "",
     employmentType: employee.employmentType,
     status: employee.status,
     joinedOn: toDateInputValue(employee.joinedOn),
@@ -89,6 +90,7 @@ export function EmployeesSection(props: EmployeesSectionProps) {
         ...editDraft,
         kana: editDraft.kana?.trim() || null,
         departmentName: editDraft.departmentName?.trim() || null,
+        locationName: editDraft.locationName?.trim() || null,
         retiredOn: editDraft.retiredOn || null,
         googleChatUserId: editDraft.googleChatUserId?.trim() || null,
       });
@@ -108,7 +110,6 @@ export function EmployeesSection(props: EmployeesSectionProps) {
       <section id="employees-list" className="panel anchor-panel">
         <div className="panel-header">
           <div>
-            <p className="panel-kicker">一覧</p>
             <h3>職員一覧</h3>
           </div>
           <span className="panel-meta">{props.data.employees.length} 件</span>
@@ -134,20 +135,14 @@ export function EmployeesSection(props: EmployeesSectionProps) {
               <tr>
                 <th>職員番号</th>
                 <th>氏名</th>
-                <th>ふりがな</th>
-                <th>所属</th>
                 <th>雇用区分</th>
                 <th>状態</th>
-                <th>入職日</th>
-                <th>退職日</th>
-                <th>Google Chat ID</th>
-                <th>操作</th>
               </tr>
             </thead>
             <tbody>
               {props.data.employees.length === 0 ? (
                 <tr>
-                  <td colSpan={10}>データがありません</td>
+                  <td colSpan={4} className="table-empty-cell">データがありません</td>
                 </tr>
               ) : (
                 props.data.employees.map((employee) => {
@@ -170,24 +165,9 @@ export function EmployeesSection(props: EmployeesSectionProps) {
                           {isEditing ? (
                             <input value={editDraft.name} onChange={(event) => updateDraft("name", event.currentTarget.value)} />
                           ) : (
-                            employee.name
-                          )}
-                        </td>
-                        <td>
-                          {isEditing ? (
-                            <input value={editDraft.kana ?? ""} onChange={(event) => updateDraft("kana", event.currentTarget.value)} />
-                          ) : (
-                            employee.kana ?? "-"
-                          )}
-                        </td>
-                        <td>
-                          {isEditing ? (
-                            <input
-                              value={editDraft.departmentName ?? ""}
-                              onChange={(event) => updateDraft("departmentName", event.currentTarget.value)}
-                            />
-                          ) : (
-                            employee.departmentName ?? "-"
+                            <button type="button" className="text-link-button" onClick={() => startEditing(employee)}>
+                              {employee.name}
+                            </button>
                           )}
                         </td>
                         <td>
@@ -219,60 +199,65 @@ export function EmployeesSection(props: EmployeesSectionProps) {
                             props.formatters.formatEmployeeStatus(employee.status)
                           )}
                         </td>
-                        <td>
-                          {isEditing ? (
-                            <input
-                              type="date"
-                              value={editDraft.joinedOn}
-                              onChange={(event) => updateDraft("joinedOn", event.currentTarget.value)}
-                            />
-                          ) : (
-                            employee.joinedOn ?? "-"
-                          )}
-                        </td>
-                        <td>
-                          {isEditing ? (
-                            <input
-                              type="date"
-                              value={editDraft.retiredOn ?? ""}
-                              onChange={(event) => updateDraft("retiredOn", event.currentTarget.value)}
-                            />
-                          ) : (
-                            employee.retiredOn ?? "-"
-                          )}
-                        </td>
-                        <td>
-                          {isEditing ? (
-                            <input
-                              value={editDraft.googleChatUserId ?? ""}
-                              onChange={(event) => updateDraft("googleChatUserId", event.currentTarget.value)}
-                              placeholder="users/..."
-                            />
-                          ) : (
-                            employee.googleChatUserId ?? "-"
-                          )}
-                        </td>
-                        <td>
-                          {isEditing ? (
-                            <div className="button-row inline-actions">
-                              <button type="button" onClick={() => void saveEditing(employee.id)} disabled={isSaving}>
-                                {isSaving ? "保存中..." : "保存"}
-                              </button>
-                              <button type="button" className="secondary" onClick={cancelEditing} disabled={isSaving}>
-                                キャンセル
-                              </button>
-                            </div>
-                          ) : (
-                            <button type="button" className="secondary" onClick={() => startEditing(employee)}>
-                              編集
-                            </button>
-                          )}
-                        </td>
                       </tr>
-                      {isEditing && editMessage ? (
-                        <tr className="inline-edit-feedback-row">
-                          <td colSpan={10}>
-                            <p className="feedback">{editMessage}</p>
+                      {isEditing ? (
+                        <tr className="inline-edit-detail-row">
+                          <td colSpan={4}>
+                            <div className="inline-edit-detail-card">
+                              <div className="form-grid">
+                                <label>
+                                  ふりがな
+                                  <input value={editDraft.kana ?? ""} onChange={(event) => updateDraft("kana", event.currentTarget.value)} />
+                                </label>
+                                <label>
+                                  所属
+                                  <input
+                                    value={editDraft.departmentName ?? ""}
+                                    onChange={(event) => updateDraft("departmentName", event.currentTarget.value)}
+                                  />
+                                </label>
+                                <label>
+                                  勤務場所
+                                  <input
+                                    value={editDraft.locationName ?? ""}
+                                    onChange={(event) => updateDraft("locationName", event.currentTarget.value)}
+                                  />
+                                </label>
+                                <label>
+                                  入職日
+                                  <input
+                                    type="date"
+                                    value={editDraft.joinedOn}
+                                    onChange={(event) => updateDraft("joinedOn", event.currentTarget.value)}
+                                  />
+                                </label>
+                                <label>
+                                  退職日
+                                  <input
+                                    type="date"
+                                    value={editDraft.retiredOn ?? ""}
+                                    onChange={(event) => updateDraft("retiredOn", event.currentTarget.value)}
+                                  />
+                                </label>
+                                <label>
+                                  Google Chat ID
+                                  <input
+                                    value={editDraft.googleChatUserId ?? ""}
+                                    onChange={(event) => updateDraft("googleChatUserId", event.currentTarget.value)}
+                                    placeholder="users/..."
+                                  />
+                                </label>
+                              </div>
+                              <div className="button-row inline-actions">
+                                <button type="button" onClick={() => void saveEditing(employee.id)} disabled={isSaving}>
+                                  {isSaving ? "保存中..." : "保存"}
+                                </button>
+                                <button type="button" className="secondary" onClick={cancelEditing} disabled={isSaving}>
+                                  キャンセル
+                                </button>
+                              </div>
+                              {editMessage ? <p className="feedback">{editMessage}</p> : null}
+                            </div>
                           </td>
                         </tr>
                       ) : null}
@@ -289,7 +274,6 @@ export function EmployeesSection(props: EmployeesSectionProps) {
       <section id="employees-import" className="panel action-panel anchor-panel">
         <div className="panel-header">
           <div>
-            <p className="panel-kicker">IMPORT</p>
             <h3>職員 CSV 取込</h3>
           </div>
           <button type="button" className="secondary table-action" onClick={() => void props.actions.onTemplateDownload("employees")}>

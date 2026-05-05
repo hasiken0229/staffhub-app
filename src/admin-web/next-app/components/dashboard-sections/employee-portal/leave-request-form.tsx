@@ -57,7 +57,7 @@ export function LeaveRequestForm(props: LeaveRequestFormProps) {
     <section id="leave-request-form" className="panel action-panel section-enter delay-2">
       <div className="panel-header">
         <div>
-          <p className="panel-kicker">Leave Request</p>
+          <p className="panel-kicker">休暇申請</p>
           <h3>休暇を申請する</h3>
         </div>
         <span className="panel-meta">

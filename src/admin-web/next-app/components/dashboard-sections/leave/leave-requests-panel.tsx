@@ -38,7 +38,7 @@ export function LeaveRequestsPanel({
       <section className="panel action-panel anchor-panel">
         <div className="panel-header">
           <div>
-            <p className="panel-kicker">BULK ACTION</p>
+            <p className="panel-kicker">一括操作</p>
             <h3>届出の一括処理</h3>
           </div>
           <span className="panel-meta">選択中 {selectedPendingIds.length} 件</span>

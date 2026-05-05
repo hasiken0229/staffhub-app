@@ -61,10 +61,6 @@
   scroll-margin-top: 156px;
 }
 
-.inline-edit-table table {
-  min-width: 1280px;
-}
-
 .employee-section {
   width: 100%;
 }
@@ -80,43 +76,19 @@
 
 .employee-table-wrap th:nth-child(1),
 .employee-table-wrap td:nth-child(1) {
-  width: 82px;
+  width: 110px;
 }
 
 .employee-table-wrap th:nth-child(2),
 .employee-table-wrap td:nth-child(2) {
-  width: 128px;
+  width: auto;
 }
 
 .employee-table-wrap th:nth-child(3),
 .employee-table-wrap td:nth-child(3),
 .employee-table-wrap th:nth-child(4),
 .employee-table-wrap td:nth-child(4) {
-  width: 96px;
-}
-
-.employee-table-wrap th:nth-child(5),
-.employee-table-wrap td:nth-child(5),
-.employee-table-wrap th:nth-child(6),
-.employee-table-wrap td:nth-child(6) {
-  width: 86px;
-}
-
-.employee-table-wrap th:nth-child(7),
-.employee-table-wrap td:nth-child(7),
-.employee-table-wrap th:nth-child(8),
-.employee-table-wrap td:nth-child(8) {
-  width: 102px;
-}
-
-.employee-table-wrap th:nth-child(9),
-.employee-table-wrap td:nth-child(9) {
   width: 120px;
-}
-
-.employee-table-wrap th:nth-child(10),
-.employee-table-wrap td:nth-child(10) {
-  width: 88px;
 }
 
 .employee-table-wrap th,
@@ -153,6 +125,39 @@
   background: rgba(111, 143, 229, 0.08);
 }
 
+.text-link-button {
+  justify-content: flex-start;
+  min-height: auto;
+  padding: 0;
+  color: var(--primary-start);
+  background: transparent;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.text-link-button:hover {
+  filter: none;
+}
+
+.inline-edit-detail-row td {
+  padding: 0 0 14px;
+  border-bottom-color: transparent;
+}
+
+.inline-edit-detail-card {
+  display: grid;
+  gap: 12px;
+  margin: 0 8px 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: rgba(111, 143, 229, 0.06);
+}
+
 .inline-actions {
   min-width: 150px;
 }
@@ -169,7 +174,7 @@
 
 table {
   width: 100%;
-  min-width: 560px;
+  min-width: 100%;
   border-collapse: collapse;
 }
 
@@ -196,6 +201,13 @@ tbody tr {
 
 tbody tr:hover {
   background: var(--accent-soft);
+}
+
+.table-empty-cell {
+  padding: 18px 14px;
+  color: var(--muted-strong);
+  background: rgba(111, 143, 229, 0.06);
+  font-weight: 700;
 }
 
 .table-action {

@@ -265,6 +265,7 @@
 }
 
 .panel-kicker {
+  display: none;
   margin: 0 0 4px;
   color: var(--muted);
   font-size: 11px;
@@ -327,6 +328,11 @@
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.95fr);
   gap: 16px;
+}
+
+.split > .anchor-panel:only-child,
+.split > .panel:only-child {
+  grid-column: 1 / -1;
 }
 
 .stack-section,

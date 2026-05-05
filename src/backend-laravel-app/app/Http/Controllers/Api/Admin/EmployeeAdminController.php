@@ -127,8 +127,8 @@ final class EmployeeAdminController extends Controller
     public function downloadTemplateCsv()
     {
         $rows = [
-            ['社員番号', '姓', '名', 'Google Chat ID'],
-            ['101', '橋本', '良孝', 'users/1234567890'],
+            ['社員番号', '姓', '名', 'ふりがな', '所属', '勤務場所', '雇用区分', '状態', '入職日', '退職日', 'Google Chat ID'],
+            ['101', '橋本', '良孝', 'はしもと よしたか', '保育', '本園', 'FULL_TIME', 'ACTIVE', '2024-04-01', '', 'users/1234567890'],
         ];
 
         $csv = "\xEF\xBB\xBF";

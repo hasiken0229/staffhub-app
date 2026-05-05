@@ -46,46 +46,48 @@
   backdrop-filter: blur(16px);
 }
 
-.sidebar-brand {
+.sidebar-account-panel {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
   gap: 10px;
-  align-items: center;
-  padding-bottom: 12px;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--line);
 }
 
-.sidebar-logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
-  color: #ffffff;
-  border-radius: 14px;
-  background: linear-gradient(135deg, var(--primary-start) 0%, var(--primary-end) 100%);
-  font-size: 16px;
-  font-weight: 900;
-}
-
-.sidebar-brand strong,
-.sidebar-brand span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sidebar-brand strong {
-  font-size: 14px;
+.sidebar-account-heading h1 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 15px;
   line-height: 1.35;
+  font-weight: 800;
 }
 
-.sidebar-brand span {
+.sidebar-account-heading p {
+  margin: 4px 0 0;
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
   line-height: 1.5;
+}
+
+.sidebar-account-heading strong {
+  color: var(--ink);
+}
+
+.sidebar-account-panel .portal-mode-tabs {
+  width: 100%;
+}
+
+.sidebar-account-panel .portal-mode-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+.sidebar-logout-button {
+  width: 100%;
+  min-height: 34px;
+  padding: 8px 12px;
 }
 
 .sidebar {
@@ -120,14 +122,11 @@
 }
 
 .app-topbar {
-  position: sticky;
-  top: 12px;
-  z-index: 10;
   display: grid;
-  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1fr);
+  grid-template-columns: minmax(320px, 1fr) auto;
   gap: 12px;
   align-items: center;
-  padding: 14px 16px;
+  padding: 12px 16px;
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(16px);
 }
@@ -136,12 +135,33 @@
   min-width: 0;
 }
 
+.app-topbar-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  min-width: 0;
+}
+
+.app-topbar-title-row h1,
+.app-topbar-title-row p {
+  flex: 0 1 auto;
+}
+
+.app-topbar-title-row p {
+  margin: 0;
+}
+
 .app-topbar-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
   min-width: 0;
+}
+
+.app-topbar-actions > button {
+  min-height: 32px;
+  padding: 7px 14px;
 }
 
 .portal-mode-tabs {
@@ -158,8 +178,8 @@
 
 .portal-mode-tab {
   flex: 0 0 auto;
-  min-height: 34px;
-  padding: 8px 14px;
+  min-height: 32px;
+  padding: 7px 14px;
   color: var(--muted-strong);
   border: 1px solid transparent;
   border-radius: 999px;

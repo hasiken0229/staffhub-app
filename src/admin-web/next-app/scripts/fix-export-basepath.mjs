@@ -106,71 +106,122 @@ if (fs.existsSync(outDir)) {
     <style>
       :root {
         color-scheme: light;
-        --bg: #f5efe4;
-        --panel: rgba(255,255,255,.92);
-        --line: rgba(29,48,43,.14);
-        --text: #18211d;
-        --muted: #66726c;
-        --brand: #1f3a35;
-        --accent: #c77939;
+        --canvas: #eef4ff;
+        --surface: rgba(255, 255, 255, 0.84);
+        --surface-strong: #ffffff;
+        --ink: #27344d;
+        --muted: #7083a0;
+        --line: rgba(108, 140, 224, 0.16);
+        --rail: #6c8ce0;
+        --rail-soft: #92abf6;
+        --primary-start: #6f8fe5;
+        --primary-end: #94abf7;
+        --shadow: 0 24px 60px rgba(118, 139, 191, 0.18);
+        --shadow-soft: 0 16px 36px rgba(118, 139, 191, 0.1);
+        --radius-xl: 26px;
+        --radius-md: 12px;
       }
       * { box-sizing: border-box; }
       body {
         margin: 0;
         min-height: 100vh;
-        font-family: "BIZ UDPGothic","BIZ UDゴシック","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo",sans-serif;
-        color: var(--text);
+        font-family: "BIZ UDPGothic", "BIZ UD Gothic", "Yu Gothic UI", "Hiragino Sans", "Meiryo", sans-serif;
+        color: var(--ink);
         background:
-          radial-gradient(circle at top right, rgba(199,121,57,.18), transparent 28%),
-          linear-gradient(180deg, #faf6ef 0%, var(--bg) 100%);
+          radial-gradient(circle at top left, rgba(255, 255, 255, 0.86), transparent 26%),
+          radial-gradient(circle at 84% 12%, rgba(197, 161, 232, 0.18), transparent 18%),
+          linear-gradient(180deg, #f4f8ff 0%, #e8efff 52%, #eef1ff 100%);
+      }
+      .login-shell {
         display: grid;
-        place-items: center;
-        padding: 24px;
+        grid-template-columns: minmax(320px, 440px);
+        min-height: 100vh;
+        align-content: center;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 16px;
       }
       .login-card {
-        width: min(460px, 100%);
-        background: var(--panel);
         border: 1px solid var(--line);
-        border-radius: 28px;
-        box-shadow: 0 30px 80px rgba(31,58,53,.12);
-        padding: 36px 32px;
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow-soft);
       }
-      h1 {
-        margin: 0 0 10px;
-        font-size: 28px;
-        line-height: 1.3;
-      }
-      p {
-        margin: 0 0 24px;
+      .panel-kicker {
+        margin: 0;
         color: var(--muted);
-        font-size: 15px;
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+      }
+      .login-card h2 {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.5;
+        font-weight: 700;
+      }
+      .login-card {
+        align-self: center;
+        width: 100%;
+        padding: 24px;
+        background: var(--surface);
+        backdrop-filter: blur(16px);
+      }
+      .login-card-header {
+        margin-bottom: 18px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .login-note {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 13px;
         line-height: 1.8;
+      }
+      .login-form {
+        display: grid;
+        gap: 14px;
       }
       label {
         display: block;
-        margin-bottom: 14px;
-        font-size: 14px;
+        color: var(--ink);
+        font-size: 12px;
         font-weight: 700;
+        letter-spacing: 0.03em;
       }
       input {
         width: 100%;
-        margin-top: 8px;
+        min-height: 42px;
+        margin-top: 6px;
+        padding: 10px 12px;
         border: 1px solid var(--line);
-        border-radius: 16px;
-        padding: 14px 16px;
         font: inherit;
-        background: #fff;
+        border-radius: var(--radius-md);
+        color: var(--ink);
+        background: var(--surface-strong);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+      input:focus {
+        outline: none;
+        border-color: rgba(111, 143, 229, 0.48);
+        box-shadow: 0 0 0 4px rgba(111, 143, 229, 0.12);
       }
       button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         width: 100%;
+        min-height: 46px;
+        margin-top: 4px;
+        padding: 10px 14px;
         border: 0;
-        border-radius: 999px;
-        padding: 14px 18px;
-        margin-top: 10px;
+        border-radius: var(--radius-md);
         font: inherit;
+        font-size: 13px;
         font-weight: 700;
         color: #fff;
-        background: linear-gradient(135deg, var(--brand), #28463f);
+        background: linear-gradient(135deg, var(--primary-start) 0%, var(--primary-end) 100%);
         cursor: pointer;
       }
       button:disabled {
@@ -180,16 +231,33 @@ if (fs.existsSync(outDir)) {
       .error {
         margin-top: 14px;
         min-height: 24px;
-        color: #a74f1d;
+        color: #d87790;
         font-size: 14px;
+      }
+      @media (max-width: 860px) {
+        .login-shell {
+          grid-template-columns: minmax(0, 520px);
+          align-content: center;
+        }
+      }
+      @media (max-width: 640px) {
+        .login-shell {
+          padding: 12px;
+        }
+        .login-card {
+          border-radius: 18px;
+        }
       }
     </style>
   </head>
   <body>
-    <main class="login-card">
-      <h1>勤怠管理システム</h1>
-      <p>ログインIDとパスワードを入力してください。</p>
-      <form id="login-form">
+    <main class="login-shell">
+      <section class="login-card">
+        <div class="login-card-header">
+          <h2>ログイン情報</h2>
+          <p class="login-note">ログインIDとパスワードを入力してください。</p>
+        </div>
+      <form id="login-form" class="login-form">
         <label>
           ログインID
           <input id="login-id" autocomplete="username" />
@@ -201,6 +269,7 @@ if (fs.existsSync(outDir)) {
         <button id="submit-button" type="submit">ログインする</button>
         <div id="error-message" class="error"></div>
       </form>
+      </section>
     </main>
     <script>
       const SESSION_TOKEN_KEY = "${sessionTokenKey}";

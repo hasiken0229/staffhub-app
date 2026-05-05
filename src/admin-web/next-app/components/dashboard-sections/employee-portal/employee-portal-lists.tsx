@@ -19,7 +19,7 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
         <section className="portal-list-group section-enter delay-2">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">REQUESTS</p>
+              <p className="panel-kicker">申請一覧</p>
               <h3>申請状況</h3>
             </div>
             <span className="panel-meta">
@@ -71,7 +71,7 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
         <section className="portal-list-group section-enter delay-3">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">PAYROLL</p>
+              <p className="panel-kicker">明細・通知</p>
               <h3>明細・通知</h3>
             </div>
             <span className="panel-meta">
@@ -134,7 +134,7 @@ export function EmployeePortalLists(props: EmployeePortalListsProps) {
         <section className="portal-list-group section-enter delay-4">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">LEDGER</p>
+              <p className="panel-kicker">有給台帳</p>
               <h3>有給台帳</h3>
             </div>
             <span className="panel-meta">{props.data.employeePortal.leaveLedger.length} 件</span>

@@ -1,4 +1,4 @@
-@media (max-width: 1260px) {
+@media (max-width: 1080px) {
   .login-shell,
   .admin-shell {
     grid-template-columns: 1fr;
@@ -17,12 +17,14 @@
     padding: 10px;
   }
 
-  .sidebar-brand {
+  .sidebar-account-panel {
     grid-template-columns: 1fr;
     justify-items: center;
   }
 
-  .sidebar-brand div,
+  .sidebar-account-heading,
+  .sidebar-account-panel .portal-mode-tabs,
+  .sidebar-logout-button,
   .nav-label,
   .nav-group-toggle {
     display: none;
@@ -158,7 +160,7 @@
     order: 3;
   }
 
-  .sidebar-brand {
+  .sidebar-account-panel {
     display: none;
   }
 
@@ -203,6 +205,12 @@
   .app-topbar {
     position: static;
     grid-template-columns: 1fr;
+  }
+
+  .app-topbar-title-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
   }
 
   .app-topbar-actions {

@@ -160,6 +160,23 @@ final class EmployeeAdminService
             $existing = DB::table('employees')
                 ->where('employee_code', $employeeCode)
                 ->first();
+            $hasKana = $this->hasHeader($map, 'ふりがな');
+            $hasDepartment = $this->hasHeader($map, '所属');
+            $hasLocation = $this->hasHeader($map, '勤務場所');
+            $hasEmploymentType = $this->hasHeader($map, '雇用区分');
+            $hasStatus = $this->hasHeader($map, '状態');
+            $hasJoinedOn = $this->hasHeader($map, '入職日');
+            $hasRetiredOn = $this->hasHeader($map, '退職日');
+
+            $kana = $hasKana ? ($this->cell($row, $map, 'ふりがな') ?: null) : null;
+            $departmentName = $hasDepartment ? ($this->cell($row, $map, '所属') ?: $defaultDepartmentName) : $defaultDepartmentName;
+            $locationName = $hasLocation ? ($this->cell($row, $map, '勤務場所') ?: null) : null;
+            $employmentType = $hasEmploymentType
+                ? $this->normalizeEmploymentType($this->cell($row, $map, '雇用区分') ?: $defaultEmploymentType)
+                : $defaultEmploymentType;
+            $status = $hasStatus ? $this->normalizeStatus($this->cell($row, $map, '状態') ?: $defaultStatus) : $defaultStatus;
+            $joinedOn = $hasJoinedOn ? ($this->cell($row, $map, '入職日') ?: $defaultJoinedOn) : $defaultJoinedOn;
+            $retiredOn = $hasRetiredOn ? ($this->cell($row, $map, '退職日') ?: null) : null;
             $googleChatUserId = $this->normalizeGoogleChatUserId($this->cell($row, $map, 'Google Chat ID'));
 
             if ($existing === null) {
@@ -168,12 +185,13 @@ final class EmployeeAdminService
                 $id = (int) DB::table('employees')->insertGetId([
                     'employee_code' => $employeeCode,
                     'name' => $name,
-                    'kana' => null,
-                    'department_name' => $defaultDepartmentName,
-                    'employment_type' => $defaultEmploymentType,
-                    'status' => $defaultStatus,
-                    'joined_on' => $defaultJoinedOn,
-                    'retired_on' => null,
+                    'kana' => $kana,
+                    'department_name' => $departmentName,
+                    'location_name' => $locationName,
+                    'employment_type' => $employmentType,
+                    'status' => $status,
+                    'joined_on' => $joinedOn,
+                    'retired_on' => $retiredOn,
                     'google_chat_user_id' => $googleChatUserId,
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -184,13 +202,37 @@ final class EmployeeAdminService
             } else {
                 $this->assertGoogleChatUserIdIsAvailable($googleChatUserId, (int) $existing->id);
 
+                $updates = [
+                    'name' => $name,
+                    'google_chat_user_id' => $googleChatUserId ?? $existing->google_chat_user_id,
+                    'updated_at' => now(),
+                ];
+
+                if ($hasKana) {
+                    $updates['kana'] = $kana;
+                }
+                if ($hasDepartment) {
+                    $updates['department_name'] = $departmentName;
+                }
+                if ($hasLocation) {
+                    $updates['location_name'] = $locationName;
+                }
+                if ($hasEmploymentType) {
+                    $updates['employment_type'] = $employmentType;
+                }
+                if ($hasStatus) {
+                    $updates['status'] = $status;
+                }
+                if ($hasJoinedOn) {
+                    $updates['joined_on'] = $joinedOn;
+                }
+                if ($hasRetiredOn) {
+                    $updates['retired_on'] = $retiredOn;
+                }
+
                 DB::table('employees')
                     ->where('id', $existing->id)
-                    ->update([
-                        'name' => $name,
-                        'google_chat_user_id' => $googleChatUserId ?? $existing->google_chat_user_id,
-                        'updated_at' => now(),
-                    ]);
+                    ->update($updates);
                 $updated++;
                 $employee = DB::table('employees')->where('id', $existing->id)->first();
                 $action = 'UPDATED';
@@ -292,6 +334,32 @@ final class EmployeeAdminService
         }
 
         return $this->normalizeString($row[$index] ?? '');
+    }
+
+    private function hasHeader(array $map, string $header): bool
+    {
+        return isset($map[$header]);
+    }
+
+    private function normalizeEmploymentType(string $value): string
+    {
+        return match ($value) {
+            '常勤' => 'FULL_TIME',
+            '非常勤' => 'PART_TIME',
+            '契約' => 'CONTRACT',
+            '臨時' => 'TEMPORARY',
+            default => $value,
+        };
+    }
+
+    private function normalizeStatus(string $value): string
+    {
+        return match ($value) {
+            '在職' => 'ACTIVE',
+            '停止' => 'INACTIVE',
+            '退職' => 'RETIRED',
+            default => $value,
+        };
     }
 
     private function convertCsvContentToUtf8(string $content): string

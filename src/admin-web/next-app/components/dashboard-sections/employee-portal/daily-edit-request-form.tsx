@@ -35,7 +35,7 @@ export function DailyEditRequestForm(props: DailyEditRequestFormProps) {
     <section className="panel action-panel section-enter delay-2">
       <div className="panel-header">
         <div>
-          <p className="panel-kicker">Daily Edit Request</p>
+          <p className="panel-kicker">勤怠修正申請</p>
           <h3>日次勤怠の修正を申請する</h3>
         </div>
         <span className="panel-meta">{props.requestCount} 件</span>

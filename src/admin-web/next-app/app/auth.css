@@ -159,6 +159,11 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.14);
 }
 
+.login-brand .sidebar-logo {
+  color: var(--rail);
+  background: #ffffff;
+}
+
 .login-brand strong,
 .login-brand span {
   display: block;

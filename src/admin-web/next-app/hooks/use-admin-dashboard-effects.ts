@@ -19,7 +19,10 @@ export function useAdminDashboardEffects(params: UseAdminDashboardEffectsParams)
     const { token, audience } = params.restoreStoredSession();
     if (!token || !audience) {
       if (typeof window !== "undefined" && window.location.pathname.includes("/dakoku/admin")) {
-        window.location.replace(params.loginUrl());
+        const nextUrl = params.loginUrl();
+        if (window.location.href !== nextUrl) {
+          window.location.replace(nextUrl);
+        }
       }
       return;
     }

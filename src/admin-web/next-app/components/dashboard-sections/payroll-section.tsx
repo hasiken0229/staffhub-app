@@ -14,7 +14,9 @@ export function PayrollSection(props: PayrollSectionProps) {
 
   return (
     <section className="stack-section section-enter delay-3">
-      {activePanel === "payroll-type" ? <PayrollTypeSwitchPanel form={props.form} actions={props.actions} /> : null}
+      <PayrollTypeSwitchPanel form={props.form} actions={props.actions} />
+
+      {activePanel === "payroll-type" ? <PayrollStartPanel data={props.data} /> : null}
 
       {isWorkspacePanel ? (
         <section className="payroll-workspace">
@@ -59,6 +61,36 @@ export function PayrollSection(props: PayrollSectionProps) {
           </div>
         </section>
       ) : null}
+    </section>
+  );
+}
+
+function PayrollStartPanel({ data }: Pick<PayrollSectionProps, "data">) {
+  return (
+    <section className="panel action-panel payroll-start-panel">
+      <div className="panel-header">
+        <div>
+          <p className="panel-kicker">次の操作</p>
+          <h3>{data.payrollTypeLabel}の確認・登録</h3>
+        </div>
+      </div>
+      <div className="summary-strip">
+        <div>
+          <span className="detail-label">取込履歴</span>
+          <strong>{data.filteredPayrollHistory.length} 件</strong>
+        </div>
+        <div>
+          <span className="detail-label">取込バッチ</span>
+          <strong>{data.filteredPayrollBatches.length} 件</strong>
+        </div>
+        <div>
+          <span className="detail-label">公開済み明細</span>
+          <strong>{data.filteredPayrollStatements.length} 件</strong>
+        </div>
+      </div>
+      <p className="compact-empty">
+        上部のページ内メニューから「取込履歴」「公開済み」「CSV登録」などを選ぶと、対象の一覧や登録フォームを表示できます。
+      </p>
     </section>
   );
 }

@@ -5,6 +5,10 @@ import { withBasePath } from "@/lib/base-path";
 
 export function PwaRegister() {
   useEffect(() => {
+    if (process.env.NODE_ENV !== "production") {
+      return;
+    }
+
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
       return;
     }

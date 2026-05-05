@@ -40,7 +40,7 @@ export function DashboardOverviewSection(props: DashboardOverviewSectionProps) {
         <section id="dashboard-department-summary" className="panel anchor-panel dashboard-visual-panel">
           <div className="panel-header">
             <div>
-              <p className="panel-kicker">OVERVIEW</p>
+              <p className="panel-kicker">部門別</p>
               <h3>部門別サマリー</h3>
             </div>
             <span className="panel-meta">{departmentSummaries.length} 部門</span>

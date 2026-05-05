@@ -27,36 +27,24 @@ export function AdminPortalShell(props: AdminPortalShellProps) {
   return (
     <main className="admin-shell admin-shell-with-sidebar">
       <aside className="admin-sidebar">
-        <div className="sidebar-brand">
-          <span className="sidebar-logo" aria-hidden="true">勤</span>
-          <div>
-            <strong>StaffHub</strong>
-            <span>管理メニュー</span>
+        <div className="sidebar-account-panel">
+          <div className="sidebar-account-heading">
+            <h1>勤怠管理システム</h1>
+            <p>利用中のアカウント: <strong>{props.currentUserName ?? "管理者"}</strong></p>
           </div>
+          <PortalModeTabs
+            currentMode={props.currentMode}
+            canUseEmployeePortal={props.canUseEmployeePortal}
+            onModeChange={props.onModeChange}
+          />
+          <button type="button" className="secondary sidebar-logout-button" onClick={props.onLogout}>
+            ログアウト
+          </button>
         </div>
         <SectionNav activeSection={props.activeSection} onChange={props.onActiveSectionChange} badges={props.navBadges} />
       </aside>
 
       <div className="admin-content-column">
-        <header className="app-topbar">
-          <div className="brand app-topbar-brand">
-            <div>
-              <h1>勤怠管理システム</h1>
-              <p>利用中のアカウント: <strong>{props.currentUserName ?? "管理者"}</strong></p>
-            </div>
-          </div>
-          <div className="app-topbar-actions">
-            <PortalModeTabs
-              currentMode={props.currentMode}
-              canUseEmployeePortal={props.canUseEmployeePortal}
-              onModeChange={props.onModeChange}
-            />
-            <button type="button" className="secondary" onClick={props.onLogout}>
-              ログアウト
-            </button>
-          </div>
-        </header>
-
         <div className="main-column">
           <header className="workspace-hero section-enter">
             <div>
