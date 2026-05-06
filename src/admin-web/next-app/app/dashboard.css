@@ -149,6 +149,12 @@
   background: linear-gradient(135deg, var(--primary-start) 0%, var(--primary-end) 100%);
 }
 
+.portal-home-card-primary:hover {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.36);
+  background: linear-gradient(135deg, var(--primary-start) 0%, var(--primary-end) 100%);
+}
+
 .portal-card-label,
 .portal-card-detail {
   font-size: 12px;

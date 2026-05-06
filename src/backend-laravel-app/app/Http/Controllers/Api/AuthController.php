@@ -67,4 +67,42 @@ final class AuthController extends Controller
         $this->authService->logout($request->bearerToken());
         return ApiResponse::ok(['success' => true]);
     }
+
+    public function forgotPassword(Request $request)
+    {
+        $payload = $request->validate([
+            'email' => ['required', 'email', 'max:100'],
+        ]);
+
+        $this->authService->requestEmployeePasswordReset($payload['email']);
+
+        return ApiResponse::ok(['success' => true]);
+    }
+
+    public function resetPassword(Request $request)
+    {
+        $payload = $request->validate([
+            'email' => ['required', 'email', 'max:100'],
+            'token' => ['required', 'string', 'max:255'],
+            'password' => ['required', 'string', 'min:8', 'max:255'],
+            'passwordConfirmation' => ['required', 'same:password'],
+        ]);
+
+        try {
+            $this->authService->resetEmployeePassword(
+                $payload['email'],
+                $payload['token'],
+                $payload['password'],
+            );
+
+            return ApiResponse::ok(['success' => true]);
+        } catch (ApiException $exception) {
+            return ApiResponse::error(
+                $exception->errorCode,
+                $exception->getMessage(),
+                $exception->status,
+                $exception->details,
+            );
+        }
+    }
 }

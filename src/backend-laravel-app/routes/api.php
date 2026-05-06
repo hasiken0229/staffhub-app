@@ -22,6 +22,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/auth/login', [AuthController::class, 'login']);
 Route::post('/auth/refresh', [AuthController::class, 'refresh']);
+Route::post('/auth/password/forgot', [AuthController::class, 'forgotPassword']);
+Route::post('/auth/password/reset', [AuthController::class, 'resetPassword']);
 
 Route::prefix('attendance')->group(function () {
     Route::post('/punch', [AttendancePunchController::class, 'store']);

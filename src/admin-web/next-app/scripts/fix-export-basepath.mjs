@@ -228,6 +228,24 @@ if (fs.existsSync(outDir)) {
         opacity: .7;
         cursor: wait;
       }
+      .secondary {
+        color: var(--ink);
+        border: 1px solid var(--line);
+        background: var(--surface-strong);
+      }
+      .link-button {
+        justify-content: flex-start;
+        width: auto;
+        min-height: auto;
+        padding: 0;
+        color: var(--primary-start);
+        background: transparent;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .is-hidden {
+        display: none;
+      }
       .error {
         margin-top: 14px;
         min-height: 24px;
@@ -254,20 +272,48 @@ if (fs.existsSync(outDir)) {
     <main class="login-shell">
       <section class="login-card">
         <div class="login-card-header">
-          <h2>ログイン情報</h2>
-          <p class="login-note">ログインIDとパスワードを入力してください。</p>
+          <h2 id="login-title">ログイン情報</h2>
+          <p id="login-note" class="login-note">メールアドレスとパスワードを入力してください。</p>
         </div>
       <form id="login-form" class="login-form">
         <label>
-          ログインID
-          <input id="login-id" autocomplete="username" />
+          メールアドレス
+          <input id="login-id" type="email" autocomplete="username" />
         </label>
         <label>
           パスワード
           <input id="password" type="password" autocomplete="current-password" />
         </label>
         <button id="submit-button" type="submit">ログインする</button>
+        <button id="forgot-mode-button" class="link-button" type="button">パスワードを忘れた方</button>
         <div id="error-message" class="error"></div>
+      </form>
+      <form id="forgot-form" class="login-form is-hidden">
+        <label>
+          メールアドレス
+          <input id="forgot-email" type="email" autocomplete="email" />
+        </label>
+        <button id="forgot-submit-button" type="submit">再設定メールを送信する</button>
+        <button id="forgot-back-button" class="secondary" type="button">ログインに戻る</button>
+        <div id="forgot-message" class="error"></div>
+      </form>
+      <form id="reset-form" class="login-form is-hidden">
+        <label>
+          メールアドレス
+          <input id="reset-email" type="email" autocomplete="email" />
+        </label>
+        <label>
+          新しいパスワード
+          <input id="reset-password" type="password" autocomplete="new-password" />
+        </label>
+        <label>
+          新しいパスワード（確認）
+          <input id="reset-password-confirmation" type="password" autocomplete="new-password" />
+        </label>
+        <input id="reset-token" type="hidden" />
+        <button id="reset-submit-button" type="submit">パスワードを再設定する</button>
+        <button id="reset-back-button" class="secondary" type="button">ログインに戻る</button>
+        <div id="reset-message" class="error"></div>
       </form>
       </section>
     </main>
@@ -288,11 +334,48 @@ if (fs.existsSync(outDir)) {
       if (window.localStorage.getItem(SESSION_TOKEN_KEY) && window.localStorage.getItem(SESSION_AUDIENCE_KEY)) {
         window.location.replace(adminUrl);
       }
+      const title = document.getElementById("login-title");
+      const note = document.getElementById("login-note");
       const form = document.getElementById("login-form");
+      const forgotForm = document.getElementById("forgot-form");
+      const resetForm = document.getElementById("reset-form");
       const loginIdInput = document.getElementById("login-id");
       const passwordInput = document.getElementById("password");
       const submitButton = document.getElementById("submit-button");
       const errorMessage = document.getElementById("error-message");
+      const forgotModeButton = document.getElementById("forgot-mode-button");
+      const forgotEmailInput = document.getElementById("forgot-email");
+      const forgotSubmitButton = document.getElementById("forgot-submit-button");
+      const forgotMessage = document.getElementById("forgot-message");
+      const forgotBackButton = document.getElementById("forgot-back-button");
+      const resetEmailInput = document.getElementById("reset-email");
+      const resetPasswordInput = document.getElementById("reset-password");
+      const resetPasswordConfirmationInput = document.getElementById("reset-password-confirmation");
+      const resetTokenInput = document.getElementById("reset-token");
+      const resetSubmitButton = document.getElementById("reset-submit-button");
+      const resetMessage = document.getElementById("reset-message");
+      const resetBackButton = document.getElementById("reset-back-button");
+      function showMode(mode) {
+        form.classList.toggle("is-hidden", mode !== "login");
+        forgotForm.classList.toggle("is-hidden", mode !== "forgot");
+        resetForm.classList.toggle("is-hidden", mode !== "reset");
+        title.textContent = mode === "login" ? "ログイン情報" : mode === "forgot" ? "パスワード再設定" : "新しいパスワード";
+        note.textContent = mode === "login"
+          ? "メールアドレスとパスワードを入力してください。"
+          : mode === "forgot"
+            ? "職員登録済みのメールアドレスへ再設定用URLを送信します。"
+            : "メールに記載されたURLから新しいパスワードを設定します。";
+      }
+      const params = new URLSearchParams(window.location.search);
+      const initialResetToken = params.get("resetToken") || "";
+      if (initialResetToken) {
+        resetTokenInput.value = initialResetToken;
+        resetEmailInput.value = params.get("email") || "";
+        showMode("reset");
+      }
+      forgotModeButton.addEventListener("click", () => showMode("forgot"));
+      forgotBackButton.addEventListener("click", () => showMode("login"));
+      resetBackButton.addEventListener("click", () => showMode("login"));
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         submitButton.disabled = true;
@@ -321,6 +404,56 @@ if (fs.existsSync(outDir)) {
         } catch (error) {
           errorMessage.textContent = error instanceof Error ? error.message : "ログインに失敗しました。";
           submitButton.disabled = false;
+        }
+      });
+      forgotForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        forgotSubmitButton.disabled = true;
+        forgotMessage.textContent = "";
+        try {
+          const response = await fetch(apiBase + "/api/auth/password/forgot", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: forgotEmailInput.value.trim() }),
+          });
+          const json = await response.json();
+          if (!response.ok) {
+            throw new Error(json?.error?.message || "再設定メールの送信に失敗しました。");
+          }
+          forgotMessage.textContent = "再設定用メールを送信しました。メールをご確認ください。";
+        } catch (error) {
+          forgotMessage.textContent = error instanceof Error ? error.message : "再設定メールの送信に失敗しました。";
+        } finally {
+          forgotSubmitButton.disabled = false;
+        }
+      });
+      resetForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        resetSubmitButton.disabled = true;
+        resetMessage.textContent = "";
+        try {
+          const response = await fetch(apiBase + "/api/auth/password/reset", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: resetEmailInput.value.trim(),
+              token: resetTokenInput.value,
+              password: resetPasswordInput.value,
+              passwordConfirmation: resetPasswordConfirmationInput.value,
+            }),
+          });
+          const json = await response.json();
+          if (!response.ok) {
+            throw new Error(json?.error?.message || "パスワード再設定に失敗しました。");
+          }
+          loginIdInput.value = resetEmailInput.value.trim();
+          resetMessage.textContent = "パスワードを再設定しました。新しいパスワードでログインしてください。";
+          window.history.replaceState(null, "", window.location.pathname);
+          showMode("login");
+        } catch (error) {
+          resetMessage.textContent = error instanceof Error ? error.message : "パスワード再設定に失敗しました。";
+        } finally {
+          resetSubmitButton.disabled = false;
         }
       });
     </script>

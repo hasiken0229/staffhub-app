@@ -2,10 +2,12 @@
 
 namespace App\Services;
 
+use App\Mail\SystemNotificationMail;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\GenericUser;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 final class AuthService
@@ -111,6 +113,77 @@ final class AuthService
         return $this->serializeUser($user);
     }
 
+    public function requestEmployeePasswordReset(string $email): void
+    {
+        $email = $this->normalizeEmail($email);
+        $employee = $this->findActiveEmployeeByEmail($email);
+        if ($employee === null) {
+            return;
+        }
+
+        $token = Str::random(64);
+        DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $email],
+            [
+                'token' => Hash::make($token),
+                'created_at' => now(),
+            ],
+        );
+
+        $resetUrl = $this->buildEmployeePasswordResetUrl($email, $token);
+        Mail::to($email)->send(new SystemNotificationMail(
+            '勤怠管理システム パスワード再設定',
+            'パスワード再設定のご案内',
+            [
+                '以下のURLから新しいパスワードを設定してください。',
+                $resetUrl,
+                'このURLは60分以内に使用してください。',
+                '心当たりがない場合は、このメールを破棄してください。',
+            ],
+            [
+                '対象職員' => trim((string) $employee->employee_code . ' ' . (string) $employee->name),
+            ],
+        ));
+    }
+
+    public function resetEmployeePassword(string $email, string $token, string $password): void
+    {
+        $email = $this->normalizeEmail($email);
+        $resetToken = DB::table('password_reset_tokens')->where('email', $email)->first();
+        if (
+            $resetToken === null ||
+            !Hash::check($token, (string) $resetToken->token) ||
+            CarbonImmutable::parse((string) $resetToken->created_at)->lt(CarbonImmutable::now()->subMinutes(60))
+        ) {
+            throw new ApiException('VALIDATION_ERROR', '再設定URLが無効または期限切れです。', 422, [
+                ['field' => 'token', 'message' => '再設定URLが無効または期限切れです。'],
+            ]);
+        }
+
+        $employee = $this->findActiveEmployeeByEmail($email);
+        if ($employee === null) {
+            throw new ApiException('VALIDATION_ERROR', '再設定URLが無効または期限切れです。', 422, [
+                ['field' => 'email', 'message' => '再設定URLが無効または期限切れです。'],
+            ]);
+        }
+
+        DB::transaction(function () use ($email, $password, $employee): void {
+            DB::table('employee_auth')
+                ->where('employee_id', $employee->id)
+                ->update([
+                    'password_hash' => Hash::make($password),
+                    'password_updated_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+            DB::table('password_reset_tokens')->where('email', $email)->delete();
+            DB::table('api_access_tokens')
+                ->where('tokenable_type', 'EMPLOYEE')
+                ->where('tokenable_id', $employee->id)
+                ->delete();
+        });
+    }
+
     private function resolveAdmin(string $loginId, string $password): array
     {
         $admin = DB::table('users')
@@ -161,6 +234,7 @@ final class AuthService
 
     private function resolveEmployee(string $loginId, string $password): array
     {
+        $loginId = $this->normalizeEmail($loginId);
         $employee = DB::table('employee_auth as ea')
             ->join('employees as e', 'e.id', '=', 'ea.employee_id')
             ->select([
@@ -337,6 +411,39 @@ final class AuthService
     private function generateToken(string $prefix): string
     {
         return $prefix . '_' . Str::random(64);
+    }
+
+    private function normalizeEmail(string $value): string
+    {
+        return Str::lower(trim($value));
+    }
+
+    private function findActiveEmployeeByEmail(string $email): ?object
+    {
+        return DB::table('employee_auth as ea')
+            ->join('employees as e', 'e.id', '=', 'ea.employee_id')
+            ->select(['e.id', 'e.employee_code', 'e.name', 'e.status'])
+            ->where('ea.login_id', $email)
+            ->where('e.status', 'ACTIVE')
+            ->first();
+    }
+
+    private function buildEmployeePasswordResetUrl(string $email, string $token): string
+    {
+        $origin = request()?->headers->get('origin');
+        if ($origin === null || trim($origin) === '') {
+            $origin = (string) config('app.url');
+        }
+
+        $originUrl = rtrim($origin, '/');
+        if (str_contains($originUrl, '/dakoku')) {
+            $originUrl = preg_replace('#/dakoku.*$#', '', $originUrl) ?? $originUrl;
+        }
+
+        return $originUrl . '/dakoku/login/?' . http_build_query([
+            'email' => $email,
+            'resetToken' => $token,
+        ]);
     }
 
     private function serializeUser(GenericUser $user): array

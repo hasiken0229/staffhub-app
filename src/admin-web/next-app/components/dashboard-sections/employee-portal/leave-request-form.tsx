@@ -74,7 +74,7 @@ export function LeaveRequestForm(props: LeaveRequestFormProps) {
             className={values.requestCategory === "LEAVE" ? "" : "secondary"}
             onClick={() => props.onRequestCategoryChange("LEAVE")}
           >
-            通常休暇
+            1日休暇
           </button>
           <button
             type="button"

@@ -37,3 +37,28 @@ export async function loginEmployee(loginId: string, password: string) {
 export async function loadCurrentUser() {
   return fetchJson<CurrentUser>("/api/auth/me");
 }
+
+export async function requestPasswordReset(email: string) {
+  return fetchJson<{ success: boolean }>("/api/auth/password/forgot", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function resetPassword(email: string, token: string, password: string, passwordConfirmation: string) {
+  return fetchJson<{ success: boolean }>("/api/auth/password/reset", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      email,
+      token,
+      password,
+      passwordConfirmation,
+    }),
+  });
+}
