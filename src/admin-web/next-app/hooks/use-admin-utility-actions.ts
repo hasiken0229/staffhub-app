@@ -1,12 +1,17 @@
 import {
   assignCard,
   createNotice,
+  deleteCard,
   downloadAdminCsvTemplate,
+  downloadDailyAttendanceCsv,
+  downloadDailyAttendancePdf,
   downloadFileHistory,
+  downloadMonthlyAttendanceCsv,
   downloadMonthlyPayrollCsv,
   downloadMonthlyWorksPdf,
   importEmployeesCsv,
   markNotificationRead,
+  revokeCard,
 } from "@/lib/api";
 
 type UseAdminUtilityActionsParams = {
@@ -40,6 +45,26 @@ export function useAdminUtilityActions(params: UseAdminUtilityActionsParams) {
       await params.onRefresh();
     } catch (error) {
       params.setAssignResult(error instanceof Error ? error.message : "カード登録に失敗しました。");
+    }
+  }
+
+  async function handleRevokeCard(cardId: number) {
+    try {
+      await revokeCard(cardId);
+      params.setAssignResult("カード登録を解除しました。");
+      await params.onRefresh();
+    } catch (error) {
+      params.setAssignResult(error instanceof Error ? error.message : "カード登録の解除に失敗しました。");
+    }
+  }
+
+  async function handleDeleteCard(cardId: number) {
+    try {
+      await deleteCard(cardId);
+      params.setAssignResult("カード登録を削除しました。");
+      await params.onRefresh();
+    } catch (error) {
+      params.setAssignResult(error instanceof Error ? error.message : "カード登録の削除に失敗しました。");
     }
   }
 
@@ -96,9 +121,45 @@ export function useAdminUtilityActions(params: UseAdminUtilityActionsParams) {
     }
   }
 
-  async function handleMonthlyWorksPdfDownload() {
+  async function handleMonthlyAttendanceCsvDownload(targetMonth: string) {
     try {
-      await downloadMonthlyWorksPdf(Number(params.reportEmployeeId), params.reportMonth);
+      await downloadMonthlyAttendanceCsv(targetMonth);
+      params.setReportResult(`月次集計CSVを出力しました。対象月: ${targetMonth}`);
+      await params.onRefresh();
+    } catch (error) {
+      params.setReportResult(error instanceof Error ? error.message : "月次集計CSVの出力に失敗しました。");
+    }
+  }
+
+  async function handleDailyAttendanceCsvDownload(from: string, to: string) {
+    try {
+      await downloadDailyAttendanceCsv(from, to);
+      params.setReportResult(`日次勤怠CSVを出力しました。対象期間: ${from} - ${to}`);
+      await params.onRefresh();
+    } catch (error) {
+      params.setReportResult(error instanceof Error ? error.message : "日次勤怠CSVの出力に失敗しました。");
+    }
+  }
+
+  async function handleDailyAttendancePdfDownload(targetMonth: string) {
+    try {
+      await downloadDailyAttendancePdf(targetMonth);
+      params.setReportResult(`日次勤怠PDFを出力しました。対象月: ${targetMonth}`);
+      await params.onRefresh();
+    } catch (error) {
+      params.setReportResult(error instanceof Error ? error.message : "日次勤怠PDFの出力に失敗しました。");
+    }
+  }
+
+  async function handleMonthlyWorksPdfDownload() {
+    const employeeId = Number(params.reportEmployeeId);
+    if (!Number.isFinite(employeeId) || employeeId <= 0) {
+      params.setReportResult("職員別勤務PDFの対象職員を選択してください。");
+      return;
+    }
+
+    try {
+      await downloadMonthlyWorksPdf(employeeId, params.reportMonth);
       params.setReportResult("月次勤務PDFを出力しました。");
       await params.onRefresh();
     } catch (error) {
@@ -126,11 +187,16 @@ export function useAdminUtilityActions(params: UseAdminUtilityActionsParams) {
   return {
     handleAssignCard,
     handleCreateNotice,
+    handleDeleteCard,
     handleEmployeeImport,
     handleFileHistoryDownload,
+    handleDailyAttendanceCsvDownload,
+    handleDailyAttendancePdfDownload,
+    handleMonthlyAttendanceCsvDownload,
     handleMonthlyPayrollCsvDownload,
     handleMonthlyWorksPdfDownload,
     handleNotificationRead,
+    handleRevokeCard,
     handleTemplateDownload,
   };
 }

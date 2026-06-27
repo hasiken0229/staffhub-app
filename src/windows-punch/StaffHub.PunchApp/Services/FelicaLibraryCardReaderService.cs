@@ -5,7 +5,6 @@ namespace StaffHub.PunchApp.Services;
 
 public sealed class FelicaLibraryCardReaderService : ICardReaderService
 {
-    private static readonly TimeSpan DuplicateSuppressWindow = TimeSpan.FromSeconds(2);
     private readonly AppSettings _settings;
     private readonly CancellationTokenSource _cts = new();
     private Task? _worker;
@@ -61,7 +60,8 @@ public sealed class FelicaLibraryCardReaderService : ICardReaderService
 
             try
             {
-                FelicaNative.set_polling_timeout(2000);
+                var pollingTimeout = (uint)Math.Clamp(_settings.PollIntervalMilliseconds, 100, 500);
+                FelicaNative.set_polling_timeout(pollingTimeout);
                 StatusText = "RC-S380 待機中";
 
                 var systemCode = new byte[] { 0xFF, 0xFF };
@@ -135,14 +135,13 @@ public sealed class FelicaLibraryCardReaderService : ICardReaderService
 
     private void EmitIfNeeded(string idm)
     {
-        var now = DateTimeOffset.Now;
-        if (idm == _lastIdm && now - _lastSeenAt < DuplicateSuppressWindow)
+        if (idm == _lastIdm)
         {
             return;
         }
 
         _lastIdm = idm;
-        _lastSeenAt = now;
+        _lastSeenAt = DateTimeOffset.Now;
         CardScanned?.Invoke(this, idm);
     }
 

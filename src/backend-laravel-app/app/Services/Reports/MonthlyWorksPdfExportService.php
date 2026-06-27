@@ -45,6 +45,7 @@ final class MonthlyWorksPdfExportService
             $calendar['items'],
             static fn (array $item): bool => (int) ($item['employeeId'] ?? 0) === $employeeId
         ));
+        $rows = $this->buildFullMonthRows($targetMonth, $rows);
         $summary = $this->buildMonthlyWorksSummary($rows);
         $this->ensureTcpdfCurlConstants();
 
@@ -70,6 +71,7 @@ final class MonthlyWorksPdfExportService
                 'employeeCode' => (string) $employee->employee_code,
                 'employeeName' => (string) $employee->name,
                 'targetMonth' => $targetMonth,
+                'calendarDays' => count($rows),
                 'workDays' => $summary['attendance']['出勤日数'] ?? 0,
                 'totalActualWorkMinutes' => $summary['time']['実働時間'] ?? 0,
             ],
@@ -101,6 +103,10 @@ final class MonthlyWorksPdfExportService
         $workStyleCounts = [];
 
         foreach ($rows as $row) {
+            if (!empty($row['_isBlankCalendarDay'])) {
+                continue;
+            }
+
             $actualWorkMinutes = $this->actualWorkMinutes($row);
             $workMinutes = max(0, (int) ($row['workMinutes'] ?? 0));
             $spanMinutes = $this->clockSpanMinutes($row);
@@ -182,24 +188,28 @@ final class MonthlyWorksPdfExportService
             $dailyRowsHtml = '<tr><td colspan="13">対象月の勤務データがありません。</td></tr>';
         } else {
             $dailyRowsHtml = implode('', array_map(function (array $row) use ($dailyWidths): string {
+                $isBlankCalendarDay = !empty($row['_isBlankCalendarDay']);
                 $actualWorkMinutes = $this->actualWorkMinutes($row);
                 $overtimeMinutes = max(0, $actualWorkMinutes - 8 * 60);
                 $spanMinutes = $this->clockSpanMinutes($row);
+                $className = $this->monthlyWorksPdfRowClass($row);
+                $trClass = $className !== '' ? ' class="' . $className . '"' : '';
+                $empty = '-';
 
-                return '<tr>'
+                return '<tr' . $trClass . '>'
                     . '<td width="' . $dailyWidths['date'] . '" nowrap="nowrap">' . $this->escape($this->formatMonthDayWithWeekday($row['targetDate'] ?? null)) . '</td>'
-                    . '<td width="' . $dailyWidths['workStyle'] . '" nowrap="nowrap">' . $this->escape((string) ($row['workStyleName'] ?? '-')) . '</td>'
-                    . '<td width="' . $dailyWidths['clockIn'] . '" nowrap="nowrap">' . $this->escape($this->formatTimeOnly($row['clockInAt'] ?? null) ?: '-') . '</td>'
-                    . '<td width="' . $dailyWidths['clockOut'] . '" nowrap="nowrap">' . $this->escape($this->formatTimeOnly($row['clockOutAt'] ?? null) ?: '-') . '</td>'
-                    . '<td width="' . $dailyWidths['workMinutes'] . '" class="amount" nowrap="nowrap">' . $this->escape($this->formatMinutesCell($spanMinutes)) . '</td>'
-                    . '<td width="' . $dailyWidths['breakMinutes'] . '" class="amount" nowrap="nowrap">' . $this->escape($this->formatMinutesCell($row['breakMinutes'] ?? null)) . '</td>'
-                    . '<td width="' . $dailyWidths['paidLeave'] . '" class="amount" nowrap="nowrap">' . $this->escape($this->formatDayUnitCell($row['paidLeaveUnit'] ?? null)) . '</td>'
-                    . '<td width="' . $dailyWidths['hourPaidLeave'] . '" class="amount" nowrap="nowrap">' . $this->escape($this->formatMinutesCell($row['hourPaidLeaveMinutes'] ?? null)) . '</td>'
-                    . '<td width="' . $dailyWidths['childCare'] . '" class="amount" nowrap="nowrap">' . $this->escape($this->formatMinutesCell($row['childCareLeaveMinutes'] ?? null)) . '</td>'
-                    . '<td width="' . $dailyWidths['nursingCare'] . '" class="amount" nowrap="nowrap">' . $this->escape($this->formatMinutesCell($row['nursingCareLeaveMinutes'] ?? null)) . '</td>'
-                    . '<td width="' . $dailyWidths['overtime'] . '" class="amount" nowrap="nowrap">' . $this->escape($this->formatMinutesCell($overtimeMinutes)) . '</td>'
-                    . '<td width="' . $dailyWidths['actualWork'] . '" class="amount" nowrap="nowrap">' . $this->escape($this->formatMinutesCell($actualWorkMinutes)) . '</td>'
-                    . '<td width="' . $dailyWidths['remark'] . '">' . $this->escape((string) ($row['remark'] ?? '-')) . '</td>'
+                    . '<td width="' . $dailyWidths['workStyle'] . '" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : (string) ($row['workStyleName'] ?? '-')) . '</td>'
+                    . '<td width="' . $dailyWidths['clockIn'] . '" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : ($this->formatTimeOnly($row['clockInAt'] ?? null) ?: '-')) . '</td>'
+                    . '<td width="' . $dailyWidths['clockOut'] . '" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : ($this->formatTimeOnly($row['clockOutAt'] ?? null) ?: '-')) . '</td>'
+                    . '<td width="' . $dailyWidths['workMinutes'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($spanMinutes)) . '</td>'
+                    . '<td width="' . $dailyWidths['breakMinutes'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($row['breakMinutes'] ?? null)) . '</td>'
+                    . '<td width="' . $dailyWidths['paidLeave'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatDayUnitCell($row['paidLeaveUnit'] ?? null)) . '</td>'
+                    . '<td width="' . $dailyWidths['hourPaidLeave'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($row['hourPaidLeaveMinutes'] ?? null)) . '</td>'
+                    . '<td width="' . $dailyWidths['childCare'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($row['childCareLeaveMinutes'] ?? null)) . '</td>'
+                    . '<td width="' . $dailyWidths['nursingCare'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($row['nursingCareLeaveMinutes'] ?? null)) . '</td>'
+                    . '<td width="' . $dailyWidths['overtime'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($overtimeMinutes)) . '</td>'
+                    . '<td width="' . $dailyWidths['actualWork'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($actualWorkMinutes)) . '</td>'
+                    . '<td width="' . $dailyWidths['remark'] . '">' . $this->escape($isBlankCalendarDay ? ($row['_holidayName'] ?? '-') : (string) ($row['remark'] ?? '-')) . '</td>'
                     . '</tr>';
             }, $rows));
         }
@@ -219,6 +229,8 @@ final class MonthlyWorksPdfExportService
     .daily { table-layout: fixed; }
     .daily td, .daily th { border: 1px solid #777; padding: 1px 2px; font-size: 5.7px; line-height: 1.25; }
     .daily th, .summary th { background-color: #f1f5f9; }
+    .daily tr.sunday td, .daily tr.holiday td { background-color: #fff1f2; color: #e11d48; }
+    .daily tr.saturday td { background-color: #eff6ff; color: #111827; }
     .summary td, .summary th { border: 1px solid #777; padding: 3px 5px; font-size: 7px; }
     .amount { text-align: right; }
     .summary-wrap td { vertical-align: top; }
@@ -322,6 +334,125 @@ HTML;
         }
 
         return implode('', $rows);
+    }
+
+    private function buildFullMonthRows(string $targetMonth, array $rows): array
+    {
+        try {
+            $monthStart = CarbonImmutable::createFromFormat('Y-m-d', $targetMonth . '-01')->startOfDay();
+        } catch (\Throwable) {
+            return $rows;
+        }
+
+        $rowByDate = [];
+        foreach ($rows as $row) {
+            if (!empty($row['targetDate'])) {
+                $rowByDate[(string) $row['targetDate']] = $row;
+            }
+        }
+
+        $holidays = $this->buildJapaneseHolidayMap((int) $monthStart->format('Y'));
+        $daysInMonth = $monthStart->daysInMonth;
+        $fullRows = [];
+        for ($day = 1; $day <= $daysInMonth; $day++) {
+            $date = $monthStart->setDay($day);
+            $dateKey = $date->toDateString();
+            $row = $rowByDate[$dateKey] ?? [
+                'targetDate' => $dateKey,
+                '_isBlankCalendarDay' => true,
+            ];
+            $row['_dayOfWeek'] = $date->dayOfWeek;
+            $row['_holidayName'] = $holidays[$dateKey] ?? null;
+            $fullRows[] = $row;
+        }
+
+        return $fullRows;
+    }
+
+    private function monthlyWorksPdfRowClass(array $row): string
+    {
+        if (!empty($row['_holidayName'])) {
+            return 'holiday';
+        }
+
+        $dayOfWeek = $row['_dayOfWeek'] ?? null;
+        if ($dayOfWeek === 0) {
+            return 'sunday';
+        }
+        if ($dayOfWeek === 6) {
+            return 'saturday';
+        }
+
+        return '';
+    }
+
+    private function buildJapaneseHolidayMap(int $year): array
+    {
+        $holidays = [];
+        $add = function (int $month, int $day, string $name) use (&$holidays, $year): void {
+            $holidays[sprintf('%04d-%02d-%02d', $year, $month, $day)] = $name;
+        };
+        $addHappyMonday = function (int $month, int $week, string $name) use ($add, $year): void {
+            $add($month, $this->nthWeekdayOfMonth($year, $month, $week, 1), $name);
+        };
+
+        $add(1, 1, '元日');
+        $addHappyMonday(1, 2, '成人の日');
+        $add(2, 11, '建国記念の日');
+        $add(2, 23, '天皇誕生日');
+        $add(3, $this->vernalEquinoxDay($year), '春分の日');
+        $add(4, 29, '昭和の日');
+        $add(5, 3, '憲法記念日');
+        $add(5, 4, 'みどりの日');
+        $add(5, 5, 'こどもの日');
+        $addHappyMonday(7, 3, '海の日');
+        $add(8, 11, '山の日');
+        $addHappyMonday(9, 3, '敬老の日');
+        $add(9, $this->autumnalEquinoxDay($year), '秋分の日');
+        $addHappyMonday(10, 2, 'スポーツの日');
+        $add(11, 3, '文化の日');
+        $add(11, 23, '勤労感謝の日');
+
+        return $this->addSubstituteHolidays($year, $holidays);
+    }
+
+    private function addSubstituteHolidays(int $year, array $holidays): array
+    {
+        ksort($holidays);
+        foreach (array_keys($holidays) as $dateKey) {
+            $date = CarbonImmutable::parse($dateKey);
+            if ($date->dayOfWeek !== 0) {
+                continue;
+            }
+
+            $substitute = $date;
+            do {
+                $substitute = $substitute->addDay();
+            } while (isset($holidays[$substitute->toDateString()]));
+
+            if ((int) $substitute->format('Y') === $year) {
+                $holidays[$substitute->toDateString()] = '振替休日';
+            }
+        }
+
+        return $holidays;
+    }
+
+    private function nthWeekdayOfMonth(int $year, int $month, int $week, int $weekday): int
+    {
+        $firstDay = CarbonImmutable::create($year, $month, 1);
+        $offset = ($weekday - $firstDay->dayOfWeek + 7) % 7;
+        return 1 + $offset + (($week - 1) * 7);
+    }
+
+    private function vernalEquinoxDay(int $year): int
+    {
+        return (int) floor(20.8431 + (0.242194 * ($year - 1980)) - floor(($year - 1980) / 4));
+    }
+
+    private function autumnalEquinoxDay(int $year): int
+    {
+        return (int) floor(23.2488 + (0.242194 * ($year - 1980)) - floor(($year - 1980) / 4));
     }
 
     private function monthlyWorksDailyColumnWidths(): array

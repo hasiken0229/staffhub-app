@@ -90,6 +90,40 @@ public sealed class AttendanceApiClient
         return body?.Data ?? throw new InvalidOperationException("打刻応答の解析に失敗しました。");
     }
 
+    public async Task<IReadOnlyList<RegistrationEmployee>> GetCardRegistrationEmployeesAsync(CancellationToken cancellationToken = default)
+    {
+        var request = new DeviceAuthRequest(_settings.DeviceCode, _settings.DeviceSecret);
+        var response = await _httpClient.PostAsJsonAsync("api/attendance/card-registration/employees", request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw await CreateApiExceptionAsync(response, cancellationToken);
+        }
+
+        var body = await response.Content.ReadFromJsonAsync<ApiEnvelope<List<RegistrationEmployee>>>(cancellationToken: cancellationToken);
+        return body?.Data ?? [];
+    }
+
+    public async Task<CardAssignmentResult> AssignCardAsync(long employeeId, string cardUid, CancellationToken cancellationToken = default)
+    {
+        var request = new CardAssignmentRequest(_settings.DeviceCode, _settings.DeviceSecret, employeeId, cardUid);
+        var response = await _httpClient.PostAsJsonAsync("api/attendance/card-registration/assign", request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw await CreateApiExceptionAsync(response, cancellationToken);
+        }
+
+        var body = await response.Content.ReadFromJsonAsync<ApiEnvelope<CardAssignmentResult>>(cancellationToken: cancellationToken);
+        return body?.Data ?? throw new InvalidOperationException("カード登録応答の解析に失敗しました。");
+    }
+
+    private static async Task<AttendanceApiException> CreateApiExceptionAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var error = await response.Content.ReadFromJsonAsync<ApiErrorEnvelope>(cancellationToken: cancellationToken);
+        var code = error?.Error?.Code ?? "API_ERROR";
+        var message = error?.Error?.Message ?? "APIの呼び出しに失敗しました。";
+        return new AttendanceApiException(code, message);
+    }
+
     private sealed class ApiEnvelope<T>
     {
         public T? Data { get; set; }
@@ -105,4 +139,14 @@ public sealed class AttendanceApiClient
         public string? Code { get; set; }
         public string? Message { get; set; }
     }
+
+    private sealed record DeviceAuthRequest(
+        string DeviceCode,
+        string DeviceSecret);
+
+    private sealed record CardAssignmentRequest(
+        string DeviceCode,
+        string DeviceSecret,
+        long EmployeeId,
+        string CardUid);
 }

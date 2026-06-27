@@ -29,12 +29,12 @@ export function useAdminDashboardDerivedData(params: UseAdminDashboardDerivedDat
 
   const filteredPayrollHistory = params.dashboard.importHistory.filter((row) =>
     params.payrollStatementType === "PAYROLL"
-      ? row.importType === "PAYROLL_CSV" || row.importType === "PAYROLL_PDF_UPLOAD"
-      : row.importType === "BONUS_CSV" || row.importType === "BONUS_PDF_UPLOAD",
+      ? row.importType === "PAYROLL_CSV" || row.importType === "PAYROLL_PDF_UPLOAD" || row.importType === "PAYROLL_BATCH_ZIP"
+      : row.importType === "BONUS_CSV" || row.importType === "BONUS_PDF_UPLOAD" || row.importType === "BONUS_BATCH_ZIP",
   );
 
   const reportFileHistory = params.dashboard.importHistory.filter((row) =>
-    ["MONTHLY_PAYROLL_CSV", "MONTHLY_WORKS_PDF", "PAYROLL_CSV", "BONUS_CSV"].includes(row.importType),
+    ["MONTHLY_ATTENDANCE_CSV", "DAILY_ATTENDANCE_CSV", "DAILY_ATTENDANCE_PDF", "MONTHLY_PAYROLL_CSV", "MONTHLY_WORKS_PDF"].includes(row.importType),
   );
 
   return {

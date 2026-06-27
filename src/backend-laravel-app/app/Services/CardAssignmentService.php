@@ -55,6 +55,16 @@ final class CardAssignmentService
 
     public function assign(int $employeeId, string $cardUid): array
     {
+        return $this->assignWithActor($employeeId, $cardUid, 'ADMIN', $this->resolveActorId());
+    }
+
+    public function assignFromDevice(int $employeeId, string $cardUid, int $deviceId): array
+    {
+        return $this->assignWithActor($employeeId, $cardUid, 'DEVICE', $deviceId);
+    }
+
+    private function assignWithActor(int $employeeId, string $cardUid, string $actorType, ?int $actorId): array
+    {
         $normalized = strtoupper(trim($cardUid));
         if ($normalized === '') {
             throw new ApiException('VALIDATION_ERROR', 'カードUIDを入力してください。', 400, [
@@ -62,7 +72,7 @@ final class CardAssignmentService
             ]);
         }
 
-        return DB::transaction(function () use ($employeeId, $normalized) {
+        return DB::transaction(function () use ($employeeId, $normalized, $actorType, $actorId) {
             $employee = DB::table('employees')
                 ->where('id', $employeeId)
                 ->lockForUpdate()
@@ -114,7 +124,7 @@ final class CardAssignmentService
                 'updated_at' => now(),
             ]);
 
-            $this->addAudit('ADMIN', $this->resolveActorId(), 'CARD_ASSIGNED', 'CARD', (string) $cardId, [
+            $this->addAudit($actorType, $actorId, 'CARD_ASSIGNED', 'CARD', (string) $cardId, [
                 'employeeId' => $employeeId,
                 'employeeCode' => $employee->employee_code,
                 'employeeName' => $employee->name,
@@ -179,6 +189,39 @@ final class CardAssignmentService
             ]);
 
             return true;
+        });
+    }
+
+    public function delete(int $cardId): bool
+    {
+        return DB::transaction(function () use ($cardId) {
+            $card = DB::table('employee_cards as c')
+                ->join('employees as e', 'e.id', '=', 'c.employee_id')
+                ->select([
+                    'c.id',
+                    'c.employee_id',
+                    'e.employee_code',
+                    'e.name as employee_name',
+                    'c.card_uid',
+                    'c.is_active',
+                ])
+                ->where('c.id', $cardId)
+                ->lockForUpdate()
+                ->first();
+
+            if ($card === null) {
+                return false;
+            }
+
+            $this->addAudit('ADMIN', $this->resolveActorId(), 'CARD_DELETED', 'CARD', (string) $cardId, [
+                'employeeId' => (int) $card->employee_id,
+                'employeeCode' => $card->employee_code,
+                'employeeName' => $card->employee_name,
+                'cardUid' => $card->card_uid,
+                'wasActive' => (bool) $card->is_active,
+            ]);
+
+            return DB::table('employee_cards')->where('id', $cardId)->delete() > 0;
         });
     }
 

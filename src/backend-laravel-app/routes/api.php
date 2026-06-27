@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\Admin\AttendanceAdminController;
 use App\Http\Controllers\Api\Admin\AuditLogAdminController;
 use App\Http\Controllers\Api\Admin\CardAdminController;
 use App\Http\Controllers\Api\Admin\EmployeeAdminController;
+use App\Http\Controllers\Api\Admin\EnvironmentAdminController;
+use App\Http\Controllers\Api\Admin\HarmosMigrationAdminController;
 use App\Http\Controllers\Api\Admin\ImportHistoryAdminController;
 use App\Http\Controllers\Api\Admin\LeaveAdminController;
 use App\Http\Controllers\Api\Admin\NoticeAdminController;
@@ -28,6 +30,8 @@ Route::post('/auth/password/reset', [AuthController::class, 'resetPassword']);
 Route::prefix('attendance')->group(function () {
     Route::post('/punch', [AttendancePunchController::class, 'store']);
     Route::post('/devices/heartbeat', [AttendancePunchController::class, 'heartbeat']);
+    Route::post('/card-registration/employees', [AttendancePunchController::class, 'cardRegistrationEmployees']);
+    Route::post('/card-registration/assign', [AttendancePunchController::class, 'assignCard']);
 });
 
 Route::middleware('auth.api')->group(function () {
@@ -48,6 +52,7 @@ Route::middleware(['auth.api', 'employee'])->group(function () {
     });
 
     Route::prefix('attendance')->group(function () {
+        Route::get('/daily', [AttendanceDailyEditRequestController::class, 'daily']);
         Route::get('/daily-edit-requests', [AttendanceDailyEditRequestController::class, 'index']);
         Route::post('/daily-edit-requests', [AttendanceDailyEditRequestController::class, 'store']);
     });
@@ -66,19 +71,33 @@ Route::middleware(['auth.api', 'employee'])->group(function () {
 });
 
 Route::middleware(['auth.api', 'admin'])->prefix('admin')->group(function () {
+    Route::get('/environment', [EnvironmentAdminController::class, 'index']);
+
+    Route::post('/harmos-migration/preview', [HarmosMigrationAdminController::class, 'preview']);
+    Route::post('/harmos-migration/import', [HarmosMigrationAdminController::class, 'import']);
+
     Route::get('/employees', [EmployeeAdminController::class, 'index']);
     Route::get('/employees/template-csv', [EmployeeAdminController::class, 'downloadTemplateCsv']);
     Route::post('/employees', [EmployeeAdminController::class, 'store']);
     Route::put('/employees/{id}', [EmployeeAdminController::class, 'update']);
+    Route::post('/employees/import-csv/preview', [EmployeeAdminController::class, 'previewImportCsv']);
     Route::post('/employees/import-csv', [EmployeeAdminController::class, 'importCsv']);
 
     Route::get('/cards', [CardAdminController::class, 'index']);
     Route::post('/cards/assign', [CardAdminController::class, 'assign']);
     Route::post('/cards/revoke', [CardAdminController::class, 'revoke']);
+    Route::post('/cards/delete', [CardAdminController::class, 'delete']);
 
     Route::get('/attendance/events', [AttendanceAdminController::class, 'events']);
     Route::get('/attendance/daily', [AttendanceAdminController::class, 'daily']);
     Route::get('/attendance/daily-grid', [AttendanceAdminController::class, 'dailyGrid']);
+    Route::post('/attendance/daily', [AttendanceAdminController::class, 'storeDaily']);
+    Route::get('/attendance/employee-settings', [AttendanceAdminController::class, 'employeeSettings']);
+    Route::post('/attendance/employee-settings', [AttendanceAdminController::class, 'saveEmployeeSetting']);
+    Route::get('/attendance/break-rules', [AttendanceAdminController::class, 'breakRules']);
+    Route::post('/attendance/break-rules', [AttendanceAdminController::class, 'saveBreakRule']);
+    Route::get('/attendance/shift-schedules', [AttendanceAdminController::class, 'shiftSchedules']);
+    Route::post('/attendance/shift-schedules', [AttendanceAdminController::class, 'saveShiftSchedule']);
     Route::get('/attendance/daily/{id}', [AttendanceAdminController::class, 'show']);
     Route::patch('/attendance/daily/{id}', [AttendanceAdminController::class, 'updateDaily']);
     Route::delete('/attendance/daily/{id}/manual-edit', [AttendanceAdminController::class, 'resetDailyManualEdit']);
@@ -127,6 +146,7 @@ Route::middleware(['auth.api', 'admin'])->prefix('admin')->group(function () {
     Route::get('/payroll/import-batches/{id}/export-pdf', [PayrollAdminController::class, 'exportImportBatchPdf']);
     Route::get('/payroll/template-csv', [PayrollAdminController::class, 'downloadTemplateCsv']);
     Route::post('/payroll/statements', [PayrollAdminController::class, 'store']);
+    Route::post('/payroll/import-csv/preview', [PayrollAdminController::class, 'previewImportCsv']);
     Route::post('/payroll/import-csv', [PayrollAdminController::class, 'importCsv']);
 
     Route::get('/system-masters', [SystemMasterAdminController::class, 'index']);

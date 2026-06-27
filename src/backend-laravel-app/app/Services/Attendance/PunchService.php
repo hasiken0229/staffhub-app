@@ -4,6 +4,7 @@ namespace App\Services\Attendance;
 
 use App\Services\ApiException;
 use App\Services\AuditLogService;
+use App\Services\CardAssignmentService;
 use App\Services\NotificationMailService;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonPeriod;
@@ -27,22 +28,10 @@ final class PunchService extends AttendanceServiceSupport
             return $this->formatExistingPunchResult($existing);
         }
 
-        return DB::transaction(function () use ($payload, $cardUid, $occurredAt, $dedupeKey) {
+        $result = DB::transaction(function () use ($payload, $cardUid, $occurredAt, $dedupeKey) {
             $this->assertMonthOpen($occurredAt->format('Y-m'));
 
-            $device = DB::table('attendance_devices')
-                ->where('device_code', $payload['deviceCode'])
-                ->where('is_active', 1)
-                ->lockForUpdate()
-                ->first();
-
-            if ($device === null) {
-                throw new ApiException('DEVICE_DISABLED', '端末が無効化されています。', 403);
-            }
-
-            if (!empty($device->device_secret_hash) && !Hash::check((string) $payload['deviceSecret'], $device->device_secret_hash)) {
-                throw new ApiException('FORBIDDEN', '端末認証に失敗しました。', 403);
-            }
+            $device = $this->authenticateDevice($payload, true);
 
             $card = DB::table('employee_cards as c')
                 ->join('employees as e', 'e.id', '=', 'c.employee_id')
@@ -92,20 +81,78 @@ final class PunchService extends AttendanceServiceSupport
                 ->lockForUpdate()
                 ->get();
 
+            if ($acceptedToday->count() >= 2) {
+                $eventId = $this->insertAttendanceEvent([
+                    'employee_id' => $card->employee_id,
+                    'device_id' => $device->id,
+                    'card_uid' => $cardUid,
+                    'occurred_at' => $occurredAt->format('Y-m-d H:i:s'),
+                    'event_type' => null,
+                    'source_type' => 'CARD_READER',
+                    'receive_status' => 'REJECTED',
+                    'rejection_reason' => 'TOO_MANY_PUNCHES',
+                    'offline_saved' => 0,
+                    'dedupe_key' => $dedupeKey,
+                    'created_at' => now(),
+                ]);
+
+                $this->addAudit('DEVICE', (int) $device->id, 'ATTENDANCE_REJECTED', 'ATTENDANCE_EVENT', (string) $eventId, [
+                    'employeeId' => (int) $card->employee_id,
+                    'employeeCode' => $card->employee_code,
+                    'employeeName' => $card->employee_name,
+                    'reason' => 'TOO_MANY_PUNCHES',
+                    'occurredAt' => $occurredAt->toIso8601String(),
+                ]);
+
+                return [
+                    'errorCode' => 'TOO_MANY_PUNCHES',
+                    'errorMessage' => '本日は既に出勤・退勤が記録されています。管理画面で確認してください。',
+                    'errorStatus' => 400,
+                ];
+            }
+
             $lastAccepted = $acceptedToday->last();
+            if ($lastAccepted !== null) {
+                $lastOccurredAt = CarbonImmutable::parse($lastAccepted->occurred_at);
+                if ($occurredAt->diffInRealSeconds($lastOccurredAt, true) <= 180) {
+                    $eventId = $this->insertAttendanceEvent([
+                        'employee_id' => $card->employee_id,
+                        'device_id' => $device->id,
+                        'card_uid' => $cardUid,
+                        'occurred_at' => $occurredAt->format('Y-m-d H:i:s'),
+                        'event_type' => null,
+                        'source_type' => 'CARD_READER',
+                        'receive_status' => 'REJECTED',
+                        'rejection_reason' => 'SHORT_INTERVAL_PUNCH',
+                        'offline_saved' => 0,
+                        'dedupe_key' => $dedupeKey,
+                        'created_at' => now(),
+                    ]);
+
+                    $this->addAudit('DEVICE', (int) $device->id, 'ATTENDANCE_REJECTED', 'ATTENDANCE_EVENT', (string) $eventId, [
+                        'employeeId' => (int) $card->employee_id,
+                        'employeeCode' => $card->employee_code,
+                        'employeeName' => $card->employee_name,
+                        'reason' => 'SHORT_INTERVAL_PUNCH',
+                        'previousAttendanceEventId' => (int) $lastAccepted->id,
+                        'previousOccurredAt' => CarbonImmutable::parse($lastAccepted->occurred_at)->toIso8601String(),
+                        'occurredAt' => $occurredAt->toIso8601String(),
+                    ]);
+
+                    return [
+                        'errorCode' => 'SHORT_INTERVAL_PUNCH',
+                        'errorMessage' => '直前の打刻から3分以内のため、打刻を受け付けできません。',
+                        'errorStatus' => 400,
+                    ];
+                }
+            }
+
             $eventType = $lastAccepted === null || $lastAccepted->event_type === 'CLOCK_OUT'
                 ? 'CLOCK_IN'
                 : 'CLOCK_OUT';
 
             $resultType = 'SUCCESS';
             $resultMessage = $eventType === 'CLOCK_IN' ? '出勤を記録しました。' : '退勤を記録しました。';
-            if ($lastAccepted !== null) {
-                $lastOccurredAt = CarbonImmutable::parse($lastAccepted->occurred_at);
-                if ($occurredAt->diffInRealMinutes($lastOccurredAt, true) <= 2) {
-                    $resultType = 'WARNING';
-                    $resultMessage = '短時間の連続打刻です。内容を確認してください。';
-                }
-            }
 
             $eventId = $this->insertAttendanceEvent([
                 'employee_id' => $card->employee_id,
@@ -164,6 +211,12 @@ final class PunchService extends AttendanceServiceSupport
                 'offlineAccepted' => false,
             ];
         });
+
+        if (isset($result['errorCode'])) {
+            throw new ApiException($result['errorCode'], $result['errorMessage'], (int) $result['errorStatus']);
+        }
+
+        return $result;
     }
 
     public function heartbeat(array $payload): array
@@ -171,18 +224,7 @@ final class PunchService extends AttendanceServiceSupport
         $lastSeenAt = CarbonImmutable::parse($payload['lastSeenAt']);
 
         return DB::transaction(function () use ($payload, $lastSeenAt) {
-            $device = DB::table('attendance_devices')
-                ->where('device_code', $payload['deviceCode'])
-                ->lockForUpdate()
-                ->first();
-
-            if ($device === null || (int) $device->is_active !== 1) {
-                throw new ApiException('DEVICE_DISABLED', '端末が無効化されています。', 403);
-            }
-
-            if (!empty($device->device_secret_hash) && !Hash::check((string) $payload['deviceSecret'], $device->device_secret_hash)) {
-                throw new ApiException('FORBIDDEN', '端末認証に失敗しました。', 403);
-            }
+            $device = $this->authenticateDevice($payload, true);
 
             DB::table('attendance_devices')
                 ->where('id', $device->id)
@@ -198,5 +240,68 @@ final class PunchService extends AttendanceServiceSupport
                 'deviceActive' => true,
             ];
         });
+    }
+
+    public function listCardRegistrationEmployees(array $payload): array
+    {
+        $this->authenticateDevice($payload, false);
+
+        return DB::table('employees')
+            ->select(['id', 'employee_code', 'name', 'department_name', 'status'])
+            ->where('status', 'ACTIVE')
+            ->orderBy('employee_code')
+            ->get()
+            ->map(fn (object $row) => [
+                'id' => (int) $row->id,
+                'employeeCode' => $row->employee_code,
+                'name' => $row->name,
+                'departmentName' => $row->department_name,
+                'status' => $row->status,
+            ])
+            ->all();
+    }
+
+    public function assignCardFromDevice(array $payload): array
+    {
+        return DB::transaction(function () use ($payload) {
+            $device = $this->authenticateDevice($payload, true);
+
+            $result = app(CardAssignmentService::class)->assignFromDevice(
+                (int) $payload['employeeId'],
+                (string) $payload['cardUid'],
+                (int) $device->id,
+            );
+
+            $this->addAudit('DEVICE', (int) $device->id, 'CARD_ASSIGNED_FROM_DEVICE', 'CARD', (string) $result['id'], [
+                'employeeId' => $result['employeeId'],
+                'employeeCode' => $result['employeeCode'],
+                'employeeName' => $result['employeeName'],
+                'cardUid' => $result['cardUid'],
+            ]);
+
+            return $result;
+        });
+    }
+
+    private function authenticateDevice(array $payload, bool $lockForUpdate): object
+    {
+        $query = DB::table('attendance_devices')
+            ->where('device_code', $payload['deviceCode']);
+
+        if ($lockForUpdate) {
+            $query->lockForUpdate();
+        }
+
+        $device = $query->first();
+
+        if ($device === null || (int) $device->is_active !== 1) {
+            throw new ApiException('DEVICE_DISABLED', '端末が無効化されています。', 403);
+        }
+
+        if (!empty($device->device_secret_hash) && !Hash::check((string) $payload['deviceSecret'], $device->device_secret_hash)) {
+            throw new ApiException('FORBIDDEN', '端末認証に失敗しました。', 403);
+        }
+
+        return $device;
     }
 }

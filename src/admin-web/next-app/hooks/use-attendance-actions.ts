@@ -10,13 +10,17 @@ import {
   loadAttendanceErrors,
   loadAttendanceMonthClosePrecheck,
   loadAttendanceEvents,
+  loadAttendanceBreakRule,
   loadAttendanceMonthCloseStatus,
   loadAttendanceMonthlyClose,
+  loadAttendanceShiftSchedules,
+  loadEmployeeAttendanceSettings,
   resolveAttendanceError,
   returnAttendanceDaily,
   returnAttendanceDailyEditRequest,
   updateAttendanceMonthlyClose,
 } from "@/lib/api";
+import { currentMonthEndValue, currentMonthStartValue, currentMonthValue } from "@/lib/date-defaults";
 import type { DashboardData } from "@/types";
 
 type UseAttendanceActionsParams = {
@@ -84,7 +88,19 @@ export function useAttendanceActions(params: UseAttendanceActionsParams) {
 
   async function applyAttendanceFilters() {
     try {
-      const [dailyGrid, approvals, events, attendanceMonthlyClose, attendanceErrors, attendanceMonthCloseStatus, attendanceMonthClosePrecheck, attendanceDailyEditRequests] = await Promise.all([
+      const [
+        dailyGrid,
+        approvals,
+        events,
+        attendanceMonthlyClose,
+        attendanceErrors,
+        attendanceMonthCloseStatus,
+        attendanceMonthClosePrecheck,
+        attendanceDailyEditRequests,
+        employeeAttendanceSettings,
+        attendanceShiftSchedules,
+        attendanceBreakRule,
+      ] = await Promise.all([
         loadAttendanceDailyGrid({
           targetMonth: params.attendanceFilterMonth,
           employeeCode: params.attendanceFilterEmployeeCode || undefined,
@@ -127,6 +143,9 @@ export function useAttendanceActions(params: UseAttendanceActionsParams) {
           from: params.attendanceEventFrom || undefined,
           to: params.attendanceEventTo || undefined,
         }),
+        loadEmployeeAttendanceSettings(),
+        loadAttendanceShiftSchedules({ targetMonth: params.attendanceFilterMonth }),
+        loadAttendanceBreakRule(),
       ]);
 
       params.setDashboard((previous) => ({
@@ -139,6 +158,9 @@ export function useAttendanceActions(params: UseAttendanceActionsParams) {
         attendanceMonthCloseStatus,
         attendanceMonthClosePrecheck,
         attendanceDailyEditRequests,
+        employeeAttendanceSettings,
+        attendanceShiftSchedules,
+        attendanceBreakRule,
       }));
       params.setErrorMessage("");
     } catch (error) {
@@ -147,27 +169,43 @@ export function useAttendanceActions(params: UseAttendanceActionsParams) {
   }
 
   async function resetAttendanceFilters() {
-    params.setAttendanceFilterMonth("2026-03");
+    const month = currentMonthValue();
+    params.setAttendanceFilterMonth(month);
     params.setAttendanceFilterEmployeeCode("");
     params.setAttendanceFilterDepartmentName("");
     params.setAttendanceApprovalStatus("PENDING");
-    params.setAttendanceEventFrom("2026-03-01");
-    params.setAttendanceEventTo("2026-03-31");
+    params.setAttendanceEventFrom(currentMonthStartValue());
+    params.setAttendanceEventTo(currentMonthEndValue());
     params.setAttendanceErrorCode("");
     params.setAttendanceErrorHandlingStatus("");
     params.setAttendanceMonthCloseApprovalStatus("");
     params.setAttendanceMonthCloseStatusFilter("");
 
     try {
-      const [dailyGrid, approvals, events, attendanceMonthlyClose, attendanceErrors, attendanceMonthCloseStatus, attendanceMonthClosePrecheck, attendanceDailyEditRequests] = await Promise.all([
-        loadAttendanceDailyGrid({ targetMonth: "2026-03" }),
+      const [
+        dailyGrid,
+        approvals,
+        events,
+        attendanceMonthlyClose,
+        attendanceErrors,
+        attendanceMonthCloseStatus,
+        attendanceMonthClosePrecheck,
+        attendanceDailyEditRequests,
+        employeeAttendanceSettings,
+        attendanceShiftSchedules,
+        attendanceBreakRule,
+      ] = await Promise.all([
+        loadAttendanceDailyGrid({ targetMonth: month }),
         loadAttendanceApprovals({ status: "PENDING" }),
         loadAttendanceEvents({}),
-        loadAttendanceMonthlyClose("2026-03"),
-        loadAttendanceErrors({ fromMonth: "2026-03", toMonth: "2026-03" }),
-        loadAttendanceMonthCloseStatus({ targetMonth: "2026-03" }),
-        loadAttendanceMonthClosePrecheck("2026-03"),
+        loadAttendanceMonthlyClose(month),
+        loadAttendanceErrors({ fromMonth: month, toMonth: month }),
+        loadAttendanceMonthCloseStatus({ targetMonth: month }),
+        loadAttendanceMonthClosePrecheck(month),
         loadAttendanceDailyEditRequests({ status: "PENDING" }),
+        loadEmployeeAttendanceSettings(),
+        loadAttendanceShiftSchedules({ targetMonth: month }),
+        loadAttendanceBreakRule(),
       ]);
 
       params.setDashboard((previous) => ({
@@ -180,6 +218,9 @@ export function useAttendanceActions(params: UseAttendanceActionsParams) {
         attendanceMonthCloseStatus,
         attendanceMonthClosePrecheck,
         attendanceDailyEditRequests,
+        employeeAttendanceSettings,
+        attendanceShiftSchedules,
+        attendanceBreakRule,
       }));
       params.setErrorMessage("");
     } catch (error) {

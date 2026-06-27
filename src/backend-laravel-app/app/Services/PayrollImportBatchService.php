@@ -34,6 +34,11 @@ final class PayrollImportBatchService
         return $this->importService->importLegacyCsv($payload, $file, $actor);
     }
 
+    public function previewLegacyCsv(array $payload, UploadedFile $file, GenericUser $actor): array
+    {
+        return $this->importService->previewLegacyCsv($payload, $file, $actor);
+    }
+
     public function importFromCsv(array $payload, UploadedFile $file, GenericUser $actor): array
     {
         return $this->importService->importFromCsv($payload, $file, $actor);
@@ -44,7 +49,7 @@ final class PayrollImportBatchService
         return $this->deletionService->deleteBatch($batchId, $actor);
     }
 
-    public function exportBatchPdf(int $batchId)
+    public function exportBatchPdf(int $batchId): array
     {
         return $this->archiveService->exportBatchPdf($batchId);
     }

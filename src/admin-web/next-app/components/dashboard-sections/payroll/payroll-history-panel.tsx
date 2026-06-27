@@ -17,10 +17,11 @@ export function PayrollHistoryPanel({ data, actions, formatters }: PayrollHistor
       columns={[
         { key: "createdAt", header: "実行日時", render: (row) => formatters.formatDateTime(row.createdAt) },
         { key: "importType", header: "区分", render: (row) => formatters.formatImportType(row.importType) },
-        { key: "sourceFileName", header: "ファイル", render: (row) => row.sourceFileName },
+        { key: "sourceFileName", header: "ファイル", render: (row) => row.downloadFileName ?? row.sourceFileName },
         { key: "targetPeriod", header: "対象期間", render: (row) => row.targetPeriod ?? "-" },
         { key: "successCount", header: "成功", render: (row) => row.successCount },
         { key: "errorCount", header: "失敗", render: (row) => row.errorCount },
+        { key: "downloadAvailable", header: "再取得", render: (row) => (row.downloadAvailable ? "可" : "不可") },
         {
           key: "action",
           header: "操作",

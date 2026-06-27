@@ -97,6 +97,10 @@ export function AttendanceMonthClosePanel({
 }
 
 export function AttendanceExportPanel({ reportMonth, reportFrom, reportTo, actions }: AttendanceExportPanelProps) {
+  function confirmExport(label: string, format: string) {
+    return window.confirm(`${label}を出力します。\n対象月: ${reportMonth}\n対象期間: ${reportFrom} - ${reportTo}\n形式: ${format}`);
+  }
+
   return (
     <section id="attendance-export" className="panel action-panel anchor-panel">
       <div className="panel-header">
@@ -105,13 +109,36 @@ export function AttendanceExportPanel({ reportMonth, reportFrom, reportTo, actio
         </div>
       </div>
       <div className="button-row">
-        <button type="button" onClick={() => void actions.onDownloadMonthlyAttendanceCsv(reportMonth)}>
+        <button
+          type="button"
+          onClick={() => {
+            if (confirmExport("月次CSV", "CSV")) {
+              void actions.onDownloadMonthlyAttendanceCsv(reportMonth);
+            }
+          }}
+        >
           月次CSV
         </button>
-        <button type="button" className="secondary" onClick={() => void actions.onDownloadDailyAttendanceCsv(reportFrom, reportTo)}>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => {
+            if (confirmExport("日次CSV", "CSV")) {
+              void actions.onDownloadDailyAttendanceCsv(reportFrom, reportTo);
+            }
+          }}
+        >
           日次CSV
         </button>
-        <button type="button" className="secondary" onClick={() => void actions.onDownloadDailyAttendancePdf(reportMonth)}>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => {
+            if (confirmExport("日次PDF", "PDF")) {
+              void actions.onDownloadDailyAttendancePdf(reportMonth);
+            }
+          }}
+        >
           日次PDF
         </button>
       </div>

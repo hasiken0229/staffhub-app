@@ -1,4 +1,5 @@
 import { DataTable } from "@/components/data-table";
+import { formatAuditActor, formatAuditDetail, formatDisplayCode } from "@/lib/display-labels";
 import type { AuditLog } from "@/types";
 
 type AuditSectionProps = {
@@ -51,7 +52,7 @@ export function AuditSection(props: AuditSectionProps) {
             <input
               value={props.filters.auditActionFilter}
               onChange={(event) => props.actions.onAuditActionFilterChange(event.target.value.toUpperCase())}
-              placeholder="例: NOTICE_CREATED"
+              placeholder="例: お知らせ作成"
             />
           </label>
           <label>
@@ -84,11 +85,11 @@ export function AuditSection(props: AuditSectionProps) {
             {
               key: "actorLabel",
               header: "実行者",
-              render: (row) => row.actorLabel ?? `${row.actorType ?? "-"} / ${row.actorId ?? "-"}`,
+              render: (row) => row.actorLabel ?? formatAuditActor(row.actorType, row.actorId),
             },
-            { key: "action", header: "種別", render: (row) => row.action },
-            { key: "target", header: "対象", render: (row) => `${row.targetType} / ${row.targetId ?? "-"}` },
-            { key: "detail", header: "詳細", render: (row) => row.detail },
+            { key: "action", header: "操作", render: (row) => formatDisplayCode(row.action) },
+            { key: "target", header: "対象", render: (row) => `${formatDisplayCode(row.targetType)} / ${row.targetId ?? "-"}` },
+            { key: "detail", header: "詳細", render: (row) => formatAuditDetail(row.detailJson, row.detail) },
             { key: "ipAddress", header: "IP", render: (row) => row.ipAddress ?? "-" },
           ]}
         />

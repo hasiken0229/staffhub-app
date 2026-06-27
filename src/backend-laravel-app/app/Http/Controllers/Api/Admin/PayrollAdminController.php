@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Services\ApiException;
 use App\Services\ApiResponse;
+use App\Services\ImportHistoryService;
 use App\Services\PayrollDefinitionService;
 use App\Services\PayrollImportBatchService;
 use App\Services\PayrollStatementService;
@@ -16,6 +17,7 @@ final class PayrollAdminController extends Controller
         private readonly PayrollStatementService $payrollStatementService,
         private readonly PayrollImportBatchService $payrollImportBatchService,
         private readonly PayrollDefinitionService $payrollDefinitionService,
+        private readonly ImportHistoryService $importHistoryService,
     ) {
     }
 
@@ -198,11 +200,32 @@ final class PayrollAdminController extends Controller
             'payDate' => ['required', 'date'],
             'publishDate' => ['required', 'date'],
             'remarks' => ['nullable', 'string'],
-            'file' => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
+            'file' => ['required', 'file', 'extensions:csv,txt', 'max:10240'],
         ]);
 
         try {
             return ApiResponse::ok($this->payrollImportBatchService->importFromCsv($payload, $request->file('file'), $request->user()));
+        } catch (ApiException $exception) {
+            return ApiResponse::error(
+                $exception->errorCode,
+                $exception->getMessage(),
+                $exception->status,
+                $exception->details,
+            );
+        }
+    }
+
+    public function previewImportCsv(Request $request)
+    {
+        $payload = $request->validate([
+            'statementType' => ['required', 'string', 'in:PAYROLL,BONUS'],
+            'targetYearMonth' => ['required', 'string', 'size:7'],
+            'publishedAt' => ['nullable', 'date'],
+            'file' => ['required', 'file', 'extensions:csv,txt', 'max:10240'],
+        ]);
+
+        try {
+            return ApiResponse::ok($this->payrollImportBatchService->previewLegacyCsv($payload, $request->file('file'), $request->user()));
         } catch (ApiException $exception) {
             return ApiResponse::error(
                 $exception->errorCode,
@@ -227,10 +250,33 @@ final class PayrollAdminController extends Controller
         }
     }
 
-    public function exportImportBatchPdf(int $id)
+    public function exportImportBatchPdf(Request $request, int $id)
     {
         try {
-            return $this->payrollImportBatchService->exportBatchPdf($id);
+            $export = $this->payrollImportBatchService->exportBatchPdf($id);
+            $summary = $export['summary'];
+            $statementType = strtoupper((string) ($summary['statementType'] ?? 'PAYROLL'));
+            $importType = $statementType === 'BONUS' ? 'BONUS_BATCH_ZIP' : 'PAYROLL_BATCH_ZIP';
+
+            $this->importHistoryService->storeAndRecord(
+                $importType,
+                $export['fileName'],
+                (string) ($summary['targetYearMonth'] ?? ''),
+                $statementType,
+                (int) ($summary['entryCount'] ?? 1),
+                (int) ($summary['entryCount'] ?? 1),
+                0,
+                $summary,
+                $export['content'],
+                $export['fileName'],
+                $export['contentType'],
+                $request->user(),
+            );
+
+            return response($export['content'], 200, [
+                'Content-Type' => $export['contentType'],
+                'Content-Disposition' => 'attachment; filename="' . $export['fileName'] . '"',
+            ]);
         } catch (ApiException $exception) {
             return ApiResponse::error(
                 $exception->errorCode,

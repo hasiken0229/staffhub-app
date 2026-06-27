@@ -1,4 +1,5 @@
-import { Fragment, useState } from "react";
+import { Fragment, type FormEvent, useState } from "react";
+import { fiscalYearStartValue } from "@/lib/date-defaults";
 import type { Employee, EmployeeUpdatePayload } from "@/types";
 
 type EmployeesSectionProps = {
@@ -49,6 +50,7 @@ function toEditPayload(employee: Employee): EmployeeUpdatePayload {
     joinedOn: toDateInputValue(employee.joinedOn),
     retiredOn: toDateInputValue(employee.retiredOn),
     googleChatUserId: employee.googleChatUserId ?? "",
+    loginEmail: employee.loginEmail ?? "",
   };
 }
 
@@ -61,6 +63,12 @@ export function EmployeesSection(props: EmployeesSectionProps) {
   const [editDraft, setEditDraft] = useState<EmployeeUpdatePayload | null>(null);
   const [editMessage, setEditMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [employeeImportPreview, setEmployeeImportPreview] = useState<{
+    fileName: string;
+    rowCount: number;
+    hasLoginEmail: boolean;
+    missingRequiredHeaders: string[];
+  } | null>(null);
 
   function startEditing(employee: Employee) {
     setEditingEmployeeId(employee.id);
@@ -93,6 +101,7 @@ export function EmployeesSection(props: EmployeesSectionProps) {
         locationName: editDraft.locationName?.trim() || null,
         retiredOn: editDraft.retiredOn || null,
         googleChatUserId: editDraft.googleChatUserId?.trim() || null,
+        loginEmail: editDraft.loginEmail?.trim() || null,
       });
       setEditMessage("職員情報を更新しました。");
       setEditingEmployeeId(null);
@@ -102,6 +111,40 @@ export function EmployeesSection(props: EmployeesSectionProps) {
     } finally {
       setIsSaving(false);
     }
+  }
+
+  async function previewEmployeeCsv(file?: File) {
+    if (!file) {
+      setEmployeeImportPreview(null);
+      return;
+    }
+
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
+    const headers = (lines[0] ?? "").replace(/^\uFEFF/, "").split(",").map((item) => item.trim());
+    const missingRequiredHeaders = ["社員番号", "姓", "名"].filter((header) => !headers.includes(header));
+    setEmployeeImportPreview({
+      fileName: file.name,
+      rowCount: Math.max(0, lines.length - 1),
+      hasLoginEmail: headers.includes("メールアドレス"),
+      missingRequiredHeaders,
+    });
+  }
+
+  async function submitEmployeeImport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!employeeImportPreview || employeeImportPreview.missingRequiredHeaders.length > 0) {
+      return;
+    }
+
+    const shouldImport = window.confirm(
+      `職員CSVを取り込みます。\nファイル: ${employeeImportPreview.fileName}\n想定件数: ${employeeImportPreview.rowCount} 件\nメールアドレス列: ${employeeImportPreview.hasLoginEmail ? "あり" : "なし"}`,
+    );
+    if (!shouldImport) {
+      return;
+    }
+
+    await props.actions.onEmployeeImport(new FormData(event.currentTarget));
   }
 
   return (
@@ -240,6 +283,15 @@ export function EmployeesSection(props: EmployeesSectionProps) {
                                   />
                                 </label>
                                 <label>
+                                  メールアドレス
+                                  <input
+                                    type="email"
+                                    value={editDraft.loginEmail ?? ""}
+                                    onChange={(event) => updateDraft("loginEmail", event.currentTarget.value)}
+                                    placeholder="staff@example.com"
+                                  />
+                                </label>
+                                <label>
                                   Google Chat ID
                                   <input
                                     value={editDraft.googleChatUserId ?? ""}
@@ -280,7 +332,7 @@ export function EmployeesSection(props: EmployeesSectionProps) {
             雛形 CSV
           </button>
         </div>
-        <form className="stack-form" action={async (formData) => void props.actions.onEmployeeImport(formData)}>
+        <form className="stack-form" onSubmit={(event) => void submitEmployeeImport(event)}>
           <div className="form-grid">
             <label>
               初期所属
@@ -308,15 +360,30 @@ export function EmployeesSection(props: EmployeesSectionProps) {
             </label>
             <label>
               入職日
-              <input name="defaultJoinedOn" type="date" defaultValue="2024-04-01" />
+              <input name="defaultJoinedOn" type="date" defaultValue={fiscalYearStartValue()} />
             </label>
           </div>
           <label>
             CSVファイル
-            <input name="file" type="file" accept=".csv,text/csv" />
+            <input name="file" type="file" accept=".csv,text/csv" onChange={(event) => void previewEmployeeCsv(event.currentTarget.files?.[0])} />
           </label>
-          <p className="compact-empty">未入力の所属・雇用区分・状態・入職日は、この初期値で補完されます。</p>
-          <button type="submit">職員マスタへ取り込む</button>
+          <p className="compact-empty">
+            未入力の所属・雇用区分・状態・入職日は、この初期値で補完されます。メールアドレス列がある場合は職員ログインに同期します。
+          </p>
+          {employeeImportPreview ? (
+            <div className={employeeImportPreview.missingRequiredHeaders.length > 0 ? "import-preview import-preview-error" : "import-preview"}>
+              <strong>取込プレビュー</strong>
+              <span>ファイル: {employeeImportPreview.fileName}</span>
+              <span>想定件数: {employeeImportPreview.rowCount} 件</span>
+              <span>メールアドレス列: {employeeImportPreview.hasLoginEmail ? "あり" : "なし"}</span>
+              {employeeImportPreview.missingRequiredHeaders.length > 0 ? (
+                <span>不足ヘッダー: {employeeImportPreview.missingRequiredHeaders.join(" / ")}</span>
+              ) : null}
+            </div>
+          ) : null}
+          <button type="submit" disabled={!employeeImportPreview || employeeImportPreview.missingRequiredHeaders.length > 0}>
+            プレビュー内容で取り込む
+          </button>
         </form>
         {props.form.employeeImportResult ? <p className="feedback">{props.form.employeeImportResult}</p> : null}
       </section>

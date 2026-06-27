@@ -1,9 +1,10 @@
 import { useState } from "react";
+import { currentMonthEndValue, currentMonthStartValue, currentMonthValue } from "@/lib/date-defaults";
 
 export function useReportState() {
-  const [reportMonth, setReportMonth] = useState("2026-03");
-  const [reportFrom, setReportFrom] = useState("2026-03-01");
-  const [reportTo, setReportTo] = useState("2026-03-31");
+  const [reportMonth, setReportMonth] = useState(currentMonthValue);
+  const [reportFrom, setReportFrom] = useState(currentMonthStartValue);
+  const [reportTo, setReportTo] = useState(currentMonthEndValue);
   const [reportEmployeeId, setReportEmployeeId] = useState("1");
   const [reportResult, setReportResult] = useState("");
 

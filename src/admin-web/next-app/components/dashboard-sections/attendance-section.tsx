@@ -2,9 +2,10 @@ import { useState } from "react";
 import { AttendanceMonthClosePanel, AttendanceExportPanel } from "@/components/dashboard-sections/attendance/attendance-close-export-panels";
 import { AttendanceDailyEditor } from "@/components/dashboard-sections/attendance/attendance-daily-editor";
 import { AttendanceFiltersPanel } from "@/components/dashboard-sections/attendance/attendance-filters-panel";
+import { AttendanceSettingsPanels } from "@/components/dashboard-sections/attendance/attendance-settings-panels";
 import { AttendanceTablesPanel } from "@/components/dashboard-sections/attendance/attendance-tables-panel";
 import type { AttendanceSectionProps } from "@/components/dashboard-sections/attendance/attendance-section-types";
-import { isoToTime, isNextDay, normalizeBreaks } from "@/components/dashboard-sections/attendance/attendance-section-utils";
+import { isoToTime, normalizeBreaks } from "@/components/dashboard-sections/attendance/attendance-section-utils";
 import {
   loadAttendanceDailyDetail,
   loadAttendanceDailyHistories,
@@ -44,10 +45,10 @@ export function AttendanceSection(props: AttendanceSectionProps) {
       const detail = await updateAttendanceDaily(editingDaily.id, {
         workTypeId: editingDaily.workTypeId ?? null,
         clockInTime: isoToTime(editingDaily.clockInAt),
-        clockInNextDay: isNextDay(editingDaily.clockInAt, editingDaily.targetDate),
+        clockInNextDay: false,
         clockOutTime: isoToTime(editingDaily.clockOutAt),
-        clockOutNextDay: isNextDay(editingDaily.clockOutAt, editingDaily.targetDate),
-        breaks: editingBreaks,
+        clockOutNextDay: false,
+        breaks: editingBreaks.map((breakRow) => ({ ...breakRow, startNextDay: false, endNextDay: false })),
         remark: editingDaily.remark ?? null,
         supervisorComment: editingDaily.supervisorComment ?? null,
         approvalStatus: editingDaily.approvalStatus ?? "PENDING",
@@ -83,7 +84,7 @@ export function AttendanceSection(props: AttendanceSectionProps) {
     }
   }
 
-  function setEditingClock(field: "clockInAt" | "clockOutAt", time: string, nextDay = false) {
+  function setEditingClock(field: "clockInAt" | "clockOutAt", time: string) {
     setEditingDaily((current) => {
       if (!current) {
         return current;
@@ -92,9 +93,6 @@ export function AttendanceSection(props: AttendanceSectionProps) {
         return { ...current, [field]: null };
       }
       const base = new Date(`${current.targetDate}T00:00:00`);
-      if (nextDay) {
-        base.setDate(base.getDate() + 1);
-      }
       const date = `${base.getFullYear()}-${`${base.getMonth() + 1}`.padStart(2, "0")}-${`${base.getDate()}`.padStart(2, "0")}`;
       return { ...current, [field]: `${date}T${time}:00` };
     });
@@ -131,6 +129,12 @@ export function AttendanceSection(props: AttendanceSectionProps) {
         actions={props.actions}
         formatters={props.formatters}
         onOpenDailyEditor={openDailyEditor}
+      />
+
+      <AttendanceSettingsPanels
+        activePanel={activePanel}
+        dashboard={props.data.dashboard}
+        targetMonth={props.filters.attendanceFilterMonth}
       />
 
       {editingDaily ? (

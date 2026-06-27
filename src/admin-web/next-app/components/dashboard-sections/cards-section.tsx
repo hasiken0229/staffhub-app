@@ -16,6 +16,8 @@ type CardsSectionProps = {
     onAssignEmployeeIdChange: (value: string) => void;
     onAssignCardUidChange: (value: string) => void;
     onAssignCard: () => Promise<void>;
+    onRevokeCard: (cardId: number) => Promise<void>;
+    onDeleteCard: (cardId: number) => Promise<void>;
   };
   formatters: {
     formatDateTime: (value?: string | null) => string;
@@ -24,6 +26,24 @@ type CardsSectionProps = {
 
 export function CardsSection(props: CardsSectionProps) {
   const activePanel = props.data.activePanel || "cards-list";
+
+  async function revokeCard(row: CardAssignment) {
+    const confirmed = window.confirm(`${row.employeeCode} / ${row.employeeName} のカード ${row.cardUid} を解除しますか？`);
+    if (!confirmed) {
+      return;
+    }
+
+    await props.actions.onRevokeCard(row.id);
+  }
+
+  async function deleteCard(row: CardAssignment) {
+    const confirmed = window.confirm(`${row.employeeCode} / ${row.employeeName} のカード ${row.cardUid} を一覧から削除しますか？`);
+    if (!confirmed) {
+      return;
+    }
+
+    await props.actions.onDeleteCard(row.id);
+  }
 
   return (
     <section className="split section-enter delay-3">
@@ -38,9 +58,26 @@ export function CardsSection(props: CardsSectionProps) {
             { key: "employeeName", header: "氏名", render: (row) => row.employeeName },
             { key: "isActive", header: "状態", render: (row) => (row.isActive ? "有効" : "無効") },
             { key: "assignedAt", header: "割当日時", render: (row) => props.formatters.formatDateTime(row.assignedAt) },
+            {
+              key: "actions",
+              header: "操作",
+              render: (row) => (
+                <div className="table-action-row">
+                  {row.isActive ? (
+                    <button type="button" className="secondary table-action" onClick={() => void revokeCard(row)}>
+                      解除
+                    </button>
+                  ) : null}
+                  <button type="button" className="secondary table-action danger-action" onClick={() => void deleteCard(row)}>
+                    削除
+                  </button>
+                </div>
+              ),
+            },
           ]}
         />
       ) : null}
+      {activePanel === "cards-list" && props.form.assignResult ? <p className="feedback">{props.form.assignResult}</p> : null}
       {activePanel === "cards-register" ? (
         <section id="cards-register" className="panel action-panel anchor-panel">
         <div className="panel-header">

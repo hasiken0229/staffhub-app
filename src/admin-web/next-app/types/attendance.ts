@@ -92,6 +92,11 @@ export type AttendanceDailyUpdatePayload = {
   approvalComment?: string | null;
 };
 
+export type AttendanceDailyCreatePayload = {
+  employeeId: number;
+  targetDate: string;
+};
+
 export type AttendanceErrorReportRow = {
   dailyId: number;
   employeeId: number;
@@ -243,4 +248,39 @@ export type AttendanceMonthlyCloseSummary = {
 export type AttendanceApproval = AttendanceDaily & {
   overtimeMinutes?: number;
   employmentType?: string;
+};
+
+export type EmployeeAttendanceSetting = {
+  employeeId: number;
+  employeeCode: string;
+  employeeName: string;
+  departmentName?: string | null;
+  locationName?: string | null;
+  status?: string | null;
+  standardClockInTime?: string | null;
+  standardClockOutTime?: string | null;
+  includeBeforeStart: boolean;
+  includeAfterEnd: boolean;
+};
+
+export type AttendanceShiftSchedule = {
+  id: number;
+  employeeId: number;
+  employeeCode: string;
+  employeeName: string;
+  targetDate: string;
+  workTypeId?: number | null;
+  workTypeName?: string | null;
+  scheduledClockInTime?: string | null;
+  scheduledClockOutTime?: string | null;
+  note?: string | null;
+};
+
+export type AttendanceBreakRule = {
+  id: number;
+  name: string;
+  baseBreakMinutes: number;
+  thresholdWorkMinutes: number;
+  thresholdBreakMinutes: number;
+  note?: string | null;
 };

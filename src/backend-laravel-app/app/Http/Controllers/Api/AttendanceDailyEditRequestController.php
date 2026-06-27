@@ -31,6 +31,29 @@ final class AttendanceDailyEditRequestController extends Controller
         }
     }
 
+    public function daily(Request $request)
+    {
+        $payload = $request->validate([
+            'targetMonth' => ['nullable', 'string', 'size:7'],
+        ]);
+
+        try {
+            $result = $this->attendanceService->listMonthlyCalendar([
+                'targetMonth' => $payload['targetMonth'] ?? now()->format('Y-m'),
+                'employeeId' => (int) $request->user()->id,
+            ]);
+
+            return ApiResponse::ok($result['items'], $result['meta']);
+        } catch (ApiException $exception) {
+            return ApiResponse::error(
+                $exception->errorCode,
+                $exception->getMessage(),
+                $exception->status,
+                $exception->details,
+            );
+        }
+    }
+
     public function store(Request $request)
     {
         $payload = $request->validate([

@@ -1,3 +1,4 @@
+import { type FormEvent, useState } from "react";
 import type { PayrollSectionProps } from "@/components/dashboard-sections/payroll/payroll-section-types";
 
 type PayrollRegisterPanelProps = {
@@ -7,6 +8,43 @@ type PayrollRegisterPanelProps = {
 };
 
 export function PayrollRegisterPanel({ data, form, actions }: PayrollRegisterPanelProps) {
+  const [payrollPreview, setPayrollPreview] = useState<{ fileName: string; rowCount: number } | null>(null);
+
+  async function previewPayrollCsv(file?: File) {
+    if (!file) {
+      setPayrollPreview(null);
+      return;
+    }
+
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
+    setPayrollPreview({
+      fileName: file.name,
+      rowCount: Math.max(0, lines.length - 1),
+    });
+  }
+
+  async function submitPayrollCsv(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!payrollPreview) {
+      return;
+    }
+
+    const shouldImport = window.confirm(
+      `${data.payrollTypeLabel}CSVを登録します。\nファイル: ${payrollPreview.fileName}\n対象月: ${form.payrollTargetYearMonth}\n対象期間: ${form.payrollPeriodStartOn} - ${form.payrollPeriodEndOn}\n支給日: ${form.payrollPayDate}\n想定件数: ${payrollPreview.rowCount} 件`,
+    );
+    if (!shouldImport) {
+      return;
+    }
+
+    const formData = new FormData(event.currentTarget);
+    formData.set("statementType", form.payrollStatementType);
+    if (form.payrollDefinitionId) {
+      formData.set("definitionId", form.payrollDefinitionId);
+    }
+    await actions.onPayrollBatchCreate(formData);
+  }
+
   return (
     <section id="payroll-register" className="panel action-panel anchor-panel payroll-register-panel">
       <div className="panel-header">
@@ -17,13 +55,7 @@ export function PayrollRegisterPanel({ data, form, actions }: PayrollRegisterPan
       </div>
       <form
         className="stack-form"
-        action={async (formData) => {
-          formData.set("statementType", form.payrollStatementType);
-          if (form.payrollDefinitionId) {
-            formData.set("definitionId", form.payrollDefinitionId);
-          }
-          await actions.onPayrollBatchCreate(formData);
-        }}
+        onSubmit={(event) => void submitPayrollCsv(event)}
       >
         <input type="hidden" name="statementType" value={form.payrollStatementType} readOnly />
         <div className="form-grid">
@@ -93,10 +125,21 @@ export function PayrollRegisterPanel({ data, form, actions }: PayrollRegisterPan
         </div>
         <label>
           CSVファイル
-          <input name="file" type="file" accept=".csv,text/csv" />
+          <input name="file" type="file" accept=".csv,text/csv" onChange={(event) => void previewPayrollCsv(event.currentTarget.files?.[0])} />
         </label>
         <p className="compact-empty">選択したデータ定義と列名・列順・列数が一致しないCSVは登録できません。</p>
-        <button type="submit">CSVを登録する</button>
+        {payrollPreview ? (
+          <div className="import-preview">
+            <strong>取込プレビュー</strong>
+            <span>ファイル: {payrollPreview.fileName}</span>
+            <span>対象月: {form.payrollTargetYearMonth}</span>
+            <span>対象期間: {form.payrollPeriodStartOn} - {form.payrollPeriodEndOn}</span>
+            <span>想定件数: {payrollPreview.rowCount} 件</span>
+          </div>
+        ) : null}
+        <button type="submit" disabled={!payrollPreview}>
+          プレビュー内容で登録する
+        </button>
       </form>
     </section>
   );

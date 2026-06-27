@@ -170,6 +170,56 @@ final class PayrollAdminApiTest extends TestCase
             ->assertJsonPath('error.code', 'NOT_FOUND');
     }
 
+    public function test_admin_can_export_payroll_batch_zip_and_redownload_from_history(): void
+    {
+        $token = $this->adminToken();
+        $employeeId = $this->employee('P301', 'ZIP 職員');
+        $definitionId = $this->payrollDefinition();
+        $batchId = $this->payrollImportBatch($definitionId);
+        $statementId = $this->payrollStatement($employeeId, $definitionId, $batchId);
+        DB::table('payroll_import_batch_items')->insert([
+            'payroll_import_batch_id' => $batchId,
+            'employee_id' => $employeeId,
+            'employee_code' => 'P301',
+            'employee_name' => 'ZIP 職員',
+            'gross_amount' => 300000,
+            'deduction_amount' => 50000,
+            'net_amount' => 250000,
+            'statement_id' => $statementId,
+            'line_no' => 2,
+            'deleted_at' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $pdfPath = storage_path('app/private/payroll/import-batches/P201.pdf');
+        if (!is_dir(dirname($pdfPath))) {
+            mkdir(dirname($pdfPath), 0775, true);
+        }
+        file_put_contents($pdfPath, '%PDF-1.4 test payroll statement');
+
+        $zip = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->get('/api/admin/payroll/import-batches/' . $batchId . '/export-pdf')
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/zip')
+            ->getContent();
+
+        $this->assertNotSame('', $zip);
+        $this->assertDatabaseHas('import_histories', [
+            'import_type' => 'PAYROLL_BATCH_ZIP',
+            'target_period' => '2026-03',
+            'success_count' => 1,
+        ]);
+
+        $historyId = (int) DB::table('import_histories')
+            ->where('import_type', 'PAYROLL_BATCH_ZIP')
+            ->value('id');
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->get('/api/admin/files/history/' . $historyId . '/download')
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/zip');
+    }
+
     private function adminToken(): string
     {
         DB::table('users')->insert([

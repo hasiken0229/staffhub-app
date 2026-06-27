@@ -319,7 +319,7 @@ final class NotificationMailFlowTest extends TestCase
         });
     }
 
-    public function test_short_interval_punch_warning_sends_admin_space_notification(): void
+    public function test_short_interval_punch_is_rejected_without_admin_space_notification(): void
     {
         $this->configureGoogleChat();
 
@@ -390,20 +390,20 @@ final class NotificationMailFlowTest extends TestCase
             'appVersion' => '1.0.0',
         ]);
 
-        $response->assertOk()
-            ->assertJsonPath('data.resultType', 'WARNING')
-            ->assertJsonPath('data.attendanceEventId', 2);
+        $response->assertStatus(400)
+            ->assertJsonPath('error.code', 'SHORT_INTERVAL_PUNCH')
+            ->assertJsonPath('error.message', '直前の打刻から3分以内のため、打刻を受け付けできません。');
 
-        Http::assertSent(function ($request) {
-            $payload = $request->data();
-            $text = (string) ($payload['text'] ?? '');
+        $this->assertDatabaseHas('attendance_events', [
+            'employee_id' => $employeeId,
+            'device_id' => $deviceId,
+            'receive_status' => 'REJECTED',
+            'rejection_reason' => 'SHORT_INTERVAL_PUNCH',
+            'dedupe_key' => 'dedupe-second',
+        ]);
 
-            return str_starts_with($request->url(), 'https://chat.googleapis.com/v1/spaces/AAAAadminSpace/messages?requestId=')
-                && str_contains($text, '*短時間の連続打刻を検出しました*')
-                && str_contains($text, '中村 四郎さんの連続打刻を確認してください。')
-                && str_contains($text, '対象職員: E040 中村 四郎')
-                && str_contains($text, '端末: 玄関端末')
-                && str_contains($text, 'アラート種別: SHORT_INTERVAL');
+        Http::assertNotSent(function ($request) {
+            return str_starts_with($request->url(), 'https://chat.googleapis.com/v1/spaces/AAAAadminSpace/messages?requestId=');
         });
     }
 

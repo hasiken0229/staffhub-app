@@ -4,6 +4,24 @@
   gap: 8px;
 }
 
+.table-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.table-action-row form {
+  margin: 0;
+}
+
+.compact-button {
+  min-height: 32px;
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
 .desktop-only {
   display: block;
 }

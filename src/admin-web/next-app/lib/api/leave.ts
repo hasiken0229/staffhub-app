@@ -166,11 +166,11 @@ async function saveSystemMaster<T>(path: string, payload: Record<string, unknown
   });
 }
 
-export async function saveDepartmentSetting(payload: { name: string; sortOrder?: number; isActive?: boolean }) {
+export async function saveDepartmentSetting(payload: { id?: number; name: string; sortOrder?: number; isActive?: boolean }) {
   return saveSystemMaster<DepartmentSetting[]>("/api/admin/system-masters/departments", payload);
 }
 
-export async function saveLocationSetting(payload: { name: string; sortOrder?: number; isActive?: boolean }) {
+export async function saveLocationSetting(payload: { id?: number; name: string; sortOrder?: number; isActive?: boolean }) {
   return saveSystemMaster<LocationSetting[]>("/api/admin/system-masters/locations", payload);
 }
 
@@ -185,7 +185,10 @@ export async function saveEmploymentTypeSetting(payload: {
 }
 
 export async function saveWorkTypeSetting(payload: {
+  id?: number;
   name: string;
+  startTime?: string;
+  endTime?: string;
   defaultBreakMinutes?: number;
   standardDayMinutes?: number;
   sortOrder?: number;
@@ -209,11 +212,13 @@ export async function saveLeaveTypeSetting(payload: {
   requiresBalance?: boolean;
   allowsHalfDay?: boolean;
   sortOrder?: number;
+  isActive?: boolean;
 }) {
   return saveSystemMaster<LeaveTypeSetting[]>("/api/admin/system-masters/leave-types", payload);
 }
 
 export async function savePaidLeaveSetting(payload: {
+  id?: number;
   settingName: string;
   annualGrantDays: number;
   carryForwardMonths: number;

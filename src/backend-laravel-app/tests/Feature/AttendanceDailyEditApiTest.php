@@ -11,6 +11,89 @@ final class AttendanceDailyEditApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_admin_can_create_blank_daily_attendance_for_manual_edit(): void
+    {
+        $token = $this->adminToken();
+        $employeeId = $this->employee('E200');
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson('/api/admin/attendance/daily', [
+                'employeeId' => $employeeId,
+                'targetDate' => '2026-04-20',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.employeeId', $employeeId)
+            ->assertJsonPath('data.targetDate', '2026-04-20')
+            ->assertJsonPath('data.clockInAt', null)
+            ->assertJsonPath('data.clockOutAt', null)
+            ->assertJsonPath('data.approvalStatus', 'PENDING')
+            ->assertJsonPath('data.isManuallyEdited', false);
+
+        $this->assertDatabaseHas('attendance_daily', [
+            'employee_id' => $employeeId,
+            'target_date' => '2026-04-20',
+            'clock_in_at' => null,
+            'clock_out_at' => null,
+            'approval_status' => 'PENDING',
+            'close_status' => 'OPEN',
+        ]);
+        $this->assertDatabaseHas('attendance_daily_histories', [
+            'action_type' => 'MANUAL_DAILY_CREATED',
+            'field_key' => 'targetDate',
+            'new_value' => '2026-04-20',
+        ]);
+    }
+
+    public function test_admin_daily_create_is_idempotent_for_existing_date(): void
+    {
+        $token = $this->adminToken();
+        $employeeId = $this->employee('E199');
+        $dailyId = $this->dailyAttendance($employeeId, [
+            'target_date' => '2026-04-19',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson('/api/admin/attendance/daily', [
+                'employeeId' => $employeeId,
+                'targetDate' => '2026-04-19',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.id', $dailyId);
+
+        $this->assertSame(1, DB::table('attendance_daily')
+            ->where('employee_id', $employeeId)
+            ->where('target_date', '2026-04-19')
+            ->count());
+    }
+
+    public function test_admin_cannot_create_daily_attendance_in_closed_month(): void
+    {
+        $token = $this->adminToken();
+        $employeeId = $this->employee('E198');
+        DB::table('attendance_monthly_closes')->insert([
+            'target_year_month' => '2026-05',
+            'status' => 'CLOSED',
+            'note' => '締め済み',
+            'closed_at' => now(),
+            'closed_by' => $employeeId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson('/api/admin/attendance/daily', [
+                'employeeId' => $employeeId,
+                'targetDate' => '2026-05-02',
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'CLOSED_PERIOD');
+
+        $this->assertDatabaseMissing('attendance_daily', [
+            'employee_id' => $employeeId,
+            'target_date' => '2026-05-02',
+        ]);
+    }
+
     public function test_admin_can_reset_manual_daily_edit_to_raw_punches(): void
     {
         $token = $this->adminToken();

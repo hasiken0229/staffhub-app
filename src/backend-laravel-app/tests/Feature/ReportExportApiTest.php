@@ -44,6 +44,30 @@ final class ReportExportApiTest extends TestCase
         $this->assertStringContainsString('8時間00分', $payrollCsv);
         $this->assertStringContainsString('2時間00分', $payrollCsv);
         $this->assertStringNotContainsString('7時間00分', $payrollCsv);
+
+        $this->assertDatabaseHas('import_histories', [
+            'import_type' => 'DAILY_ATTENDANCE_CSV',
+            'target_period' => '2026-04-10_2026-04-10',
+            'success_count' => 1,
+        ]);
+        $this->assertDatabaseHas('import_histories', [
+            'import_type' => 'MONTHLY_ATTENDANCE_CSV',
+            'target_period' => '2026-04',
+            'success_count' => 1,
+        ]);
+        $this->assertDatabaseHas('import_histories', [
+            'import_type' => 'MONTHLY_PAYROLL_CSV',
+            'target_period' => '2026-04',
+            'success_count' => 1,
+        ]);
+
+        $historyId = (int) DB::table('import_histories')
+            ->where('import_type', 'MONTHLY_ATTENDANCE_CSV')
+            ->value('id');
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->get('/api/admin/files/history/' . $historyId . '/download')
+            ->assertOk()
+            ->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
     }
 
     public function test_attendance_pdf_exports_return_pdf_content(): void
@@ -66,6 +90,40 @@ final class ReportExportApiTest extends TestCase
             ->getContent();
 
         $this->assertStringStartsWith('%PDF', $monthlyWorksPdf);
+
+        $this->assertDatabaseHas('import_histories', [
+            'import_type' => 'DAILY_ATTENDANCE_PDF',
+            'target_period' => '2026-04',
+            'success_count' => 1,
+        ]);
+        $this->assertDatabaseHas('import_histories', [
+            'import_type' => 'MONTHLY_WORKS_PDF',
+            'target_period' => '2026-04',
+            'success_count' => 1,
+        ]);
+
+        $summary = json_decode((string) DB::table('import_histories')
+            ->where('import_type', 'MONTHLY_WORKS_PDF')
+            ->value('summary_json'), true);
+        $this->assertSame(30, $summary['calendarDays'] ?? null);
+
+        $historyId = (int) DB::table('import_histories')
+            ->where('import_type', 'MONTHLY_WORKS_PDF')
+            ->value('id');
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->get('/api/admin/files/history/' . $historyId . '/download')
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf');
+    }
+
+    public function test_monthly_works_pdf_returns_clear_error_for_invalid_employee(): void
+    {
+        $token = $this->adminToken();
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->getJson('/api/admin/reports/monthly-works-pdf?employeeId=9999&targetMonth=2026-04')
+            ->assertStatus(404)
+            ->assertJsonPath('error.message', '対象職員が見つかりません。');
     }
 
     private function adminToken(): string

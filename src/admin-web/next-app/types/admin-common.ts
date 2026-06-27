@@ -2,11 +2,14 @@ import type {
   AttendanceApproval,
   AttendanceDaily,
   AttendanceDailyEditRequest,
+  AttendanceBreakRule,
   AttendanceErrorReportRow,
   AttendanceEvent,
   AttendanceMonthClosePrecheck,
   AttendanceMonthCloseStatusRow,
   AttendanceMonthlyCloseSummary,
+  AttendanceShiftSchedule,
+  EmployeeAttendanceSetting,
 } from "@/types/attendance";
 import type { LeaveLedgerEntry, LeaveRequest } from "@/types/leave";
 import type {
@@ -35,6 +38,7 @@ export type Employee = {
   status: string;
   joinedOn?: string;
   retiredOn?: string | null;
+  loginEmail?: string | null;
   googleChatUserId?: string | null;
 };
 
@@ -48,6 +52,7 @@ export type EmployeeUpdatePayload = {
   status: string;
   joinedOn: string;
   retiredOn?: string | null;
+  loginEmail?: string | null;
   googleChatUserId?: string | null;
 };
 
@@ -103,6 +108,7 @@ export type NotificationItem = {
 export type EmployeePortalData = {
   home: MobileHome;
   leaveRequests: LeaveRequest[];
+  attendanceDaily: AttendanceDaily[];
   attendanceDailyEditRequests?: AttendanceDailyEditRequest[];
   payroll: PayrollStatement[];
   notifications: NotificationItem[];
@@ -148,6 +154,48 @@ export type ImportHistory = {
   downloadAvailable?: boolean;
   contentType?: string | null;
   expiresAt?: string | null;
+};
+
+export type HarmosMigrationImportType =
+  | "HARMOS_EMPLOYEE_CSV"
+  | "HARMOS_ATTENDANCE_DAILY_CSV"
+  | "HARMOS_ATTENDANCE_MONTHLY_CSV"
+  | "HARMOS_PAID_LEAVE_BALANCE_CSV";
+
+export type HarmosMigrationItem = {
+  line: number;
+  action: "CREATE" | "UPDATE" | "SKIP" | "REFERENCE_ONLY";
+  employeeMatched?: boolean;
+  employeeCode?: string | null;
+  employeeName?: string | null;
+  targetDate?: string | null;
+  detail?: string | null;
+};
+
+export type HarmosMigrationError = {
+  line: number;
+  employeeCode?: string | null;
+  message: string;
+};
+
+export type HarmosMigrationResult = {
+  dryRun: boolean;
+  importType: HarmosMigrationImportType;
+  sourceFileName: string;
+  headers: string[];
+  processedCount: number;
+  successCount: number;
+  errorCount: number;
+  summary: {
+    createdCount: number;
+    updatedCount: number;
+    skippedCount: number;
+    matchedEmployeeCount: number;
+    unmatchedEmployeeCount: number;
+    duplicateCount: number;
+  };
+  items: HarmosMigrationItem[];
+  errors: HarmosMigrationError[];
 };
 
 export type Notice = {
@@ -207,6 +255,8 @@ export type EmploymentTypeSetting = {
 export type WorkTypeSetting = {
   id: number;
   name: string;
+  startTime?: string | null;
+  endTime?: string | null;
   defaultBreakMinutes?: number | null;
   standardDayMinutes?: number | null;
   sortOrder: number;
@@ -226,6 +276,7 @@ export type LeaveTypeSetting = {
   requiresBalance: boolean;
   allowsHalfDay: boolean;
   sortOrder: number;
+  isActive: boolean;
 };
 
 export type PaidLeaveSetting = {
@@ -278,6 +329,20 @@ export type SystemMasters = {
   dailyFieldSettings: AttendanceDailyFieldSetting[];
 };
 
+export type EnvironmentCheck = {
+  key: string;
+  label: string;
+  enabled: boolean;
+  purpose: string;
+};
+
+export type EnvironmentStatus = {
+  status: "OK" | "MISSING_EXTENSION";
+  checks: EnvironmentCheck[];
+  missingCount: number;
+  message: string;
+};
+
 export type DashboardData = {
   health: string;
   employees: Employee[];
@@ -292,6 +357,9 @@ export type DashboardData = {
   attendanceMonthCloseStatus?: AttendanceMonthCloseStatusRow[];
   attendanceMonthClosePrecheck?: AttendanceMonthClosePrecheck;
   attendanceDailyEditRequests?: AttendanceDailyEditRequest[];
+  employeeAttendanceSettings?: EmployeeAttendanceSetting[];
+  attendanceShiftSchedules?: AttendanceShiftSchedule[];
+  attendanceBreakRule?: AttendanceBreakRule | null;
   leaveRequests: LeaveRequest[];
   workProcedures: LeaveRequest[];
   attendanceMonthlyClose: AttendanceMonthlyCloseSummary;
@@ -305,5 +373,6 @@ export type DashboardData = {
   reportAttendanceApprovals: AttendanceApproval[];
   paidLeaveReport: PaidLeaveReportRow[];
   systemMasters: SystemMasters;
+  environment: EnvironmentStatus;
   auditLogs: AuditLog[];
 };

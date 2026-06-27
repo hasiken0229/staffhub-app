@@ -1,6 +1,7 @@
 import {
   createEmployeeAttendanceDailyEditRequest,
   createEmployeeLeaveRequest,
+  loadEmployeeAttendanceDaily,
   loadEmployeeAttendanceDailyEditRequests,
   loadEmployeeLeaveLedger,
   loadEmployeeLeaveRequests,
@@ -21,10 +22,11 @@ type UseEmployeePortalActionsInput = {
 };
 
 export function useEmployeePortalActions({ setEmployeePortal, setErrorMessage, onRefresh }: UseEmployeePortalActionsInput) {
-  async function syncEmployeeLeavePortalSummary() {
-    const [home, leaveRequests, attendanceDailyEditRequests, leaveLedger] = await Promise.all([
+  async function syncEmployeeLeavePortalSummary(targetMonth?: string) {
+    const [home, leaveRequests, attendanceDaily, attendanceDailyEditRequests, leaveLedger] = await Promise.all([
       loadEmployeePortalHome(),
       loadEmployeeLeaveRequests(),
+      loadEmployeeAttendanceDaily(targetMonth),
       loadEmployeeAttendanceDailyEditRequests(),
       loadEmployeeLeaveLedger(),
     ]);
@@ -33,6 +35,7 @@ export function useEmployeePortalActions({ setEmployeePortal, setErrorMessage, o
       ...current,
       home,
       leaveRequests,
+      attendanceDaily,
       attendanceDailyEditRequests,
       leaveLedger,
     }));
@@ -47,7 +50,7 @@ export function useEmployeePortalActions({ setEmployeePortal, setErrorMessage, o
   async function handleEmployeeAttendanceDailyEditRequestCreate(payload: AttendanceDailyEditRequestCreatePayload) {
     setErrorMessage("");
     await createEmployeeAttendanceDailyEditRequest(payload);
-    await syncEmployeeLeavePortalSummary();
+    await syncEmployeeLeavePortalSummary(payload.targetDate.slice(0, 7));
   }
 
   async function handleEmployeeUpdate(id: number, payload: EmployeeUpdatePayload) {

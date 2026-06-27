@@ -35,9 +35,10 @@ public static class AppSettingsLoader
                 NormalizeDeviceSecret(dto.DeviceSecret),
                 dto.DeviceName ?? "玄関端末",
                 dto.AutoStartEnabled ?? true,
+                dto.StartMinimized ?? true,
                 dto.ReaderMode ?? "RC_S380",
                 dto.PreferredReaderName,
-                dto.PollIntervalMilliseconds is > 0 ? dto.PollIntervalMilliseconds.Value : 700);
+                dto.PollIntervalMilliseconds is > 0 ? dto.PollIntervalMilliseconds.Value : 300);
         }
         catch
         {
@@ -52,9 +53,10 @@ public static class AppSettingsLoader
             "CHANGE_ME_DEVICE_SECRET",
             "玄関端末",
             true,
+            true,
             "RC_S380",
             "RC-S380",
-            700);
+            300);
 
     private static string NormalizeBaseUrl(string? value)
     {
@@ -75,6 +77,7 @@ public static class AppSettingsLoader
         public string? DeviceSecret { get; set; }
         public string? DeviceName { get; set; }
         public bool? AutoStartEnabled { get; set; }
+        public bool? StartMinimized { get; set; }
         public string? ReaderMode { get; set; }
         public string? PreferredReaderName { get; set; }
         public int? PollIntervalMilliseconds { get; set; }

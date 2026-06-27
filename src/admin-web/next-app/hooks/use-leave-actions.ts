@@ -8,6 +8,7 @@ import {
   loadWorkProcedures,
   returnWorkProcedure,
 } from "@/lib/api";
+import { currentMonthEndValue, currentMonthStartValue } from "@/lib/date-defaults";
 import type { DashboardData } from "@/types";
 
 type UseLeaveActionsParams = {
@@ -143,8 +144,8 @@ export function useLeaveActions(params: UseLeaveActionsParams) {
     params.setWorkProcedureLeaveTypeCode("");
     params.setWorkProcedureRequestCategory("");
     params.setWorkProcedureTimeLeaveType("");
-    params.setWorkProcedureFrom("2026-03-01");
-    params.setWorkProcedureTo("2026-03-31");
+    params.setWorkProcedureFrom(currentMonthStartValue());
+    params.setWorkProcedureTo(currentMonthEndValue());
 
     try {
       const workProcedures = await loadWorkProcedures({ status: "PENDING" });

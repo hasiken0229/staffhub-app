@@ -1,7 +1,4 @@
 import {
-  downloadDailyAttendanceCsv,
-  downloadDailyAttendancePdf,
-  downloadMonthlyAttendanceCsv,
   formatApprovalStatus,
   formatCloseStatus,
   formatDateOnly,
@@ -58,9 +55,9 @@ export function buildAttendanceSectionProps(params: UseDashboardSectionPropsPara
       onAttendanceDailyEditRequestDecision: params.handleAttendanceDailyEditRequestDecision,
       onBulkAttendanceDecision: params.handleBulkAttendanceDecision,
       onAttendanceErrorStatus: params.handleAttendanceErrorStatus,
-      onDownloadMonthlyAttendanceCsv: downloadMonthlyAttendanceCsv,
-      onDownloadDailyAttendanceCsv: downloadDailyAttendanceCsv,
-      onDownloadDailyAttendancePdf: downloadDailyAttendancePdf,
+      onDownloadMonthlyAttendanceCsv: params.handleMonthlyAttendanceCsvDownload,
+      onDownloadDailyAttendanceCsv: params.handleDailyAttendanceCsvDownload,
+      onDownloadDailyAttendancePdf: params.handleDailyAttendancePdfDownload,
     },
     formatters: {
       formatDateOnly,

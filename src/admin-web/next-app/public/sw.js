@@ -1,5 +1,5 @@
-const CACHE_NAME = "staffhub-shell-v1";
-const OFFLINE_URLS = ["./", "./manifest.webmanifest"];
+const CACHE_NAME = "staffhub-static-v2";
+const OFFLINE_URLS = ["./manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -18,6 +18,19 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") {
+    return;
+  }
+
+  const url = new URL(request.url);
+  const isApiRequest = url.pathname.includes("/dakoku/api/");
+  const isDocumentRequest = request.mode === "navigate" || request.destination === "document";
+  if (isApiRequest || isDocumentRequest) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  const cacheableDestinations = new Set(["font", "image", "manifest", "script", "style"]);
+  if (!cacheableDestinations.has(request.destination)) {
     return;
   }
 

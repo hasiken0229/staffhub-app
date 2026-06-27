@@ -15,7 +15,7 @@ export function PayrollStatementListPanel({ data, actions, formatters }: Payroll
       rows={data.filteredPayrollStatements}
       emptyMessage="公開済み明細はまだありません"
       columns={[
-        { key: "employeeCode", header: "社員番号", render: (row) => row.employeeCode ?? "-" },
+        { key: "employeeCode", header: "職員番号", render: (row) => row.employeeCode ?? "-" },
         { key: "employeeName", header: "氏名", render: (row) => row.employeeName ?? "-" },
         { key: "targetYearMonth", header: "対象月", render: (row) => row.targetYearMonth },
         { key: "payDate", header: "支給日", render: (row) => formatters.formatMonthDay(row.payDate ?? row.publishedAt) },

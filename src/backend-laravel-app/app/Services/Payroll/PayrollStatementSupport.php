@@ -7,7 +7,6 @@ use App\Services\AuditLogService;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\GenericUser;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 
 trait PayrollStatementSupport
 {
@@ -39,7 +38,8 @@ trait PayrollStatementSupport
 
     protected function streamStatement(object $statement, bool $inline)
     {
-        if (!Storage::disk('local')->exists($statement->file_path)) {
+        $filePath = storage_path('app/private/' . ltrim((string) $statement->file_path, '/\\'));
+        if (!is_file($filePath)) {
             throw new ApiException('NOT_FOUND', '給与明細ファイルが見つかりません。', 404);
         }
 
@@ -49,10 +49,10 @@ trait PayrollStatementSupport
 
         if ($inline) {
             $headers['Content-Disposition'] = 'inline; filename="' . $statement->original_file_name . '"';
-            return Storage::disk('local')->response($statement->file_path, $statement->original_file_name, $headers);
+            return response()->file($filePath, $headers);
         }
 
-        return Storage::disk('local')->download($statement->file_path, $statement->original_file_name, $headers);
+        return response()->download($filePath, $statement->original_file_name, $headers);
     }
 
     protected function buildStatementDetail(object $statement, bool $isAdmin): array

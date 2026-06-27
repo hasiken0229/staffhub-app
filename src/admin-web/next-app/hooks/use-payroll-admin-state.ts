@@ -1,4 +1,11 @@
 import { useState } from "react";
+import {
+  currentDateValue,
+  currentMonthEndValue,
+  currentMonthStartValue,
+  currentMonthValue,
+  nextMonthDateValue,
+} from "@/lib/date-defaults";
 import type { PayrollImportBatchDetail, PayrollStatementDetail } from "@/types";
 
 export function usePayrollAdminState() {
@@ -9,11 +16,11 @@ export function usePayrollAdminState() {
   const [payrollDefinitionId, setPayrollDefinitionId] = useState("");
   const [payrollDefinitionName, setPayrollDefinitionName] = useState("");
   const [payrollDefinitionActive, setPayrollDefinitionActive] = useState(true);
-  const [payrollTargetYearMonth, setPayrollTargetYearMonth] = useState("2026-03");
-  const [payrollPeriodStartOn, setPayrollPeriodStartOn] = useState("2026-03-01");
-  const [payrollPeriodEndOn, setPayrollPeriodEndOn] = useState("2026-03-31");
-  const [payrollPayDate, setPayrollPayDate] = useState("2026-03-27");
-  const [payrollPublishDate, setPayrollPublishDate] = useState("2026-03-26");
+  const [payrollTargetYearMonth, setPayrollTargetYearMonth] = useState(currentMonthValue);
+  const [payrollPeriodStartOn, setPayrollPeriodStartOn] = useState(currentMonthStartValue);
+  const [payrollPeriodEndOn, setPayrollPeriodEndOn] = useState(currentMonthEndValue);
+  const [payrollPayDate, setPayrollPayDate] = useState(() => nextMonthDateValue(25));
+  const [payrollPublishDate, setPayrollPublishDate] = useState(currentDateValue);
   const [payrollRemarks, setPayrollRemarks] = useState("");
   const [payrollBatchTargetMonthFilter, setPayrollBatchTargetMonthFilter] = useState("");
   const [selectedPayrollBatchId, setSelectedPayrollBatchId] = useState<number | null>(null);

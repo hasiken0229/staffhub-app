@@ -33,7 +33,7 @@ export function useAdminDashboardEffects(params: UseAdminDashboardEffectsParams)
     }
 
     params.startTransition(() => {
-      void params.bootstrap(audience);
+      void params.bootstrap(audience).catch(() => undefined);
     });
   }, []);
 

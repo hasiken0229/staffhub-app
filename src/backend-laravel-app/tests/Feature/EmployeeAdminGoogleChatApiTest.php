@@ -25,16 +25,22 @@ final class EmployeeAdminGoogleChatApiTest extends TestCase
                 'employmentType' => 'FULL_TIME',
                 'status' => 'ACTIVE',
                 'joinedOn' => '2024-04-01',
+                'loginEmail' => 'staff100@example.com',
                 'googleChatUserId' => '1234567890',
             ]);
 
         $response->assertOk()
             ->assertJsonPath('data.employeeCode', 'E100')
+            ->assertJsonPath('data.loginEmail', 'staff100@example.com')
             ->assertJsonPath('data.googleChatUserId', 'users/1234567890');
 
         $this->assertDatabaseHas('employees', [
             'employee_code' => 'E100',
             'google_chat_user_id' => 'users/1234567890',
+        ]);
+        $this->assertDatabaseHas('employee_auth', [
+            'employee_id' => (int) $response->json('data.id'),
+            'login_id' => 'staff100@example.com',
         ]);
     }
 
@@ -65,15 +71,21 @@ final class EmployeeAdminGoogleChatApiTest extends TestCase
                 'employmentType' => 'FULL_TIME',
                 'status' => 'ACTIVE',
                 'joinedOn' => '2024-04-01',
+                'loginEmail' => 'staff101@example.com',
                 'googleChatUserId' => 'users/9999999999',
             ]);
 
         $response->assertOk()
+            ->assertJsonPath('data.loginEmail', 'staff101@example.com')
             ->assertJsonPath('data.googleChatUserId', 'users/9999999999');
 
         $this->assertDatabaseHas('employees', [
             'id' => $employeeId,
             'google_chat_user_id' => 'users/9999999999',
+        ]);
+        $this->assertDatabaseHas('employee_auth', [
+            'employee_id' => $employeeId,
+            'login_id' => 'staff101@example.com',
         ]);
     }
 
@@ -81,8 +93,8 @@ final class EmployeeAdminGoogleChatApiTest extends TestCase
     {
         $token = $this->issueAdminToken();
         $file = UploadedFile::fake()->createWithContent('employees.csv', implode("\r\n", [
-            '社員番号,姓,名,ふりがな,所属,勤務場所,雇用区分,状態,入職日,退職日,Google Chat ID',
-            'E200,山田,花子,やまだ はなこ,保育,分園,非常勤,在職,2025-04-01,,1234567890',
+            '社員番号,姓,名,ふりがな,所属,勤務場所,雇用区分,状態,入職日,退職日,メールアドレス,Google Chat ID',
+            'E200,山田,花子,やまだ はなこ,保育,分園,非常勤,在職,2025-04-01,,staff200@example.com,1234567890',
             '',
         ]));
 
@@ -96,6 +108,7 @@ final class EmployeeAdminGoogleChatApiTest extends TestCase
             ->assertJsonPath('data.items.0.locationName', '分園')
             ->assertJsonPath('data.items.0.employmentType', 'PART_TIME')
             ->assertJsonPath('data.items.0.status', 'ACTIVE')
+            ->assertJsonPath('data.items.0.loginEmail', 'staff200@example.com')
             ->assertJsonPath('data.items.0.googleChatUserId', 'users/1234567890');
 
         $this->assertDatabaseHas('employees', [
@@ -108,6 +121,11 @@ final class EmployeeAdminGoogleChatApiTest extends TestCase
             'joined_on' => '2025-04-01',
             'retired_on' => null,
             'google_chat_user_id' => 'users/1234567890',
+        ]);
+        $employeeId = (int) DB::table('employees')->where('employee_code', 'E200')->value('id');
+        $this->assertDatabaseHas('employee_auth', [
+            'employee_id' => $employeeId,
+            'login_id' => 'staff200@example.com',
         ]);
     }
 
@@ -168,7 +186,46 @@ final class EmployeeAdminGoogleChatApiTest extends TestCase
         $response->assertOk();
         $content = ltrim((string) $response->getContent(), "\xEF\xBB\xBF");
 
-        $this->assertStringContainsString('社員番号,姓,名,ふりがな,所属,勤務場所,雇用区分,状態,入職日,退職日,Google Chat ID', $content);
+        $this->assertStringContainsString('社員番号,姓,名,ふりがな,所属,勤務場所,雇用区分,状態,入職日,退職日,メールアドレス,Google Chat ID', $content);
+    }
+
+    public function test_employee_login_email_must_be_unique(): void
+    {
+        $token = $this->issueAdminToken();
+        $employeeId = (int) DB::table('employees')->insertGetId([
+            'employee_code' => 'E301',
+            'name' => '既存 職員',
+            'kana' => null,
+            'department_name' => '保育',
+            'employment_type' => 'FULL_TIME',
+            'status' => 'ACTIVE',
+            'joined_on' => '2024-04-01',
+            'retired_on' => null,
+            'google_chat_user_id' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('employee_auth')->insert([
+            'employee_id' => $employeeId,
+            'login_id' => 'duplicate@example.com',
+            'password_hash' => Hash::make('ChangeMe123!'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson('/api/admin/employees', [
+                'employeeCode' => 'E302',
+                'name' => '新規 職員',
+                'departmentName' => '保育',
+                'employmentType' => 'FULL_TIME',
+                'status' => 'ACTIVE',
+                'joinedOn' => '2024-04-01',
+                'loginEmail' => 'duplicate@example.com',
+            ]);
+
+        $response->assertStatus(409)
+            ->assertJsonPath('error.code', 'CONFLICT');
     }
 
     private function issueAdminToken(): string

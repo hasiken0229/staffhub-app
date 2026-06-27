@@ -153,6 +153,12 @@ export function formatNoticeType(value?: string | null) {
 
 export function formatImportType(value?: string | null) {
   switch ((value ?? "").toUpperCase()) {
+    case "MONTHLY_ATTENDANCE_CSV":
+      return "月次勤怠CSV出力";
+    case "DAILY_ATTENDANCE_CSV":
+      return "日次勤怠CSV出力";
+    case "DAILY_ATTENDANCE_PDF":
+      return "日次勤怠PDF出力";
     case "MONTHLY_PAYROLL_CSV":
       return "給与ソフトCSV出力";
     case "MONTHLY_WORKS_PDF":
@@ -165,6 +171,10 @@ export function formatImportType(value?: string | null) {
       return "給与PDF登録";
     case "BONUS_PDF_UPLOAD":
       return "賞与PDF登録";
+    case "PAYROLL_BATCH_ZIP":
+      return "給与一括PDF出力";
+    case "BONUS_BATCH_ZIP":
+      return "賞与一括PDF出力";
     case "EMPLOYEE_CSV":
       return "職員CSV取込";
     default:
@@ -227,7 +237,19 @@ export function formatWorkMinutes(value?: number | null) {
     return "-";
   }
 
+  return formatDurationMinutes(value);
+}
+
+export function formatDurationMinutes(value?: number | null) {
+  if (value == null) {
+    return "-";
+  }
+
   const hours = Math.floor(value / 60);
   const minutes = value % 60;
-  return `${hours}時間${minutes.toString().padStart(2, "0")}分`;
+  if (hours >= 1) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}`;
+  }
+
+  return `${minutes}分`;
 }

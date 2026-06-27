@@ -11,8 +11,8 @@ const groups = [
     key: "main",
     label: "メイン",
     items: [
-      { key: "dashboard", label: "ダッシュボード", icon: "D" },
-      { key: "notices", label: "お知らせ", icon: "N" },
+      { key: "dashboard", label: "ダッシュボード", icon: "主" },
+      { key: "notices", label: "お知らせ", icon: "知" },
     ],
   },
   {
@@ -20,7 +20,7 @@ const groups = [
     label: "業務管理",
     items: [
       { key: "employees", label: "職員管理", icon: "職" },
-      { key: "cards", label: "カード管理", icon: "C" },
+      { key: "cards", label: "カード管理", icon: "札" },
       { key: "attendance", label: "日次勤怠", icon: "勤" },
       { key: "leave", label: "届出・有給管理", icon: "休" },
     ],
@@ -30,8 +30,9 @@ const groups = [
     label: "データ・集計",
     items: [
       { key: "payroll", label: "給与明細", icon: "給" },
-      { key: "reports", label: "レポート", icon: "R" },
-      { key: "audit", label: "監査ログ", icon: "A" },
+      { key: "harmosMigration", label: "HARMOS移行", icon: "移" },
+      { key: "reports", label: "レポート", icon: "集" },
+      { key: "audit", label: "監査ログ", icon: "監" },
       { key: "system", label: "システム管理", icon: "設" },
     ],
   },

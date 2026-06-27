@@ -213,6 +213,7 @@ final class DailyAttendanceService extends AttendanceServiceSupport
     public function listMonthlyCalendar(array $filters): array
     {
         $targetMonth = !empty($filters['targetMonth']) ? (string) $filters['targetMonth'] : now()->format('Y-m');
+        $employeeId = isset($filters['employeeId']) ? (int) $filters['employeeId'] : null;
         $employeeCode = $filters['employeeCode'] ?? null;
         $departmentName = $filters['departmentName'] ?? null;
         $monthStart = CarbonImmutable::parse($targetMonth . '-01')->startOfDay();
@@ -235,6 +236,10 @@ final class DailyAttendanceService extends AttendanceServiceSupport
                     ->whereNull('retired_on')
                     ->orWhereDate('retired_on', '>=', $monthStart->toDateString());
             });
+
+        if ($employeeId !== null && $employeeId > 0) {
+            $employeeQuery->where('id', $employeeId);
+        }
 
         if (!empty($employeeCode)) {
             $employeeQuery->where('employee_code', 'like', '%' . $employeeCode . '%');

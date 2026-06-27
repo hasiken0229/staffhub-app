@@ -70,6 +70,8 @@ export function buildCardsSectionProps(params: UseDashboardSectionPropsParams): 
       onAssignEmployeeIdChange: params.setAssignEmployeeId,
       onAssignCardUidChange: params.setAssignCardUid,
       onAssignCard: params.handleAssignCard,
+      onRevokeCard: params.handleRevokeCard,
+      onDeleteCard: params.handleDeleteCard,
     },
     formatters: {
       formatDateTime,

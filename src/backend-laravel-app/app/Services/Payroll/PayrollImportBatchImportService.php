@@ -47,6 +47,141 @@ final class PayrollImportBatchImportService
         ], $file, $actor);
     }
 
+    public function previewLegacyCsv(array $payload, UploadedFile $file, GenericUser $actor): array
+    {
+        $statementType = $this->catalog->normalizeStatementType((string) ($payload['statementType'] ?? 'PAYROLL'));
+        $targetYearMonth = $this->validateYearMonth((string) ($payload['targetYearMonth'] ?? ''));
+        $publishAt = !empty($payload['publishedAt'])
+            ? CarbonImmutable::parse((string) $payload['publishedAt'])
+            : CarbonImmutable::now();
+
+        $periodStart = CarbonImmutable::parse($targetYearMonth . '-01');
+        $periodEnd = $periodStart->endOfMonth();
+
+        return $this->previewFromCsv([
+            'statementType' => $statementType,
+            'targetYearMonth' => $targetYearMonth,
+            'periodStartOn' => $periodStart->format('Y-m-d'),
+            'periodEndOn' => $periodEnd->format('Y-m-d'),
+            'payDate' => $publishAt->format('Y-m-d'),
+            'publishDate' => $publishAt->format('Y-m-d'),
+        ], $file);
+    }
+
+    public function previewFromCsv(array $payload, UploadedFile $file): array
+    {
+        $statementType = $this->resolveStatementType($payload);
+        $definition = $this->definitionService->resolveDefinition(
+            isset($payload['definitionId']) ? (int) $payload['definitionId'] : null,
+            $statementType
+        );
+
+        $targetYearMonth = $this->validateYearMonth((string) $payload['targetYearMonth']);
+        $periodStartOn = CarbonImmutable::parse((string) $payload['periodStartOn']);
+        $periodEndOn = CarbonImmutable::parse((string) $payload['periodEndOn']);
+        $payDate = CarbonImmutable::parse((string) $payload['payDate']);
+        $publishDate = CarbonImmutable::parse((string) $payload['publishDate']);
+
+        $expectedHeaders = [];
+        if (!empty($definition->sample_headers_json)) {
+            $expectedHeaders = json_decode((string) $definition->sample_headers_json, true) ?: [];
+        }
+        if ($expectedHeaders === []) {
+            $expectedHeaders = $this->catalog->headers($statementType);
+        }
+
+        $prepared = $this->csvImportService->prepareRows($file, $statementType, $expectedHeaders);
+        $results = [];
+        $errors = [];
+        $seenEmployeeCodes = [];
+
+        foreach (array_slice($prepared['rows'], 1) as $lineNumber => $row) {
+            $actualLineNo = $lineNumber + 2;
+            if ($this->csvImportService->rowIsEmpty($row)) {
+                continue;
+            }
+
+            $employeeCode = $this->csvImportService->employeeCode($row, $prepared['headerIndexMap']);
+            if ($employeeCode === '') {
+                $errors[] = [
+                    'line' => $actualLineNo,
+                    'employeeCode' => null,
+                    'message' => '社員番号が空です。',
+                ];
+                continue;
+            }
+
+            if (isset($seenEmployeeCodes[$employeeCode])) {
+                $errors[] = [
+                    'line' => $actualLineNo,
+                    'employeeCode' => $employeeCode,
+                    'message' => 'CSV内で社員番号が重複しています。',
+                ];
+                continue;
+            }
+            $seenEmployeeCodes[$employeeCode] = true;
+
+            $employee = DB::table('employees')
+                ->where('employee_code', $employeeCode)
+                ->where('status', '!=', 'RETIRED')
+                ->first();
+
+            if ($employee === null) {
+                $errors[] = [
+                    'line' => $actualLineNo,
+                    'employeeCode' => $employeeCode,
+                    'message' => 'employees に該当職員が存在しません。',
+                ];
+                continue;
+            }
+
+            try {
+                $statement = $this->csvImportService->buildStatementPayload(
+                    $statementType,
+                    $targetYearMonth,
+                    $row,
+                    $prepared['headerIndexMap'],
+                    $employee,
+                    null
+                );
+
+                $results[] = [
+                    'line' => $actualLineNo,
+                    'employeeId' => (int) $employee->id,
+                    'employeeCode' => $employeeCode,
+                    'employeeName' => (string) $employee->name,
+                    'grossAmount' => $statement['grossAmount'],
+                    'deductionAmount' => $statement['deductionAmount'],
+                    'netAmount' => $statement['netAmount'],
+                ];
+            } catch (\Throwable $throwable) {
+                $errors[] = [
+                    'line' => $actualLineNo,
+                    'employeeCode' => $employeeCode,
+                    'message' => $throwable->getMessage(),
+                ];
+            }
+        }
+
+        return [
+            'dryRun' => true,
+            'statementType' => $statementType,
+            'statementTypeLabel' => $this->catalog->title($statementType),
+            'definitionId' => (int) $definition->id,
+            'definitionName' => $definition->definition_name,
+            'targetYearMonth' => $targetYearMonth,
+            'periodStartOn' => $periodStartOn->toDateString(),
+            'periodEndOn' => $periodEndOn->toDateString(),
+            'payDate' => $payDate->toDateString(),
+            'publishDate' => $publishDate->toDateString(),
+            'processedCount' => count($results) + count($errors),
+            'importedCount' => count($results),
+            'errorCount' => count($errors),
+            'items' => $results,
+            'errors' => $errors,
+        ];
+    }
+
     public function importFromCsv(array $payload, UploadedFile $file, GenericUser $actor): array
     {
         $statementType = $this->resolveStatementType($payload);

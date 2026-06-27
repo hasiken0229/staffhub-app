@@ -11,6 +11,302 @@ final class HarmosGapApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_punch_rebuild_adds_post_schedule_break_up_to_sixty_minutes(): void
+    {
+        $employeeId = $this->employee('E090');
+        $this->assignPunchCard($employeeId, 'CARD090');
+        DB::table('employee_attendance_settings')->insert([
+            'employee_id' => $employeeId,
+            'standard_clock_in_time' => '09:00',
+            'standard_clock_out_time' => '17:45',
+            'include_before_start' => 0,
+            'include_after_end' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->punch('CARD090', '2026-04-20 08:55:00', 'round-in')->assertOk();
+        $this->punch('CARD090', '2026-04-20 17:50:00', 'round-out')->assertOk();
+
+        $this->assertDatabaseHas('attendance_daily', [
+            'employee_id' => $employeeId,
+            'target_date' => '2026-04-20',
+            'raw_clock_in_at' => '2026-04-20 08:55:00',
+            'raw_clock_out_at' => '2026-04-20 17:50:00',
+            'clock_in_at' => '2026-04-20 09:00:00',
+            'clock_out_at' => '2026-04-20 17:50:00',
+            'break_minutes' => 50,
+            'work_minutes' => 480,
+        ]);
+        $dailyId = (int) DB::table('attendance_daily')->where('employee_id', $employeeId)->value('id');
+        $this->assertDatabaseHas('attendance_daily_breaks', [
+            'attendance_daily_id' => $dailyId,
+            'segment_no' => 1,
+            'break_start_at' => '2026-04-20 13:00:00',
+            'break_end_at' => '2026-04-20 13:45:00',
+        ]);
+        $this->assertDatabaseHas('attendance_daily_breaks', [
+            'attendance_daily_id' => $dailyId,
+            'segment_no' => 2,
+            'break_start_at' => '2026-04-20 17:45:00',
+            'break_end_at' => '2026-04-20 17:50:00',
+        ]);
+    }
+
+    public function test_punch_rebuild_increases_break_to_keep_effective_work_at_eight_hours(): void
+    {
+        $employeeId = $this->employee('E093');
+        $this->assignPunchCard($employeeId, 'CARD093');
+        DB::table('employee_attendance_settings')->insert([
+            'employee_id' => $employeeId,
+            'standard_clock_in_time' => '09:00',
+            'standard_clock_out_time' => '17:45',
+            'include_before_start' => 0,
+            'include_after_end' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->punch('CARD093', '2026-04-23 08:55:00', 'cap-in')->assertOk();
+        $this->punch('CARD093', '2026-04-23 18:00:00', 'cap-out')->assertOk();
+
+        $this->assertDatabaseHas('attendance_daily', [
+            'employee_id' => $employeeId,
+            'target_date' => '2026-04-23',
+            'clock_in_at' => '2026-04-23 09:00:00',
+            'clock_out_at' => '2026-04-23 18:00:00',
+            'break_minutes' => 60,
+            'work_minutes' => 480,
+        ]);
+        $dailyId = (int) DB::table('attendance_daily')->where('employee_id', $employeeId)->value('id');
+        $this->assertDatabaseHas('attendance_daily_breaks', [
+            'attendance_daily_id' => $dailyId,
+            'segment_no' => 2,
+            'break_start_at' => '2026-04-23 17:45:00',
+            'break_end_at' => '2026-04-23 18:00:00',
+        ]);
+    }
+
+    public function test_punch_rebuild_caps_break_at_sixty_minutes_and_counts_extra_as_overtime(): void
+    {
+        $employeeId = $this->employee('E094');
+        $this->assignPunchCard($employeeId, 'CARD094');
+        DB::table('employee_attendance_settings')->insert([
+            'employee_id' => $employeeId,
+            'standard_clock_in_time' => '09:00',
+            'standard_clock_out_time' => '17:45',
+            'include_before_start' => 0,
+            'include_after_end' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->punch('CARD094', '2026-04-24 08:55:00', 'ot-in')->assertOk();
+        $this->punch('CARD094', '2026-04-24 18:10:00', 'ot-out')->assertOk();
+
+        $this->assertDatabaseHas('attendance_daily', [
+            'employee_id' => $employeeId,
+            'target_date' => '2026-04-24',
+            'clock_in_at' => '2026-04-24 09:00:00',
+            'clock_out_at' => '2026-04-24 18:10:00',
+            'break_minutes' => 60,
+            'work_minutes' => 490,
+        ]);
+        $dailyId = (int) DB::table('attendance_daily')->where('employee_id', $employeeId)->value('id');
+        $this->assertDatabaseHas('attendance_daily_breaks', [
+            'attendance_daily_id' => $dailyId,
+            'segment_no' => 2,
+            'break_start_at' => '2026-04-24 17:55:00',
+            'break_end_at' => '2026-04-24 18:10:00',
+        ]);
+    }
+
+    public function test_punch_rebuild_increases_break_without_schedule_to_keep_effective_work_at_eight_hours(): void
+    {
+        $employeeId = $this->employee('E089');
+        $this->assignPunchCard($employeeId, 'CARD089');
+
+        $this->punch('CARD089', '2026-04-19 09:26:00', 'no-schedule-in')->assertOk();
+        $this->punch('CARD089', '2026-04-19 18:22:00', 'no-schedule-out')->assertOk();
+
+        $this->assertDatabaseHas('attendance_daily', [
+            'employee_id' => $employeeId,
+            'target_date' => '2026-04-19',
+            'clock_in_at' => '2026-04-19 09:26:00',
+            'clock_out_at' => '2026-04-19 18:22:00',
+            'break_minutes' => 56,
+            'work_minutes' => 480,
+        ]);
+        $dailyId = (int) DB::table('attendance_daily')->where('employee_id', $employeeId)->value('id');
+        $this->assertDatabaseHas('attendance_daily_breaks', [
+            'attendance_daily_id' => $dailyId,
+            'segment_no' => 2,
+            'break_start_at' => '2026-04-19 18:11:00',
+            'break_end_at' => '2026-04-19 18:22:00',
+        ]);
+    }
+
+    public function test_punch_rebuild_uses_only_required_extra_break_after_scheduled_clock_out(): void
+    {
+        $employeeId = $this->employee('E088');
+        $this->assignPunchCard($employeeId, 'CARD088');
+        DB::table('employee_attendance_settings')->insert([
+            'employee_id' => $employeeId,
+            'standard_clock_in_time' => '09:00',
+            'standard_clock_out_time' => '18:00',
+            'include_before_start' => 1,
+            'include_after_end' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->punch('CARD088', '2026-04-18 09:26:00', 'scheduled-in')->assertOk();
+        $this->punch('CARD088', '2026-04-18 18:22:00', 'scheduled-out')->assertOk();
+
+        $this->assertDatabaseHas('attendance_daily', [
+            'employee_id' => $employeeId,
+            'target_date' => '2026-04-18',
+            'clock_in_at' => '2026-04-18 09:26:00',
+            'clock_out_at' => '2026-04-18 18:22:00',
+            'break_minutes' => 56,
+            'work_minutes' => 480,
+        ]);
+        $dailyId = (int) DB::table('attendance_daily')->where('employee_id', $employeeId)->value('id');
+        $this->assertDatabaseHas('attendance_daily_breaks', [
+            'attendance_daily_id' => $dailyId,
+            'segment_no' => 2,
+            'break_start_at' => '2026-04-18 18:11:00',
+            'break_end_at' => '2026-04-18 18:22:00',
+        ]);
+    }
+
+    public function test_employee_setting_controls_whether_before_schedule_punch_is_included(): void
+    {
+        $roundEmployeeId = $this->employee('E095');
+        $includeEmployeeId = $this->employee('E096');
+        $this->assignPunchCard($roundEmployeeId, 'CARD095');
+        $this->assignPunchCard($includeEmployeeId, 'CARD096');
+        foreach ([[$roundEmployeeId, 0], [$includeEmployeeId, 1]] as [$employeeId, $includeBeforeStart]) {
+            DB::table('employee_attendance_settings')->insert([
+                'employee_id' => $employeeId,
+                'standard_clock_in_time' => '09:00',
+                'standard_clock_out_time' => '17:45',
+                'include_before_start' => $includeBeforeStart,
+                'include_after_end' => 0,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        $this->punch('CARD095', '2026-04-25 08:55:00', 'round-before-in')->assertOk();
+        $this->punch('CARD095', '2026-04-25 17:45:00', 'round-before-out')->assertOk();
+        $this->punch('CARD096', '2026-04-25 08:55:00', 'include-before-in')->assertOk();
+        $this->punch('CARD096', '2026-04-25 17:45:00', 'include-before-out')->assertOk();
+
+        $this->assertDatabaseHas('attendance_daily', [
+            'employee_id' => $roundEmployeeId,
+            'target_date' => '2026-04-25',
+            'clock_in_at' => '2026-04-25 09:00:00',
+            'work_minutes' => 480,
+        ]);
+        $this->assertDatabaseHas('attendance_daily', [
+            'employee_id' => $includeEmployeeId,
+            'target_date' => '2026-04-25',
+            'clock_in_at' => '2026-04-25 08:55:00',
+            'break_minutes' => 50,
+            'work_minutes' => 480,
+        ]);
+    }
+
+    public function test_shift_schedule_overrides_employee_setting_for_corrected_time_and_work_type(): void
+    {
+        $employeeId = $this->employee('E091');
+        $this->assignPunchCard($employeeId, 'CARD091');
+        $workTypeId = (int) DB::table('work_type_settings')->where('name', '通常勤務')->value('id');
+        DB::table('employee_attendance_settings')->insert([
+            'employee_id' => $employeeId,
+            'standard_clock_in_time' => '09:00',
+            'standard_clock_out_time' => '18:00',
+            'include_before_start' => 0,
+            'include_after_end' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('attendance_shift_schedules')->insert([
+            'employee_id' => $employeeId,
+            'target_date' => '2026-04-21',
+            'work_type_id' => $workTypeId,
+            'scheduled_clock_in_time' => '10:00',
+            'scheduled_clock_out_time' => '17:00',
+            'note' => null,
+            'created_by' => null,
+            'updated_by' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->punch('CARD091', '2026-04-21 08:55:00', 'shift-in')->assertOk();
+        $this->punch('CARD091', '2026-04-21 18:10:00', 'shift-out')->assertOk();
+
+        $this->assertDatabaseHas('attendance_daily', [
+            'employee_id' => $employeeId,
+            'target_date' => '2026-04-21',
+            'work_type_id' => $workTypeId,
+            'schedule_name' => '通常勤務',
+            'clock_in_at' => '2026-04-21 10:00:00',
+            'clock_out_at' => '2026-04-21 18:10:00',
+            'break_minutes' => 45,
+            'work_minutes' => 445,
+        ]);
+    }
+
+    public function test_manual_daily_edit_is_not_overwritten_by_punch_rebuild(): void
+    {
+        $employeeId = $this->employee('E092');
+        $this->assignPunchCard($employeeId, 'CARD092');
+        $dailyId = (int) DB::table('attendance_daily')->insertGetId([
+            'employee_id' => $employeeId,
+            'target_date' => '2026-04-22',
+            'schedule_name' => '通常勤務',
+            'raw_clock_in_at' => '2026-04-22 08:30:00',
+            'raw_clock_out_at' => '2026-04-22 18:30:00',
+            'clock_in_at' => '2026-04-22 09:15:00',
+            'clock_out_at' => '2026-04-22 17:45:00',
+            'break_minutes' => 30,
+            'work_minutes' => 480,
+            'late_flag' => 0,
+            'early_leave_flag' => 0,
+            'absence_flag' => 0,
+            'special_leave_flag' => 0,
+            'paid_leave_unit' => null,
+            'hour_paid_leave_minutes' => 0,
+            'child_care_leave_minutes' => 0,
+            'nursing_care_leave_minutes' => 0,
+            'remark' => null,
+            'approval_status' => 'APPROVED',
+            'approval_comment' => null,
+            'approved_by' => null,
+            'approved_at' => null,
+            'close_status' => 'OPEN',
+            'is_manually_edited' => 1,
+            'updated_at' => now(),
+        ]);
+
+        $this->punch('CARD092', '2026-04-22 08:10:00', 'manual-in')->assertOk();
+        $this->punch('CARD092', '2026-04-22 18:50:00', 'manual-out')->assertOk();
+
+        $this->assertDatabaseHas('attendance_daily', [
+            'id' => $dailyId,
+            'raw_clock_in_at' => '2026-04-22 08:10:00',
+            'raw_clock_out_at' => '2026-04-22 18:50:00',
+            'clock_in_at' => '2026-04-22 09:15:00',
+            'clock_out_at' => '2026-04-22 17:45:00',
+            'break_minutes' => 30,
+            'work_minutes' => 480,
+            'approval_status' => 'APPROVED',
+        ]);
+    }
+
     public function test_admin_can_edit_daily_attendance_without_changing_raw_punches_and_history_is_recorded(): void
     {
         $token = $this->adminToken();
@@ -582,6 +878,39 @@ final class HarmosGapApiTest extends TestCase
             'joined_on' => '2026-04-01',
             'created_at' => now(),
             'updated_at' => now(),
+        ]);
+    }
+
+    private function assignPunchCard(int $employeeId, string $cardUid): void
+    {
+        DB::table('attendance_devices')->updateOrInsert(
+            ['device_code' => 'TEST_DEVICE'],
+            [
+                'name' => 'テスト端末',
+                'location_name' => '本園',
+                'is_active' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        );
+        DB::table('employee_cards')->insert([
+            'employee_id' => $employeeId,
+            'card_uid' => $cardUid,
+            'is_active' => 1,
+            'assigned_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function punch(string $cardUid, string $occurredAt, string $dedupeKey)
+    {
+        return $this->postJson('/api/attendance/punch', [
+            'deviceCode' => 'TEST_DEVICE',
+            'deviceSecret' => 'secret',
+            'cardUid' => $cardUid,
+            'occurredAt' => $occurredAt,
+            'dedupeKey' => $dedupeKey,
         ]);
     }
 }

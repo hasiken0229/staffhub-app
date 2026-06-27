@@ -1,4 +1,5 @@
 import type { AttendanceMonthlyCloseSummary, DashboardData, EmployeePortalData } from "@/types";
+import { currentMonthValue } from "./date-defaults";
 
 export const emptySystemMasters: DashboardData["systemMasters"] = {
   departments: [],
@@ -14,7 +15,7 @@ export const emptySystemMasters: DashboardData["systemMasters"] = {
 };
 
 export const emptyAttendanceMonthlyClose: AttendanceMonthlyCloseSummary = {
-  targetYearMonth: "2026-03",
+  targetYearMonth: currentMonthValue(),
   status: "OPEN",
   note: null,
   closedAt: null,
@@ -41,7 +42,7 @@ export const emptyData: DashboardData = {
   attendanceErrors: [],
   attendanceMonthCloseStatus: [],
   attendanceMonthClosePrecheck: {
-    targetYearMonth: "2026-03",
+    targetYearMonth: currentMonthValue(),
     canClose: true,
     blockers: [],
     summary: {
@@ -69,6 +70,9 @@ export const emptyData: DashboardData = {
     payrollWarnings: [],
   },
   attendanceDailyEditRequests: [],
+  employeeAttendanceSettings: [],
+  attendanceShiftSchedules: [],
+  attendanceBreakRule: null,
   leaveRequests: [],
   workProcedures: [],
   attendanceMonthlyClose: emptyAttendanceMonthlyClose,
@@ -87,6 +91,12 @@ export const emptyData: DashboardData = {
   reportAttendanceApprovals: [],
   paidLeaveReport: [],
   systemMasters: emptySystemMasters,
+  environment: {
+    status: "OK",
+    checks: [],
+    missingCount: 0,
+    message: "環境チェックはまだ実行されていません。",
+  },
   auditLogs: [],
 };
 
@@ -99,6 +109,7 @@ export const emptyEmployeePortal: EmployeePortalData = {
     latestPayroll: null,
   },
   leaveRequests: [],
+  attendanceDaily: [],
   attendanceDailyEditRequests: [],
   payroll: [],
   notifications: [],
@@ -113,6 +124,7 @@ export const sectionLabels = {
   leave: "届出・有給管理",
   notices: "お知らせ",
   payroll: "給与明細",
+  harmosMigration: "HARMOS移行",
   reports: "レポート",
   system: "システム管理",
   audit: "監査ログ",
@@ -148,6 +160,8 @@ export const sectionSubNavItems: Partial<Record<AdminSectionKey, Array<{ label: 
     { label: "月締状況", targetId: "attendance-month-close-status" },
     { label: "修正申請", targetId: "attendance-edit-requests" },
     { label: "打刻履歴", targetId: "attendance-events" },
+    { label: "勤務設定", targetId: "attendance-settings" },
+    { label: "月次シフト", targetId: "attendance-shifts" },
   ],
   leave: [
     { label: "届出検索", targetId: "leave-filters" },
@@ -163,6 +177,10 @@ export const sectionSubNavItems: Partial<Record<AdminSectionKey, Array<{ label: 
     { label: "公開済み", targetId: "payroll-statements" },
     { label: "データ定義", targetId: "payroll-definitions" },
     { label: "CSV登録", targetId: "payroll-register" },
+  ],
+  harmosMigration: [
+    { label: "CSV移行", targetId: "harmos-upload" },
+    { label: "取込履歴", targetId: "harmos-history" },
   ],
   reports: [
     { label: "レポート出力", targetId: "reports-export" },
@@ -181,6 +199,7 @@ export const sectionSubNavItems: Partial<Record<AdminSectionKey, Array<{ label: 
     { label: "有給付与", targetId: "system-paid-leave" },
     { label: "勤怠アラート", targetId: "system-attendance-alerts" },
     { label: "日次項目", targetId: "system-daily-fields" },
+    { label: "環境チェック", targetId: "system-environment" },
   ],
   audit: [
     { label: "検索条件", targetId: "audit-filters" },

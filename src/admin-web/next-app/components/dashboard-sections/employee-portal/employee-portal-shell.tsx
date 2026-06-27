@@ -1,19 +1,30 @@
 import type { ReactNode } from "react";
 import { PortalModeTabs } from "@/components/portal-mode-tabs";
-import { EmployeePortalHomeCards } from "./employee-portal-home-cards";
+import type { EmployeePortalTab } from "../employee-portal-section";
 import type { EmployeePortalSectionProps } from "./employee-portal-types";
 
 type EmployeePortalShellProps = {
   employeeName: string;
   data: EmployeePortalSectionProps["data"];
   actions: Pick<EmployeePortalSectionProps["actions"], "onLogout" | "onModeChange" | "onRefresh">;
-  formatters: EmployeePortalSectionProps["formatters"];
+  activeTab: EmployeePortalTab;
+  onTabChange: (tab: EmployeePortalTab) => void;
   children: ReactNode;
 };
 
+const employeePortalTabs: Array<{ key: EmployeePortalTab; label: string }> = [
+  { key: "home", label: "ホーム" },
+  { key: "leave", label: "休暇申請" },
+  { key: "daily-edit", label: "勤怠修正" },
+  { key: "requests", label: "申請状況" },
+  { key: "payroll", label: "給与明細" },
+  { key: "notices", label: "通知" },
+  { key: "ledger", label: "有給台帳" },
+];
+
 export function EmployeePortalShell(props: EmployeePortalShellProps) {
   return (
-    <main className="admin-shell">
+    <main className="admin-shell employee-portal-shell">
       <header className="app-topbar">
         <div className="brand app-topbar-brand">
           <div>
@@ -45,26 +56,31 @@ export function EmployeePortalShell(props: EmployeePortalShellProps) {
           <div>
             <h2>職員画面</h2>
           </div>
-          <div className="workspace-actions">
+          <nav className="employee-portal-tabs" aria-label="職員画面メニュー">
+            {employeePortalTabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                className={props.activeTab === tab.key ? "active" : ""}
+                aria-current={props.activeTab === tab.key ? "page" : undefined}
+                onClick={() => props.onTabChange(tab.key)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+          <div className="workspace-actions employee-portal-actions">
             <button onClick={props.actions.onRefresh} type="button">
               {props.data.isPending ? "読み込み中..." : "最新情報を再読込"}
             </button>
           </div>
         </header>
 
-        <EmployeePortalHomeCards data={props.data} formatters={props.formatters} />
-
         {props.data.errorMessage ? <p className="banner">{props.data.errorMessage}</p> : null}
         {props.data.isPending ? <EmployeeLoadingSkeleton /> : null}
 
         {props.children}
       </div>
-
-      <nav className="portal-bottom-nav mobile-only" aria-label="職員ポータルメニュー">
-        <a href="#employee-portal-home"><span aria-hidden="true">H</span>ホーム</a>
-        <a href="#leave-request-form"><span aria-hidden="true">休</span>休暇申請</a>
-        <a href="#employee-payroll-list-mobile"><span aria-hidden="true">給</span>給与明細</a>
-      </nav>
     </main>
   );
 }

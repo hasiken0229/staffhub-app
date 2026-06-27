@@ -89,6 +89,8 @@ export function LoginSection(props: LoginSectionProps) {
         {mode === "login" ? (
           <form
             className="login-form"
+            method="post"
+            autoComplete="on"
             onSubmit={(event) => {
               event.preventDefault();
               void props.onLogin();
@@ -98,6 +100,8 @@ export function LoginSection(props: LoginSectionProps) {
               メールアドレス
               <input
                 value={props.loginId}
+                id="username"
+                name="username"
                 type="email"
                 autoComplete="username"
                 onChange={(event) => props.onLoginIdChange(event.target.value)}
@@ -108,6 +112,8 @@ export function LoginSection(props: LoginSectionProps) {
               <input
                 type="password"
                 value={props.password}
+                id="current-password"
+                name="password"
                 autoComplete="current-password"
                 onChange={(event) => props.onPasswordChange(event.target.value)}
               />

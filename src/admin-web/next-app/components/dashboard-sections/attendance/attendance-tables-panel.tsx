@@ -39,7 +39,7 @@ export function AttendanceTablesPanel({ activePanel, data, filters, actions, for
           { key: "workStyleName", header: "勤務区分", render: (row) => row.workStyleName ?? "-" },
           { key: "clockInAt", header: "出勤", render: (row) => formatters.formatTimeOnly(row.clockInAt) },
           { key: "clockOutAt", header: "退勤", render: (row) => formatters.formatTimeOnly(row.clockOutAt) },
-          { key: "breakMinutes", header: "休憩", render: (row) => `${row.breakMinutes ?? 0}分` },
+          { key: "breakMinutes", header: "休憩", render: (row) => formatters.formatWorkMinutes(row.breakMinutes ?? 0) },
           { key: "graph", header: "勤務グラフ", render: (row) => <DailyAttendanceGraph row={row} /> },
           { key: "alerts", header: "アラート", render: (row) => row.alertSummary ?? "-" },
           { key: "manual", header: "補正", render: (row) => (row.isManuallyEdited ? "手動" : "-") },
@@ -73,7 +73,7 @@ export function AttendanceTablesPanel({ activePanel, data, filters, actions, for
             { key: "targetDate", header: "日付", render: (row) => formatters.formatDateOnly(row.targetDate) },
             { key: "employeeName", header: "職員", render: (row) => row.employeeName },
             { key: "workMinutes", header: "勤務", render: (row) => formatters.formatWorkMinutes(row.workMinutes) },
-            { key: "overtimeMinutes", header: "残業", render: (row) => `${row.overtimeMinutes ?? 0}分` },
+            { key: "overtimeMinutes", header: "残業", render: (row) => formatters.formatWorkMinutes(row.overtimeMinutes ?? 0) },
             { key: "alerts", header: "アラート", render: (row) => row.alertSummary ?? "-" },
             {
               key: "actions",
@@ -217,8 +217,8 @@ export function AttendanceTablesPanel({ activePanel, data, filters, actions, for
           { key: "targetDate", header: "対象日", render: (row) => formatters.formatDateOnly(row.targetDate) },
           { key: "employeeCode", header: "職員番号", render: (row) => row.employee.employeeCode },
           { key: "employeeName", header: "氏名", render: (row) => row.employee.name },
-          { key: "clockIn", header: "出勤", render: (row) => `${row.clockInTime ?? "-"}${row.clockInNextDay ? " 翌日" : ""}` },
-          { key: "clockOut", header: "退勤", render: (row) => `${row.clockOutTime ?? "-"}${row.clockOutNextDay ? " 翌日" : ""}` },
+          { key: "clockIn", header: "出勤", render: (row) => row.clockInTime ?? "-" },
+          { key: "clockOut", header: "退勤", render: (row) => row.clockOutTime ?? "-" },
           { key: "workType", header: "勤務区分", render: (row) => row.workTypeName ?? "-" },
           { key: "comment", header: "申請コメント", render: (row) => row.employeeComment ?? "-" },
           {

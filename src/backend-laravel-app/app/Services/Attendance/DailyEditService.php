@@ -13,6 +13,79 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 final class DailyEditService extends AttendanceServiceSupport
 {
+    public function createDaily(int $employeeId, string $targetDateValue, GenericUser $actor): array
+    {
+        return DB::transaction(function () use ($employeeId, $targetDateValue, $actor) {
+            $targetDate = CarbonImmutable::parse($targetDateValue);
+            $targetMonth = $targetDate->format('Y-m');
+            if ($this->isMonthClosed($targetMonth)) {
+                throw new ApiException('CLOSED_PERIOD', '締め済み月の日次勤怠は作成できません。', 422, [
+                    ['field' => 'targetDate', 'message' => '締め解除後に作成してください。'],
+                ]);
+            }
+
+            $employee = DB::table('employees')->where('id', $employeeId)->first();
+            if ($employee === null) {
+                throw new ApiException('VALIDATION_ERROR', '職員が見つかりません。', 422, [
+                    ['field' => 'employeeId', 'message' => '存在する職員を指定してください。'],
+                ]);
+            }
+
+            $existing = DB::table('attendance_daily')
+                ->where('employee_id', $employeeId)
+                ->where('target_date', $targetDate->toDateString())
+                ->first();
+            if ($existing !== null) {
+                return $this->dailyDetail((int) $existing->id);
+            }
+
+            $now = now();
+            $dailyId = (int) DB::table('attendance_daily')->insertGetId([
+                'employee_id' => $employeeId,
+                'target_date' => $targetDate->toDateString(),
+                'clock_in_at' => null,
+                'clock_out_at' => null,
+                'break_minutes' => 0,
+                'work_minutes' => null,
+                'late_flag' => 0,
+                'early_leave_flag' => 0,
+                'absence_flag' => 0,
+                'special_leave_flag' => 0,
+                'paid_leave_unit' => null,
+                'hour_paid_leave_minutes' => 0,
+                'child_care_leave_minutes' => 0,
+                'nursing_care_leave_minutes' => 0,
+                'raw_clock_in_at' => null,
+                'raw_clock_out_at' => null,
+                'is_manually_edited' => 0,
+                'work_type_id' => null,
+                'supervisor_comment' => null,
+                'manual_edited_by' => null,
+                'manual_edited_at' => null,
+                'remark' => null,
+                'approval_status' => 'PENDING',
+                'approval_comment' => null,
+                'approved_by' => null,
+                'approved_at' => null,
+                'close_status' => self::MONTH_CLOSE_OPEN,
+                'updated_at' => $now,
+            ]);
+
+            $operatorId = $this->resolveOperatorEmployeeId($actor, $employeeId);
+            $this->recordDailyHistory($dailyId, 'MANUAL_DAILY_CREATED', 'targetDate', null, $targetDate->toDateString(), $actor, $operatorId, null);
+            $this->addAudit(
+                strtoupper((string) $actor->role) === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE',
+                (int) $actor->id,
+                'ATTENDANCE_DAILY_MANUAL_CREATED',
+                'ATTENDANCE_DAILY',
+                (string) $dailyId,
+                ['employeeId' => $employeeId, 'targetDate' => $targetDate->toDateString()]
+            );
+
+            return $this->dailyDetail($dailyId);
+        });
+    }
+
     public function updateDaily(int $dailyId, array $payload, GenericUser $actor): array
     {
         return DB::transaction(function () use ($dailyId, $payload, $actor) {

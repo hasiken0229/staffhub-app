@@ -61,7 +61,7 @@ export function PayrollStatementDetailCard(props: PayrollStatementDetailCardProp
 
       <div className="detail-grid">
         <div>
-          <span className="detail-label">社員番号</span>
+          <span className="detail-label">職員番号</span>
           <strong>{props.detail.employeeCode}</strong>
         </div>
         <div>
@@ -85,6 +85,12 @@ export function PayrollStatementDetailCard(props: PayrollStatementDetailCardProp
           <strong>{payDateLabel}</strong>
         </div>
       </div>
+
+      {props.detail.legacyMode ? (
+        <p className="detail-legacy-alert">
+          旧形式の明細です。0円表示はCSVから金額内訳を復元できない項目を含みます。正式な金額確認はPDF保存した明細を利用してください。
+        </p>
+      ) : null}
 
       <div className="summary-strip">
         <div>
@@ -142,7 +148,7 @@ export function PayrollStatementDetailCard(props: PayrollStatementDetailCardProp
           <p className="detail-note-text">{props.detail.remarks || "備考はありません。"}</p>
           {props.detail.legacyMode ? (
             <p className="detail-legacy-note">
-              旧形式の明細です。画面内の明細表は簡易表示となりますが、PDF保存は利用できます。
+              旧形式のため、画面内の明細表は補助表示です。
             </p>
           ) : null}
         </section>

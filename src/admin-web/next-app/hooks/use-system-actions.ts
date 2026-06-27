@@ -42,10 +42,28 @@ export function useSystemActions(params: UseSystemActionsParams) {
     return formData.get(key) === "on";
   }
 
+  function timeToMinutes(value: string) {
+    const match = /^(\d{2}):(\d{2})$/.exec(value);
+    if (!match) {
+      return undefined;
+    }
+    return Number(match[1]) * 60 + Number(match[2]);
+  }
+
+  function calculateWorkTypeMinutes(startTime: string, endTime: string) {
+    const start = timeToMinutes(startTime);
+    const end = timeToMinutes(endTime);
+    if (start == null || end == null) {
+      return undefined;
+    }
+    return Math.max(0, end - start);
+  }
+
   async function handleSystemForm(target: SystemFormTarget, formData: FormData) {
     try {
       if (target === "department") {
         await saveDepartmentSetting({
+          id: readNumber(formData, "id"),
           name: readString(formData, "name"),
           sortOrder: readNumber(formData, "sortOrder"),
           isActive: readBoolean(formData, "isActive"),
@@ -53,6 +71,7 @@ export function useSystemActions(params: UseSystemActionsParams) {
         params.setSystemResult("部門マスタを更新しました。");
       } else if (target === "location") {
         await saveLocationSetting({
+          id: readNumber(formData, "id"),
           name: readString(formData, "name"),
           sortOrder: readNumber(formData, "sortOrder"),
           isActive: readBoolean(formData, "isActive"),
@@ -68,10 +87,15 @@ export function useSystemActions(params: UseSystemActionsParams) {
         });
         params.setSystemResult("雇用形態マスタを更新しました。");
       } else if (target === "workType") {
+        const startTime = readString(formData, "startTime");
+        const endTime = readString(formData, "endTime");
         await saveWorkTypeSetting({
+          id: readNumber(formData, "id"),
           name: readString(formData, "name"),
+          startTime,
+          endTime,
           defaultBreakMinutes: readNumber(formData, "defaultBreakMinutes"),
-          standardDayMinutes: readNumber(formData, "standardDayMinutes"),
+          standardDayMinutes: calculateWorkTypeMinutes(startTime, endTime),
           sortOrder: readNumber(formData, "sortOrder"),
           isActive: readBoolean(formData, "isActive"),
         });
@@ -91,10 +115,12 @@ export function useSystemActions(params: UseSystemActionsParams) {
           requiresBalance: readBoolean(formData, "requiresBalance"),
           allowsHalfDay: readBoolean(formData, "allowsHalfDay"),
           sortOrder: readNumber(formData, "sortOrder"),
+          isActive: readBoolean(formData, "isActive"),
         });
         params.setSystemResult("休暇区分マスタを更新しました。");
       } else if (target === "paidLeaveSetting") {
         await savePaidLeaveSetting({
+          id: readNumber(formData, "id"),
           settingName: readString(formData, "settingName"),
           annualGrantDays: readNumber(formData, "annualGrantDays") ?? 10,
           carryForwardMonths: readNumber(formData, "carryForwardMonths") ?? 24,

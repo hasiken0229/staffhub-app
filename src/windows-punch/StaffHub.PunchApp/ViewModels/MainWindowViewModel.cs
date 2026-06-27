@@ -18,6 +18,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private readonly OfflinePunchQueue _offlineQueue;
     private readonly AttendanceApiClient _apiClient;
     private readonly DispatcherTimer _clockTimer;
+    private readonly DispatcherTimer _readyResetTimer;
 
     private string _currentTimeText = DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss");
     private string _currentClockText = DateTime.Now.ToString("HH:mm:ss");
@@ -34,6 +35,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private string _simulatedCardUid = "0123456789ABCDEF";
     private string _readerStatus = "初期化中";
     private string _lastCardUid = "-";
+    private string _cardRegistrationMessage = "登録時はONにすると打刻せずUIDだけ読み取ります";
+    private bool _cardRegistrationModeEnabled;
+    private long? _selectedRegistrationEmployeeId;
+    private bool _isCardRegistrationBusy;
     private int _resultPulseKey;
 
     public MainWindowViewModel()
@@ -55,6 +60,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             ReaderStatus = _deviceReader.StatusText;
         };
         _clockTimer.Start();
+        _readyResetTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _readyResetTimer.Tick += (_, _) =>
+        {
+            _readyResetTimer.Stop();
+            ResetToReady();
+        };
         UpdateClock();
         ReaderStatus = _deviceReader.StatusText;
     }
@@ -80,6 +91,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     public AppSettings Settings { get; }
     public IReadOnlyList<PendingPunch> PendingPunches => _offlineQueue.Items;
     public ObservableCollection<PunchHistoryItem> PunchHistory { get; } = [];
+    public ObservableCollection<RegistrationEmployee> RegistrationEmployees { get; } = [];
 
     public string CurrentTimeText
     {
@@ -177,6 +189,52 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         set => SetField(ref _lastCardUid, value);
     }
 
+    public bool CardRegistrationModeEnabled
+    {
+        get => _cardRegistrationModeEnabled;
+        set
+        {
+            if (_cardRegistrationModeEnabled == value)
+            {
+                return;
+            }
+
+            SetField(ref _cardRegistrationModeEnabled, value);
+            _readyResetTimer.Stop();
+            if (value)
+            {
+                ResultHeadline = "カード登録モード";
+                ResultDetail = "カードをかざすとUIDをコピーします";
+                EmployeeName = "打刻は記録されません";
+                LastEventType = "-";
+                SetFeedbackState(FeedbackState.Ready);
+                _ = LoadRegistrationEmployeesAsync();
+            }
+            else
+            {
+                ResetToReady();
+            }
+        }
+    }
+
+    public string CardRegistrationMessage
+    {
+        get => _cardRegistrationMessage;
+        set => SetField(ref _cardRegistrationMessage, value);
+    }
+
+    public long? SelectedRegistrationEmployeeId
+    {
+        get => _selectedRegistrationEmployeeId;
+        set => SetField(ref _selectedRegistrationEmployeeId, value);
+    }
+
+    public bool IsCardRegistrationBusy
+    {
+        get => _isCardRegistrationBusy;
+        set => SetField(ref _isCardRegistrationBusy, value);
+    }
+
     public int PendingCount => PendingPunches.Count;
 
     public async Task SimulateScanAsync()
@@ -208,9 +266,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public async Task RestartReaderAsync()
     {
-        ResultHeadline = "カードをかざしてください";
-        ResultDetail = "RC-S380 の読取待機中";
-        SetFeedbackState(FeedbackState.Ready);
+        _readyResetTimer.Stop();
+        ResetToReady();
 
         if (!NeedsReaderReconnect(_deviceReader.StatusText))
         {
@@ -232,9 +289,71 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         ReaderStatus = _deviceReader.StatusText;
     }
 
+    public async Task RegisterLastCardAsync()
+    {
+        if (IsCardRegistrationBusy)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(LastCardUid) || LastCardUid == "-")
+        {
+            CardRegistrationMessage = "先にカードをかざしてUIDを読み取ってください。";
+            return;
+        }
+
+        if (SelectedRegistrationEmployeeId is null)
+        {
+            CardRegistrationMessage = "登録先の職員を選択してください。";
+            return;
+        }
+
+        IsCardRegistrationBusy = true;
+        try
+        {
+            var result = await _apiClient.AssignCardAsync(SelectedRegistrationEmployeeId.Value, LastCardUid);
+            CardRegistrationMessage = $"{result.EmployeeCode} / {result.EmployeeName} にカードを登録しました。";
+            ResultHeadline = "カード登録完了";
+            ResultDetail = result.CardUid;
+            EmployeeName = result.EmployeeName;
+            LastEventType = "登録済";
+            SetFeedbackState(FeedbackState.Success);
+            PlaySuccessSound();
+            AddHistory(DateTimeOffset.Now, result.EmployeeName, "カード登録", result.CardUid, "登録済");
+            ScheduleReadyReset();
+        }
+        catch (AttendanceApiException ex)
+        {
+            CardRegistrationMessage = ex.Message;
+            ResultHeadline = "カード登録できませんでした";
+            ResultDetail = ex.Message;
+            EmployeeName = "-";
+            LastEventType = "登録エラー";
+            SetFeedbackState(FeedbackState.Error);
+            PlayErrorSound();
+            ScheduleReadyReset();
+        }
+        catch
+        {
+            CardRegistrationMessage = "通信エラーのためカード登録できませんでした。";
+            ResultHeadline = "通信エラー";
+            ResultDetail = "カード登録できませんでした";
+            EmployeeName = "-";
+            LastEventType = "登録エラー";
+            SetFeedbackState(FeedbackState.Offline);
+            PlayOfflineSound();
+            ScheduleReadyReset();
+        }
+        finally
+        {
+            IsCardRegistrationBusy = false;
+        }
+    }
+
     public void Dispose()
     {
         _clockTimer.Stop();
+        _readyResetTimer.Stop();
         _deviceReader.Dispose();
         _mockReader.Dispose();
     }
@@ -251,6 +370,28 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private async Task HandleScannedAsync(string cardUid)
     {
         LastCardUid = cardUid;
+        SimulatedCardUid = cardUid;
+
+        if (CardRegistrationModeEnabled)
+        {
+            CopyCardUidToClipboard(cardUid);
+            NetworkStatus = "オンライン";
+            ResultHeadline = "カードUIDを読み取りました";
+            ResultDetail = $"{cardUid} をコピーしました";
+            EmployeeName = "管理画面のカードUID欄へ貼り付けてください";
+            LastEventType = "登録用読取";
+            SetFeedbackState(FeedbackState.Success);
+            PlaySuccessSound();
+            AddHistory(DateTimeOffset.Now, "登録用", "UID読取", "カードUIDをコピー", cardUid);
+            ScheduleReadyReset();
+            return;
+        }
+
+        ResultHeadline = "カードを読み取りました";
+        ResultDetail = "打刻を送信中です";
+        EmployeeName = "確認中";
+        LastEventType = "-";
+        PlayScanAcceptedSound();
 
         try
         {
@@ -261,23 +402,25 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             EmployeeName = result.Employee?.Name ?? "-";
             LastEventType = FormatEventType(result.EventType);
             SetFeedbackState(FeedbackState.Success);
-            PlaySuccessSound();
             AddHistory(result.OccurredAt, result.Employee?.Name ?? "-", FormatEventType(result.EventType), result.ResultMessage, "送信済");
+            ScheduleReadyReset();
         }
         catch (AttendanceApiException ex)
         {
             NetworkStatus = "オンライン";
             EmployeeName = "-";
             LastEventType = "カードUID: " + cardUid;
-            SimulatedCardUid = cardUid;
 
             if (ex.Code == "CARD_NOT_REGISTERED")
             {
+                CopyCardUidToClipboard(cardUid);
                 ResultHeadline = "未登録カードです";
-                ResultDetail = $"{cardUid} を管理画面で登録してください";
+                ResultDetail = $"{cardUid} をコピーしました";
+                CardRegistrationMessage = "未登録カードUIDをコピーしました。管理画面に貼り付けてください。";
                 SetFeedbackState(FeedbackState.Error);
                 PlayErrorSound();
                 AddHistory(DateTimeOffset.Now, "未登録", "-", "未登録カード", cardUid);
+                ScheduleReadyReset();
                 return;
             }
 
@@ -286,6 +429,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             SetFeedbackState(FeedbackState.Error);
             PlayErrorSound();
             AddHistory(DateTimeOffset.Now, "-", "-", ex.Message, "拒否");
+            ScheduleReadyReset();
         }
         catch
         {
@@ -301,6 +445,85 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             AddHistory(pending.OccurredAt, "-", "-", "通信失敗", "未送信");
             OnPropertyChanged(nameof(PendingPunches));
             OnPropertyChanged(nameof(PendingCount));
+            ScheduleReadyReset();
+        }
+    }
+
+    private void ScheduleReadyReset()
+    {
+        _readyResetTimer.Stop();
+        _readyResetTimer.Start();
+    }
+
+    private void ResetToReady()
+    {
+        ResultHeadline = "カードをかざしてください";
+        ResultDetail = CardRegistrationModeEnabled ? "登録モード中: 打刻せずUIDだけ読み取ります" : "RC-S380 の読取待機中";
+        EmployeeName = "-";
+        LastEventType = "-";
+        SetFeedbackState(FeedbackState.Ready);
+    }
+
+    private async Task LoadRegistrationEmployeesAsync()
+    {
+        if (IsCardRegistrationBusy)
+        {
+            return;
+        }
+
+        IsCardRegistrationBusy = true;
+        CardRegistrationMessage = "職員一覧を読み込み中です。";
+        try
+        {
+            var employees = await _apiClient.GetCardRegistrationEmployeesAsync();
+            RegistrationEmployees.Clear();
+            foreach (var employee in employees)
+            {
+                RegistrationEmployees.Add(employee);
+            }
+
+            if (SelectedRegistrationEmployeeId is null && RegistrationEmployees.Count > 0)
+            {
+                SelectedRegistrationEmployeeId = RegistrationEmployees[0].Id;
+            }
+
+            CardRegistrationMessage = $"職員一覧を読み込みました（{RegistrationEmployees.Count}件）。";
+        }
+        catch (AttendanceApiException ex)
+        {
+            CardRegistrationMessage = ex.Message;
+        }
+        catch
+        {
+            CardRegistrationMessage = "職員一覧を読み込めませんでした。通信状態を確認してください。";
+        }
+        finally
+        {
+            IsCardRegistrationBusy = false;
+        }
+    }
+
+    public void CopyLastCardUid()
+    {
+        if (string.IsNullOrWhiteSpace(LastCardUid) || LastCardUid == "-")
+        {
+            CardRegistrationMessage = "まだカードUIDが読み取られていません。";
+            return;
+        }
+
+        CopyCardUidToClipboard(LastCardUid);
+    }
+
+    private void CopyCardUidToClipboard(string cardUid)
+    {
+        try
+        {
+            Clipboard.SetText(cardUid);
+            CardRegistrationMessage = $"カードUID {cardUid} をコピーしました。";
+        }
+        catch
+        {
+            CardRegistrationMessage = $"カードUID {cardUid} を表示しました。コピーできない場合は手入力してください。";
         }
     }
 
@@ -377,11 +600,39 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private static SolidColorBrush BrushFromRgb(byte red, byte green, byte blue)
         => new(Color.FromRgb(red, green, blue));
 
-    private static void PlaySuccessSound() => SystemSounds.Asterisk.Play();
+    private static void PlayScanAcceptedSound()
+        => PlayToneSequence(SystemSounds.Asterisk, (980, 120, 45), (1568, 520, 0));
 
-    private static void PlayErrorSound() => SystemSounds.Hand.Play();
+    private static void PlaySuccessSound()
+        => PlayToneSequence(SystemSounds.Asterisk, (980, 120, 45), (1568, 520, 0));
 
-    private static void PlayOfflineSound() => SystemSounds.Exclamation.Play();
+    private static void PlayErrorSound()
+        => PlayToneSequence(SystemSounds.Hand, (260, 160, 80), (260, 160, 80), (196, 360, 0));
+
+    private static void PlayOfflineSound()
+        => PlayToneSequence(SystemSounds.Exclamation, (520, 220, 70), (392, 520, 0));
+
+    private static void PlayToneSequence(SystemSound fallbackSound, params (int Frequency, int Duration, int Pause)[] tones)
+    {
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                foreach (var tone in tones)
+                {
+                    Console.Beep(tone.Frequency, tone.Duration);
+                    if (tone.Pause > 0)
+                    {
+                        Thread.Sleep(tone.Pause);
+                    }
+                }
+            }
+            catch
+            {
+                fallbackSound.Play();
+            }
+        });
+    }
 
     private static string FormatEventType(string? eventType) => eventType switch
     {

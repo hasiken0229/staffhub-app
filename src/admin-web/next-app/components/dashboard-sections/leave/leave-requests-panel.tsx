@@ -1,5 +1,6 @@
 import { DataTable } from "@/components/data-table";
 import { ApprovalStatusBadge } from "@/components/status-badge";
+import { formatDurationMinutes } from "@/lib/api/formatters";
 import type { LeaveRequest } from "@/types";
 import type { LeaveSectionProps } from "./leave-section-types";
 import { formatLeavePeriod, formatRequestCategory, formatTimeLeaveType } from "./leave-section-utils";
@@ -100,7 +101,7 @@ export function LeaveRequestsPanel({
           { key: "requestCategory", header: "カテゴリ", render: (row) => formatRequestCategory(row.requestCategory) },
           { key: "leaveTypeName", header: "区分", render: (row) => row.requestCategory === "TIME_LEAVE" ? formatTimeLeaveType(row.timeLeaveType) : row.leaveTypeName },
           { key: "period", header: "期間", render: (row) => formatLeavePeriod(row, formatters.formatDateOnly) },
-          { key: "quantity", header: "分数", render: (row) => row.requestCategory === "TIME_LEAVE" ? `${row.quantityMinutes ?? 0}分` : `${row.quantityDays ?? "-"}日` },
+          { key: "quantity", header: "分数", render: (row) => row.requestCategory === "TIME_LEAVE" ? formatDurationMinutes(row.quantityMinutes ?? 0) : `${row.quantityDays ?? "-"}日` },
           { key: "status", header: "状態", render: (row) => <ApprovalStatusBadge value={row.status} format={formatters.formatApprovalStatus} /> },
           {
             key: "actions",

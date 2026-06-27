@@ -275,14 +275,14 @@ if (fs.existsSync(outDir)) {
           <h2 id="login-title">ログイン情報</h2>
           <p id="login-note" class="login-note">メールアドレスとパスワードを入力してください。</p>
         </div>
-      <form id="login-form" class="login-form">
+      <form id="login-form" class="login-form" method="post" action="${basePath}/" autocomplete="on">
         <label>
           メールアドレス
-          <input id="login-id" type="email" autocomplete="username" />
+          <input id="login-id" name="username" type="email" autocomplete="username" />
         </label>
         <label>
           パスワード
-          <input id="password" type="password" autocomplete="current-password" />
+          <input id="password" name="password" type="password" autocomplete="current-password" />
         </label>
         <button id="submit-button" type="submit">ログインする</button>
         <button id="forgot-mode-button" class="link-button" type="button">パスワードを忘れた方</button>
@@ -400,7 +400,7 @@ if (fs.existsSync(outDir)) {
           window.localStorage.setItem(SESSION_TOKEN_KEY, json.data.accessToken);
           window.localStorage.setItem(SESSION_AUDIENCE_KEY, json.data.user.role);
           window.localStorage.removeItem(LEGACY_ADMIN_TOKEN_KEY);
-          window.location.replace(adminUrl);
+          window.location.assign(adminUrl);
         } catch (error) {
           errorMessage.textContent = error instanceof Error ? error.message : "ログインに失敗しました。";
           submitButton.disabled = false;

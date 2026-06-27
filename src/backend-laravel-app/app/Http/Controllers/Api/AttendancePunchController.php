@@ -58,4 +58,44 @@ final class AttendancePunchController extends Controller
             );
         }
     }
+
+    public function cardRegistrationEmployees(Request $request)
+    {
+        $payload = $request->validate([
+            'deviceCode' => ['required', 'string', 'max:50'],
+            'deviceSecret' => ['required', 'string', 'max:255'],
+        ]);
+
+        try {
+            return ApiResponse::ok($this->attendanceService->listCardRegistrationEmployees($payload));
+        } catch (ApiException $exception) {
+            return ApiResponse::error(
+                $exception->errorCode,
+                $exception->getMessage(),
+                $exception->status,
+                $exception->details,
+            );
+        }
+    }
+
+    public function assignCard(Request $request)
+    {
+        $payload = $request->validate([
+            'deviceCode' => ['required', 'string', 'max:50'],
+            'deviceSecret' => ['required', 'string', 'max:255'],
+            'employeeId' => ['required', 'integer', 'min:1'],
+            'cardUid' => ['required', 'string', 'max:64'],
+        ]);
+
+        try {
+            return ApiResponse::ok($this->attendanceService->assignCardFromDevice($payload));
+        } catch (ApiException $exception) {
+            return ApiResponse::error(
+                $exception->errorCode,
+                $exception->getMessage(),
+                $exception->status,
+                $exception->details,
+            );
+        }
+    }
 }

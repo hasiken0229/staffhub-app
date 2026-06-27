@@ -80,7 +80,7 @@ export function useDashboardSessionActions(params: UseDashboardSessionActionsPar
   function restoreStoredSession() {
     const token = loadAdminToken();
     const audience = loadSessionAudience();
-    params.setIsAuthenticated(Boolean(token));
+    params.setIsAuthenticated(false);
     params.setCurrentAudience(audience);
 
     return { token, audience };
@@ -141,8 +141,25 @@ export function useDashboardSessionActions(params: UseDashboardSessionActionsPar
       }
 
       params.setErrorMessage("");
+      params.setIsAuthenticated(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : "読込に失敗しました。";
+      if (message.includes("認証が必要")) {
+        clearAdminToken();
+        params.setIsAuthenticated(false);
+        params.setCurrentAudience("");
+        params.setCurrentUser(null);
+        params.setDashboard(params.emptyDashboard);
+        params.setEmployeePortal(params.emptyEmployeePortal);
+        params.setSelectedPayrollBatchId(null);
+        params.setSelectedPayrollBatchDetail(null);
+        params.setSelectedAdminPayrollDetail(null);
+        params.setSelectedEmployeePayrollDetail(null);
+        params.setAuthMessage("認証が切れました。ログインし直してください。");
+        if (typeof window !== "undefined" && window.location.pathname.includes("/dakoku/admin")) {
+          window.location.replace(loginUrl());
+        }
+      }
       params.setErrorMessage(message);
       throw error;
     }
@@ -163,7 +180,7 @@ export function useDashboardSessionActions(params: UseDashboardSessionActionsPar
       params.setIsAuthenticated(true);
       params.setAuthMessage(audience === "ADMIN" ? "管理者としてログインしました。" : "職員としてログインしました。");
       if (typeof window !== "undefined" && window.location.pathname !== withBasePath("/")) {
-        window.location.replace(adminUrl());
+        window.location.assign(adminUrl());
         return;
       }
       await bootstrap(audience);

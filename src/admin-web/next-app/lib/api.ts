@@ -7,5 +7,6 @@ export * from "@/lib/api/dashboard";
 export * from "@/lib/api/downloads";
 export * from "@/lib/api/employees";
 export * from "@/lib/api/formatters";
+export * from "@/lib/api/harmos-migration";
 export * from "@/lib/api/leave";
 export * from "@/lib/api/payroll";

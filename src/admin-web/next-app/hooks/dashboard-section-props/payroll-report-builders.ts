@@ -1,7 +1,4 @@
 import {
-  downloadDailyAttendanceCsv,
-  downloadDailyAttendancePdf,
-  downloadMonthlyAttendanceCsv,
   formatApprovalStatus,
   formatDateOnly,
   formatDateTime,
@@ -89,6 +86,7 @@ export function buildPayrollSectionProps(params: UseDashboardSectionPropsParams)
 export function buildReportsSectionProps(params: UseDashboardSectionPropsParams): ReportsSectionProps {
   return {
     data: {
+      dashboard: params.dashboard,
       employees: params.dashboard.employees,
       reportTodayAttendance: params.dashboard.reportTodayAttendance,
       reportAttendanceApprovals: params.dashboard.reportAttendanceApprovals,
@@ -108,10 +106,10 @@ export function buildReportsSectionProps(params: UseDashboardSectionPropsParams)
       onReportFromChange: params.setReportFrom,
       onReportToChange: params.setReportTo,
       onReportEmployeeIdChange: params.setReportEmployeeId,
-      onDownloadMonthlyAttendanceCsv: downloadMonthlyAttendanceCsv,
+      onDownloadMonthlyAttendanceCsv: params.handleMonthlyAttendanceCsvDownload,
       onDownloadMonthlyPayrollCsv: params.handleMonthlyPayrollCsvDownload,
-      onDownloadDailyAttendanceCsv: downloadDailyAttendanceCsv,
-      onDownloadDailyAttendancePdf: downloadDailyAttendancePdf,
+      onDownloadDailyAttendanceCsv: params.handleDailyAttendanceCsvDownload,
+      onDownloadDailyAttendancePdf: params.handleDailyAttendancePdfDownload,
       onDownloadMonthlyWorksPdf: params.handleMonthlyWorksPdfDownload,
       onFileHistoryDownload: params.handleFileHistoryDownload,
     },

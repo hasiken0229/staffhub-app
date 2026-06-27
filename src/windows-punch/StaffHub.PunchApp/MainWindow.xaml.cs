@@ -18,11 +18,17 @@ public partial class MainWindow : Window
         _viewModel = new MainWindowViewModel();
         DataContext = _viewModel;
         SetMaintenanceVisibility(false);
+        if (_viewModel.Settings.StartMinimized)
+        {
+            WindowState = WindowState.Minimized;
+        }
 
         AppTitleText.MouseLeftButtonUp += (_, _) => HandleTitleClick();
         StartPunchButton.Click += async (_, _) => await _viewModel.RestartReaderAsync();
         SimulateButton.Click += async (_, _) => await _viewModel.SimulateScanAsync();
         RetryButton.Click += async (_, _) => await _viewModel.RetryPendingAsync();
+        CopyCardUidButton.Click += (_, _) => _viewModel.CopyLastCardUid();
+        RegisterCardButton.Click += async (_, _) => await _viewModel.RegisterLastCardAsync();
         _viewModel.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(MainWindowViewModel.ResultPulseKey))
@@ -52,9 +58,7 @@ public partial class MainWindow : Window
     {
         _isMaintenanceVisible = isVisible;
         MaintenancePanel.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
-        MaintenanceColumn.Width = isVisible ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
-        ResultPanel.Margin = isVisible ? new Thickness(0, 0, 20, 0) : new Thickness(0);
-        Grid.SetColumnSpan(ResultPanel, isVisible ? 1 : 2);
+        MaintenanceRow.Height = isVisible ? new GridLength(260) : new GridLength(0);
     }
 
     private void AnimateResultGlyph()

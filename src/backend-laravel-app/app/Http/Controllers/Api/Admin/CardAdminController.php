@@ -58,4 +58,15 @@ final class CardAdminController extends Controller
             'success' => $this->cardAssignmentService->revoke((int) $payload['cardId']),
         ]);
     }
+
+    public function delete(Request $request)
+    {
+        $payload = $request->validate([
+            'cardId' => ['required', 'integer', 'min:1'],
+        ]);
+
+        return ApiResponse::ok([
+            'success' => $this->cardAssignmentService->delete((int) $payload['cardId']),
+        ]);
+    }
 }

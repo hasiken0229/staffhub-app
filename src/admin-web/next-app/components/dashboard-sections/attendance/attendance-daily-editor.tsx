@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import { DataTable } from "@/components/data-table";
-import { isoToTime, isNextDay } from "@/components/dashboard-sections/attendance/attendance-section-utils";
+import { isoToTime } from "@/components/dashboard-sections/attendance/attendance-section-utils";
 import type { AttendanceSectionProps } from "@/components/dashboard-sections/attendance/attendance-section-types";
 import type { AttendanceDailyBreak, AttendanceDailyDetail, AttendanceDailyHistory } from "@/types";
 
@@ -89,15 +89,7 @@ export function AttendanceDailyEditor({
               <input
                 type="time"
                 value={isoToTime(editingDaily.clockInAt)}
-                onChange={(event) => setEditingClock("clockInAt", event.target.value, isNextDay(editingDaily.clockInAt, editingDaily.targetDate))}
-              />
-            </label>
-            <label>
-              出勤翌日
-              <input
-                type="checkbox"
-                checked={isNextDay(editingDaily.clockInAt, editingDaily.targetDate)}
-                onChange={(event) => setEditingClock("clockInAt", isoToTime(editingDaily.clockInAt), event.target.checked)}
+                onChange={(event) => setEditingClock("clockInAt", event.target.value)}
               />
             </label>
             <label>
@@ -105,15 +97,7 @@ export function AttendanceDailyEditor({
               <input
                 type="time"
                 value={isoToTime(editingDaily.clockOutAt)}
-                onChange={(event) => setEditingClock("clockOutAt", event.target.value, isNextDay(editingDaily.clockOutAt, editingDaily.targetDate))}
-              />
-            </label>
-            <label>
-              退勤翌日
-              <input
-                type="checkbox"
-                checked={isNextDay(editingDaily.clockOutAt, editingDaily.targetDate)}
-                onChange={(event) => setEditingClock("clockOutAt", isoToTime(editingDaily.clockOutAt), event.target.checked)}
+                onChange={(event) => setEditingClock("clockOutAt", event.target.value)}
               />
             </label>
             <label>
@@ -145,18 +129,6 @@ export function AttendanceDailyEditor({
                   />
                 </label>
                 <label>
-                  開始翌日
-                  <input
-                    type="checkbox"
-                    checked={Boolean(breakRow.startNextDay)}
-                    onChange={(event) =>
-                      setEditingBreaks((items) =>
-                        items.map((item, itemIndex) => (itemIndex === index ? { ...item, startNextDay: event.target.checked } : item)),
-                      )
-                    }
-                  />
-                </label>
-                <label>
                   休憩{index + 1} 終了
                   <input
                     type="time"
@@ -164,18 +136,6 @@ export function AttendanceDailyEditor({
                     onChange={(event) =>
                       setEditingBreaks((items) =>
                         items.map((item, itemIndex) => (itemIndex === index ? { ...item, endTime: event.target.value } : item)),
-                      )
-                    }
-                  />
-                </label>
-                <label>
-                  終了翌日
-                  <input
-                    type="checkbox"
-                    checked={Boolean(breakRow.endNextDay)}
-                    onChange={(event) =>
-                      setEditingBreaks((items) =>
-                        items.map((item, itemIndex) => (itemIndex === index ? { ...item, endNextDay: event.target.checked } : item)),
                       )
                     }
                   />
@@ -236,7 +196,7 @@ export function AttendanceDailyEditor({
             { key: "oldValue", header: "変更前", render: (row) => row.oldValue ?? "-" },
             { key: "newValue", header: "変更後", render: (row) => row.newValue ?? "-" },
             { key: "actorRole", header: "操作者権限", render: (row) => row.actorRole ?? "-" },
-            { key: "actorEmployeeCode", header: "操作者社員番号", render: (row) => row.actorEmployeeCode ?? "-" },
+            { key: "actorEmployeeCode", header: "操作者職員番号", render: (row) => row.actorEmployeeCode ?? "-" },
             { key: "actorName", header: "操作者名", render: (row) => row.actorName ?? "-" },
           ]}
         />

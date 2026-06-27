@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { loadEmployeeAttendanceDaily } from "@/lib/api";
+import type { AttendanceDaily } from "@/types";
 import type { LeaveDayUnit, LeaveHalfDayType } from "@/types";
 import type { EmployeePortalLeaveType, EmployeePortalSectionProps, LeaveRequestCategory, TimeLeaveType } from "./employee-portal-types";
 import { toDateInputValue } from "./employee-portal-utils";
@@ -9,6 +11,7 @@ const DEFAULT_STANDARD_DAY_MINUTES = 480;
 export function useEmployeePortalForms(props: EmployeePortalSectionProps) {
   const leaveTypes = props.data.employeePortal.home.leaveTypes ?? [];
   const today = useMemo(() => toDateInputValue(new Date()), []);
+  const currentMonth = useMemo(() => today.slice(0, 7), [today]);
   const [leaveTypeCode, setLeaveTypeCode] = useState(leaveTypes[0]?.code ?? "");
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
@@ -21,6 +24,8 @@ export function useEmployeePortalForms(props: EmployeePortalSectionProps) {
   const [endTime, setEndTime] = useState("10:00");
   const [reason, setReason] = useState("");
   const [editTargetDate, setEditTargetDate] = useState(today);
+  const [editTargetMonth, setEditTargetMonth] = useState(currentMonth);
+  const [editDailyRows, setEditDailyRows] = useState<AttendanceDaily[]>(props.data.employeePortal.attendanceDaily ?? []);
   const [editClockInTime, setEditClockInTime] = useState("09:00");
   const [editClockOutTime, setEditClockOutTime] = useState("18:00");
   const [editBreakStartTime, setEditBreakStartTime] = useState("12:00");
@@ -33,6 +38,8 @@ export function useEmployeePortalForms(props: EmployeePortalSectionProps) {
   const [editRequestError, setEditRequestError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditRequestSubmitting, setIsEditRequestSubmitting] = useState(false);
+  const [isAttendanceDailyLoading, setIsAttendanceDailyLoading] = useState(false);
+  const [isDailyEditFormOpen, setIsDailyEditFormOpen] = useState(false);
   const selectedLeaveType = leaveTypes.find((item) => item.code === leaveTypeCode) ?? null;
   const allowsHalfDay = Boolean(selectedLeaveType?.allowsHalfDay);
   const leaveBalancePreview = useMemo(
@@ -77,6 +84,10 @@ export function useEmployeePortalForms(props: EmployeePortalSectionProps) {
       setLeaveTypeCode(leaveTypes[0].code);
     }
   }, [leaveTypeCode, leaveTypes]);
+
+  useEffect(() => {
+    setEditDailyRows(props.data.employeePortal.attendanceDaily ?? []);
+  }, [props.data.employeePortal.attendanceDaily]);
 
   useEffect(() => {
     if (!allowsHalfDay && dayUnit === "HALF") {
@@ -125,6 +136,69 @@ export function useEmployeePortalForms(props: EmployeePortalSectionProps) {
     setEditEmployeeComment("");
     setEditRequestError("");
     setEditRequestMessage("");
+    setIsDailyEditFormOpen(false);
+  }
+
+  function applyDailyRowToEditForm(row: AttendanceDaily) {
+    setEditTargetDate(row.targetDate);
+    setEditClockInTime(toTimeInputValue(row.clockInAt) ?? toTimeInputValue(row.rawClockInAt) ?? "");
+    setEditClockOutTime(toTimeInputValue(row.clockOutAt) ?? toTimeInputValue(row.rawClockOutAt) ?? "");
+    setEditBreakStartTime(row.breaks?.[0]?.startTime ?? toTimeInputValue(row.breaks?.[0]?.startAt) ?? "");
+    setEditBreakEndTime(row.breaks?.[0]?.endTime ?? toTimeInputValue(row.breaks?.[0]?.endAt) ?? "");
+    setEditRemark(row.remark ?? "");
+    setEditRequestError("");
+    setEditRequestMessage("");
+    setIsDailyEditFormOpen(true);
+  }
+
+  async function handleEditTargetMonthChange(nextTargetMonth: string) {
+    setEditTargetMonth(nextTargetMonth);
+    setEditRequestError("");
+    setIsAttendanceDailyLoading(true);
+
+    try {
+      setEditDailyRows(await loadEmployeeAttendanceDaily(nextTargetMonth));
+    } catch (error) {
+      setEditRequestError(error instanceof Error ? error.message : "月次勤怠の取得に失敗しました。");
+    } finally {
+      setIsAttendanceDailyLoading(false);
+    }
+  }
+
+  async function submitDailyEditRequest(payload: {
+    targetDate: string;
+    clockInTime?: string | null;
+    clockOutTime?: string | null;
+    breakStartTime?: string | null;
+    breakEndTime?: string | null;
+    remark?: string | null;
+    employeeComment?: string | null;
+  }) {
+    setEditRequestError("");
+    setEditRequestMessage("");
+
+    if (!payload.targetDate || !payload.clockInTime || !payload.clockOutTime) {
+      setEditRequestError("対象日、出勤、退勤を入力してください。");
+      return;
+    }
+
+    setIsEditRequestSubmitting(true);
+    try {
+      await props.actions.onAttendanceDailyEditRequestCreate({
+        targetDate: payload.targetDate,
+        clockInTime: payload.clockInTime,
+        clockOutTime: payload.clockOutTime,
+        breaks: payload.breakStartTime && payload.breakEndTime ? [{ startTime: payload.breakStartTime, endTime: payload.breakEndTime }] : [],
+        remark: payload.remark ?? "",
+        employeeComment: payload.employeeComment ?? "",
+      });
+      setEditRequestMessage("日次修正申請を登録しました。");
+      setEditEmployeeComment("");
+    } catch (error) {
+      setEditRequestError(error instanceof Error ? error.message : "日次修正申請の登録に失敗しました。");
+    } finally {
+      setIsEditRequestSubmitting(false);
+    }
   }
 
   async function handleLeaveRequestSubmit(event: FormEvent<HTMLFormElement>) {
@@ -215,31 +289,27 @@ export function useEmployeePortalForms(props: EmployeePortalSectionProps) {
 
   async function handleDailyEditRequestSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setEditRequestError("");
-    setEditRequestMessage("");
+    await submitDailyEditRequest({
+      targetDate: editTargetDate,
+      clockInTime: editClockInTime,
+      clockOutTime: editClockOutTime,
+      breakStartTime: editBreakStartTime,
+      breakEndTime: editBreakEndTime,
+      remark: editRemark,
+      employeeComment: editEmployeeComment,
+    });
+  }
 
-    if (!editTargetDate || !editClockInTime || !editClockOutTime) {
-      setEditRequestError("対象日、出勤、退勤を入力してください。");
-      return;
-    }
-
-    setIsEditRequestSubmitting(true);
-    try {
-      await props.actions.onAttendanceDailyEditRequestCreate({
-        targetDate: editTargetDate,
-        clockInTime: editClockInTime,
-        clockOutTime: editClockOutTime,
-        breaks: editBreakStartTime && editBreakEndTime ? [{ startTime: editBreakStartTime, endTime: editBreakEndTime }] : [],
-        remark: editRemark,
-        employeeComment: editEmployeeComment,
-      });
-      setEditRequestMessage("日次修正申請を登録しました。");
-      setEditEmployeeComment("");
-    } catch (error) {
-      setEditRequestError(error instanceof Error ? error.message : "日次修正申請の登録に失敗しました。");
-    } finally {
-      setIsEditRequestSubmitting(false);
-    }
+  async function handleDailyRowSubmit(row: AttendanceDaily) {
+    await submitDailyEditRequest({
+      targetDate: row.targetDate,
+      clockInTime: toTimeInputValue(row.clockInAt) ?? toTimeInputValue(row.rawClockInAt),
+      clockOutTime: toTimeInputValue(row.clockOutAt) ?? toTimeInputValue(row.rawClockOutAt),
+      breakStartTime: row.breaks?.[0]?.startTime ?? toTimeInputValue(row.breaks?.[0]?.startAt),
+      breakEndTime: row.breaks?.[0]?.endTime ?? toTimeInputValue(row.breaks?.[0]?.endAt),
+      remark: row.remark ?? "",
+      employeeComment: editEmployeeComment,
+    });
   }
 
   return {
@@ -283,6 +353,7 @@ export function useEmployeePortalForms(props: EmployeePortalSectionProps) {
     dailyEditRequestFormProps: {
       values: {
         editTargetDate,
+        editTargetMonth,
         editClockInTime,
         editClockOutTime,
         editBreakStartTime,
@@ -290,13 +361,19 @@ export function useEmployeePortalForms(props: EmployeePortalSectionProps) {
         editRemark,
         editEmployeeComment,
       },
+      attendanceDaily: editDailyRows,
       requestCount: props.data.employeePortal.attendanceDailyEditRequests?.length ?? 0,
       editRequestError,
       editRequestMessage,
       isPending: props.data.isPending,
       isEditRequestSubmitting,
+      isAttendanceDailyLoading,
+      isDailyEditFormOpen,
       onSubmit: (event: FormEvent<HTMLFormElement>) => void handleDailyEditRequestSubmit(event),
       onReset: resetDailyEditRequestForm,
+      onEditTargetMonthChange: (value: string) => void handleEditTargetMonthChange(value),
+      onDailyRowEdit: applyDailyRowToEditForm,
+      onDailyRowSubmit: (row: AttendanceDaily) => void handleDailyRowSubmit(row),
       onEditTargetDateChange: setEditTargetDate,
       onEditClockInTimeChange: setEditClockInTime,
       onEditClockOutTimeChange: setEditClockOutTime,
@@ -306,6 +383,24 @@ export function useEmployeePortalForms(props: EmployeePortalSectionProps) {
       onEditEmployeeCommentChange: setEditEmployeeComment,
     },
   };
+}
+
+function toTimeInputValue(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const dateMatch = /T(\d{2}):(\d{2})/.exec(value);
+  if (dateMatch) {
+    return `${dateMatch[1]}:${dateMatch[2]}`;
+  }
+
+  const timeMatch = /^(\d{2}):(\d{2})/.exec(value);
+  if (timeMatch) {
+    return `${timeMatch[1]}:${timeMatch[2]}`;
+  }
+
+  return null;
 }
 
 type LeaveBalancePreviewInput = {

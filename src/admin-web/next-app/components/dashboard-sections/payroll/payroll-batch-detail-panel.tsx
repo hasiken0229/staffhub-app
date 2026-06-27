@@ -77,7 +77,7 @@ export function PayrollBatchDetailPanel({ data, form, actions, formatters }: Pay
         <div className="panel-toolbar panel-toolbar-stacked">
           <div className="filter-grid filter-grid-compact">
             <label>
-              社員番号
+              職員番号
               <input
                 value={form.payrollBatchEmployeeCodeFilter}
                 onChange={(event) => actions.onPayrollBatchEmployeeCodeFilterChange(event.target.value)}
@@ -115,7 +115,7 @@ export function PayrollBatchDetailPanel({ data, form, actions, formatters }: Pay
         rows={detail.items}
         emptyMessage="明細データはありません"
         columns={[
-          { key: "employeeCode", header: "社員番号", render: (row) => row.employeeCode },
+          { key: "employeeCode", header: "職員番号", render: (row) => row.employeeCode },
           { key: "employeeName", header: "氏名", render: (row) => row.employeeName },
           { key: "grossAmount", header: "支給合計", render: (row) => formatCurrency(row.grossAmount) },
           { key: "deductionAmount", header: "控除合計", render: (row) => formatCurrency(row.deductionAmount) },
@@ -150,7 +150,7 @@ export function PayrollBatchDetailPanel({ data, form, actions, formatters }: Pay
         emptyMessage="取込エラーはありません"
         columns={[
           { key: "line", header: "行", render: (row) => row.line },
-          { key: "employeeCode", header: "社員番号", render: (row) => row.employeeCode ?? "-" },
+          { key: "employeeCode", header: "職員番号", render: (row) => row.employeeCode ?? "-" },
           { key: "message", header: "内容", render: (row) => row.message },
         ]}
       />

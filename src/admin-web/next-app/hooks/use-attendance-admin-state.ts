@@ -1,15 +1,16 @@
 import { useState } from "react";
+import { currentMonthEndValue, currentMonthStartValue, currentMonthValue } from "@/lib/date-defaults";
 
 export function useAttendanceAdminState() {
   const [attendanceDecisionComment, setAttendanceDecisionComment] = useState("");
   const [attendanceDecisionResult, setAttendanceDecisionResult] = useState("");
   const [attendanceCloseResult, setAttendanceCloseResult] = useState("");
-  const [attendanceFilterMonth, setAttendanceFilterMonth] = useState("2026-03");
+  const [attendanceFilterMonth, setAttendanceFilterMonth] = useState(currentMonthValue);
   const [attendanceFilterEmployeeCode, setAttendanceFilterEmployeeCode] = useState("");
   const [attendanceFilterDepartmentName, setAttendanceFilterDepartmentName] = useState("");
   const [attendanceApprovalStatus, setAttendanceApprovalStatus] = useState("PENDING");
-  const [attendanceEventFrom, setAttendanceEventFrom] = useState("2026-03-01");
-  const [attendanceEventTo, setAttendanceEventTo] = useState("2026-03-31");
+  const [attendanceEventFrom, setAttendanceEventFrom] = useState(currentMonthStartValue);
+  const [attendanceEventTo, setAttendanceEventTo] = useState(currentMonthEndValue);
   const [attendanceErrorCode, setAttendanceErrorCode] = useState("");
   const [attendanceErrorHandlingStatus, setAttendanceErrorHandlingStatus] = useState("");
   const [attendanceMonthCloseApprovalStatus, setAttendanceMonthCloseApprovalStatus] = useState("");

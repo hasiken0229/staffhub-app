@@ -22,6 +22,13 @@ export async function importPayrollCsv(formData: FormData) {
   });
 }
 
+export async function previewPayrollCsv(formData: FormData) {
+  return fetchJson<PayrollImportResult & { dryRun: boolean }>("/api/admin/payroll/import-csv/preview", {
+    method: "POST",
+    body: formData,
+  });
+}
+
 export async function loadPayrollDefinitions(statementType?: "PAYROLL" | "BONUS") {
   return fetchJson<PayrollDataDefinition[]>(`/api/admin/payroll/definitions${buildQuery({ statementType })}`);
 }

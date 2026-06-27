@@ -44,7 +44,7 @@ final class MobileHomeController extends Controller
             'pendingLeaveCount' => $pendingLeaveCount,
             'paidLeaveBalance' => $balance['currentBalance'],
             'unreadNotificationCount' => $unreadNotificationCount,
-            'leaveTypes' => $this->systemMasterService->leaveTypes(),
+            'leaveTypes' => $this->systemMasterService->leaveTypes(false),
             'latestPayroll' => $latestPayroll ? [
                 'id' => (int) $latestPayroll->id,
                 'statementType' => $latestPayroll->statement_type,

@@ -9,6 +9,7 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonPeriod;
 use Illuminate\Auth\GenericUser;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 abstract class LeaveRequestSupport
 {
@@ -34,9 +35,12 @@ abstract class LeaveRequestSupport
             $timeLeaveType = null;
         }
 
-        $type = DB::table('leave_types')
-            ->where('code', $leaveTypeCode)
-            ->first();
+        $typeQuery = DB::table('leave_types')->where('code', $leaveTypeCode);
+        if (Schema::hasColumn('leave_types', 'is_active')) {
+            $typeQuery->where('is_active', true);
+        }
+
+        $type = $typeQuery->first();
 
         if ($type === null) {
             throw new ApiException('VALIDATION_ERROR', '休暇区分が不正です。', 422, [

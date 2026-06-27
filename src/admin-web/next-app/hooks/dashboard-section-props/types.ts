@@ -189,6 +189,8 @@ export type UseDashboardSectionPropsParams = {
   handleTemplateDownload: (kind: "employees" | "payroll" | "bonus") => Promise<void>;
   handleEmployeeUpdate: (id: number, payload: EmployeeUpdatePayload) => Promise<void>;
   handleAssignCard: CardsSectionProps["actions"]["onAssignCard"];
+  handleRevokeCard: CardsSectionProps["actions"]["onRevokeCard"];
+  handleDeleteCard: CardsSectionProps["actions"]["onDeleteCard"];
   applyAttendanceFilters: AttendanceSectionProps["actions"]["onApplyAttendanceFilters"];
   resetAttendanceFilters: AttendanceSectionProps["actions"]["onResetAttendanceFilters"];
   handleAttendanceMonthClose: AttendanceSectionProps["actions"]["onAttendanceMonthClose"];
@@ -214,6 +216,9 @@ export type UseDashboardSectionPropsParams = {
   handlePayrollDownload: PayrollSectionProps["actions"]["onPayrollDownload"];
   handleDeletePayrollStatement: PayrollSectionProps["actions"]["onDeletePayrollStatement"];
   handleFileHistoryDownload: PayrollSectionProps["actions"]["onFileHistoryDownload"];
+  handleMonthlyAttendanceCsvDownload: ReportsSectionProps["actions"]["onDownloadMonthlyAttendanceCsv"];
+  handleDailyAttendanceCsvDownload: ReportsSectionProps["actions"]["onDownloadDailyAttendanceCsv"];
+  handleDailyAttendancePdfDownload: ReportsSectionProps["actions"]["onDownloadDailyAttendancePdf"];
   handleMonthlyPayrollCsvDownload: ReportsSectionProps["actions"]["onDownloadMonthlyPayrollCsv"];
   handleMonthlyWorksPdfDownload: ReportsSectionProps["actions"]["onDownloadMonthlyWorksPdf"];
   handleSystemForm: SystemSectionProps["actions"]["onSystemForm"];

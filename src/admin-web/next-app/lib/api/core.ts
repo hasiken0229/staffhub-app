@@ -155,9 +155,14 @@ export async function fetchJsonOptional<T>(path: string, fallback: T, init?: Req
 }
 
 export async function fetchHealthStatus(): Promise<string> {
-  const response = await fetch(`${API_BASE_URL}/up`, {
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/up`, {
+      cache: "no-store",
+    });
+  } catch {
+    return "error";
+  }
 
   return response.ok ? "ok" : "error";
 }
@@ -169,7 +174,19 @@ export async function downloadBlob(path: string, fileName?: string) {
   });
 
   if (!response.ok) {
-    throw new Error("ファイルのダウンロードに失敗しました。");
+    const contentType = response.headers.get("Content-Type") ?? response.headers.get("content-type") ?? "";
+    if (contentType.toLowerCase().includes("json")) {
+      const json = (await response.json().catch(() => null)) as (ApiEnvelope<unknown> & { error?: { message?: string } }) | null;
+      throw new Error(json?.error?.message ?? `ファイルのダウンロードに失敗しました。(${response.status})`);
+    }
+
+    const text = await response.text().catch(() => "");
+    const htmlLike = text.includes("<!DOCTYPE") || text.includes("<html");
+    if (htmlLike) {
+      throw new Error("API応答がHTMLでした。www あり/なしのURL差異か公開設定を確認してください。");
+    }
+
+    throw new Error(text.trim() || `ファイルのダウンロードに失敗しました。(${response.status})`);
   }
 
   const blob = await response.blob();

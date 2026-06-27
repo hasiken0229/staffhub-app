@@ -76,6 +76,10 @@ public sealed class RcS380CardReaderService : ICardReaderService
                 {
                     EmitIfNeeded(cardUid);
                 }
+                else
+                {
+                    _lastCardUid = null;
+                }
 
                 await Task.Delay(_settings.PollIntervalMilliseconds, cancellationToken);
             }
@@ -186,14 +190,13 @@ public sealed class RcS380CardReaderService : ICardReaderService
 
     private void EmitIfNeeded(string cardUid)
     {
-        var now = DateTimeOffset.Now;
-        if (cardUid == _lastCardUid && (now - _lastSeenAt).TotalMilliseconds < 1500)
+        if (cardUid == _lastCardUid)
         {
             return;
         }
 
         _lastCardUid = cardUid;
-        _lastSeenAt = now;
+        _lastSeenAt = DateTimeOffset.Now;
         StatusText = $"カード検知: {cardUid}";
         CardScanned?.Invoke(this, cardUid);
     }

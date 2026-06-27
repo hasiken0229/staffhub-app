@@ -74,6 +74,7 @@ trait AttendanceDailyMapping
             'approvedAt' => !empty($row->approved_at) ? CarbonImmutable::parse($row->approved_at)->toIso8601String() : null,
             'closeStatus' => $row->close_status ?? 'OPEN',
             'manualEditedAt' => !empty($row->manual_edited_at) ? CarbonImmutable::parse($row->manual_edited_at)->toIso8601String() : null,
+            'breaks' => $this->dailyBreaksForRow((int) $row->id, (string) $row->target_date),
             'alerts' => $alerts,
             'alertSummary' => $this->formatAlertSummary($alerts),
         ];
@@ -272,5 +273,15 @@ trait AttendanceDailyMapping
             'startNextDay' => $startAt !== null && $startAt->toDateString() > $date,
             'endNextDay' => $endAt !== null && $endAt->toDateString() > $date,
         ];
+    }
+
+    protected function dailyBreaksForRow(int $dailyId, string $targetDate): array
+    {
+        return DB::table('attendance_daily_breaks')
+            ->where('attendance_daily_id', $dailyId)
+            ->orderBy('segment_no')
+            ->get()
+            ->map(fn (object $break) => $this->mapBreakRow($break, $targetDate))
+            ->all();
     }
 }

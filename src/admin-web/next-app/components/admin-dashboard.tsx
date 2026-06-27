@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useState, useTransition } from "react";
+import { type ReactNode, useEffect, useState, useTransition } from "react";
 import { AdminDashboardView } from "@/components/admin-dashboard-view";
 import { useAdminDashboardDerivedData } from "@/hooks/use-admin-dashboard-derived-data";
 import { useAdminDashboardEffects } from "@/hooks/use-admin-dashboard-effects";
@@ -21,6 +21,7 @@ import { usePayrollActions } from "@/hooks/use-payroll-actions";
 import { useReportState } from "@/hooks/use-report-state";
 import { useSystemActions } from "@/hooks/use-system-actions";
 import { useDashboardSectionProps } from "@/hooks/use-dashboard-section-props";
+import { loadAdminSectionData } from "@/lib/api";
 import { emptyData, emptyEmployeePortal, sectionLabels, sectionSubNavItems, type AdminSectionKey } from "@/lib/dashboard-defaults";
 import { AttendanceSection } from "@/components/dashboard-sections/attendance-section";
 import { AuditSection } from "@/components/dashboard-sections/audit-section";
@@ -28,6 +29,7 @@ import { CardsSection } from "@/components/dashboard-sections/cards-section";
 import { DashboardOverviewSection } from "@/components/dashboard-sections/dashboard-overview-section";
 import { EmployeePortalSection } from "@/components/dashboard-sections/employee-portal-section";
 import { EmployeesSection } from "@/components/dashboard-sections/employees-section";
+import { HarmosMigrationSection } from "@/components/dashboard-sections/harmos-migration-section";
 import { LeaveSection } from "@/components/dashboard-sections/leave-section";
 import { NoticesSection } from "@/components/dashboard-sections/notices-section";
 import { PayrollSection } from "@/components/dashboard-sections/payroll-section";
@@ -41,11 +43,33 @@ import type {
 } from "@/types";
 
 export function AdminDashboard() {
+  const initialActiveSection = (): AdminSectionKey => {
+    if (typeof window === "undefined") {
+      return "dashboard";
+    }
+
+    const stored = window.sessionStorage.getItem("staffhub.activeSection");
+    return stored && stored in sectionLabels ? (stored as AdminSectionKey) : "dashboard";
+  };
+
+  const initialSubSections = (): Partial<Record<AdminSectionKey, string>> => {
+    if (typeof window === "undefined") {
+      return {};
+    }
+
+    try {
+      return JSON.parse(window.sessionStorage.getItem("staffhub.activeSubSections") ?? "{}") as Partial<Record<AdminSectionKey, string>>;
+    } catch {
+      return {};
+    }
+  };
+
   const [dashboard, setDashboard] = useState<DashboardData>(emptyData);
   const [employeePortal, setEmployeePortal] = useState<EmployeePortalData>(emptyEmployeePortal);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
-  const [activeSection, setActiveSection] = useState<AdminSectionKey>("dashboard");
-  const [activeSubSectionBySection, setActiveSubSectionBySection] = useState<Partial<Record<AdminSectionKey, string>>>({});
+  const [activeSection, setActiveSection] = useState<AdminSectionKey>(initialActiveSection);
+  const [loadedAdminSections, setLoadedAdminSections] = useState<Partial<Record<AdminSectionKey, boolean>>>({ dashboard: true });
+  const [activeSubSectionBySection, setActiveSubSectionBySection] = useState<Partial<Record<AdminSectionKey, string>>>(initialSubSections);
   const [errorMessage, setErrorMessage] = useState("");
   const [employeeImportResult, setEmployeeImportResult] = useState("");
   const [systemResult, setSystemResult] = useState("");
@@ -258,11 +282,16 @@ export function AdminDashboard() {
   const {
     handleAssignCard,
     handleCreateNotice,
+    handleDeleteCard,
     handleEmployeeImport,
     handleFileHistoryDownload,
+    handleDailyAttendanceCsvDownload,
+    handleDailyAttendancePdfDownload,
+    handleMonthlyAttendanceCsvDownload,
     handleMonthlyPayrollCsvDownload,
     handleMonthlyWorksPdfDownload,
     handleNotificationRead,
+    handleRevokeCard,
     handleTemplateDownload,
   } = useAdminUtilityActions({
     assignEmployeeId,
@@ -283,7 +312,7 @@ export function AdminDashboard() {
     setPayrollDefinitionResult,
     setReportResult,
     setErrorMessage,
-    onRefresh: refresh,
+    onRefresh: refreshCurrentView,
   });
   const { applyAuditFilters, resetAuditFilters } = useAuditActions({
     auditActorFilter,
@@ -332,11 +361,11 @@ export function AdminDashboard() {
     setAttendanceMonthCloseStatusFilter,
     setDashboard,
     setErrorMessage,
-    onRefresh: refresh,
+    onRefresh: refreshCurrentView,
   });
   const { handleSystemForm } = useSystemActions({
     setSystemResult,
-    onRefresh: refresh,
+    onRefresh: refreshCurrentView,
   });
   const {
     applyWorkProcedureFilters,
@@ -377,7 +406,7 @@ export function AdminDashboard() {
     setWorkProcedureTo,
     setDashboard,
     setErrorMessage,
-    onRefresh: refresh,
+    onRefresh: refreshCurrentView,
   });
   const {
     handleAdminPayrollDownload,
@@ -411,7 +440,7 @@ export function AdminDashboard() {
     setSelectedAdminPayrollDetail,
     setSelectedEmployeePayrollDetail,
     setErrorMessage,
-    onRefresh: refresh,
+    onRefresh: refreshCurrentView,
   });
   const {
     filteredPayrollDefinitions,
@@ -431,14 +460,53 @@ export function AdminDashboard() {
   const storedSubNavId = activeSubSectionBySection[activeSection];
   const defaultSubNavId = currentSubNavItems[0]?.targetId ?? "";
   const currentSubNavId = storedSubNavId && currentSubNavItems.some((item) => item.targetId === storedSubNavId) ? storedSubNavId : defaultSubNavId;
-  const handleRefresh = () => startTransition(() => void refresh());
+  async function refreshCurrentView() {
+    if (currentAudience !== "ADMIN") {
+      await refresh();
+      return;
+    }
+
+    const partialDashboard = await loadAdminSectionData(activeSection);
+    setDashboard((current) => ({ ...current, ...partialDashboard }));
+    setLoadedAdminSections((current) => ({ ...current, [activeSection]: true }));
+    setErrorMessage("");
+  }
+  const handleRefresh = () => startTransition(() => void refreshCurrentView());
   const canUseEmployeePortal = Boolean(currentUser?.isAdmin && currentUser.canUseEmployeePortal);
+
+  useEffect(() => {
+    window.sessionStorage.setItem("staffhub.activeSection", activeSection);
+  }, [activeSection]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem("staffhub.activeSubSections", JSON.stringify(activeSubSectionBySection));
+  }, [activeSubSectionBySection]);
+
+  useEffect(() => {
+    if (currentAudience !== "ADMIN" || loadedAdminSections[activeSection]) {
+      return;
+    }
+
+    startTransition(() => {
+      void loadAdminSectionData(activeSection)
+        .then((partialDashboard) => {
+          setDashboard((current) => ({ ...current, ...partialDashboard }));
+          setLoadedAdminSections((current) => ({ ...current, [activeSection]: true }));
+          setErrorMessage("");
+        })
+        .catch((error) => {
+          setErrorMessage(error instanceof Error ? error.message : `${sectionLabels[activeSection]}の読込に失敗しました。`);
+        });
+    });
+  }, [activeSection, currentAudience, loadedAdminSections]);
 
   function handlePortalModeChange(mode: AuthAudience) {
     if (!canUseEmployeePortal || mode === currentAudience) {
       return;
     }
 
+    setErrorMessage("");
+    setCurrentAudience(mode);
     startTransition(() => {
       void bootstrap(mode);
     });
@@ -458,6 +526,20 @@ export function AdminDashboard() {
         ? current[nextSection]
         : nextSubNavItems[0]?.targetId ?? "",
     }));
+
+    if (!loadedAdminSections[nextSection]) {
+      startTransition(() => {
+        void loadAdminSectionData(nextSection)
+          .then((partialDashboard) => {
+            setDashboard((current) => ({ ...current, ...partialDashboard }));
+            setLoadedAdminSections((current) => ({ ...current, [nextSection]: true }));
+            setErrorMessage("");
+          })
+          .catch((error) => {
+            setErrorMessage(error instanceof Error ? error.message : `${sectionLabels[nextSection]}の読込に失敗しました。`);
+          });
+      });
+    }
   }
 
   function handleSubNavChange(targetId: string) {
@@ -653,6 +735,8 @@ export function AdminDashboard() {
     handleTemplateDownload,
     handleEmployeeUpdate,
     handleAssignCard,
+    handleRevokeCard,
+    handleDeleteCard,
     applyAttendanceFilters,
     resetAttendanceFilters,
     handleAttendanceMonthClose,
@@ -678,6 +762,9 @@ export function AdminDashboard() {
     handlePayrollDownload,
     handleDeletePayrollStatement,
     handleFileHistoryDownload,
+    handleDailyAttendanceCsvDownload,
+    handleDailyAttendancePdfDownload,
+    handleMonthlyAttendanceCsvDownload,
     handleMonthlyPayrollCsvDownload,
     handleMonthlyWorksPdfDownload,
     handleSystemForm,
@@ -697,6 +784,12 @@ export function AdminDashboard() {
     leave: <LeaveSection {...leaveSectionProps} />,
     notices: <NoticesSection {...noticesSectionProps} />,
     payroll: <PayrollSection {...payrollSectionProps} />,
+    harmosMigration: (
+      <HarmosMigrationSection
+        data={{ activePanel: currentSubNavId, importHistory: dashboard.importHistory }}
+        actions={{ onRefresh: handleRefresh }}
+      />
+    ),
     reports: <ReportsSection {...reportsSectionProps} />,
     system: <SystemSection {...systemSectionProps} />,
     audit: <AuditSection {...auditSectionProps} />,

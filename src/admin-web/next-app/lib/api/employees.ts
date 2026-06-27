@@ -8,6 +8,13 @@ export async function importEmployeesCsv(formData: FormData) {
   });
 }
 
+export async function previewEmployeesCsv(formData: FormData) {
+  return fetchJson<EmployeeImportResult & { dryRun: boolean; errors?: Array<{ line: number; employeeCode?: string | null; message: string }> }>("/api/admin/employees/import-csv/preview", {
+    method: "POST",
+    body: formData,
+  });
+}
+
 export async function updateEmployee(id: number, payload: EmployeeUpdatePayload) {
   return fetchJson<Employee>(`/api/admin/employees/${id}`, {
     method: "PUT",

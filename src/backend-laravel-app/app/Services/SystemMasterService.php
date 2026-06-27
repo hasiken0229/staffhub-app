@@ -3,12 +3,19 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class SystemMasterService
 {
-    public function leaveTypes(): array
+    public function leaveTypes(bool $includeInactive = true): array
     {
-        return DB::table('leave_types')
+        $query = DB::table('leave_types');
+
+        if (!$includeInactive && Schema::hasColumn('leave_types', 'is_active')) {
+            $query->where('is_active', true);
+        }
+
+        return $query
             ->orderBy('sort_order')
             ->orderBy('code')
             ->get()
@@ -18,6 +25,7 @@ class SystemMasterService
                 'requiresBalance' => (bool) $row->requires_balance,
                 'allowsHalfDay' => (bool) $row->allows_half_day,
                 'sortOrder' => (int) $row->sort_order,
+                'isActive' => (bool) ($row->is_active ?? true),
             ])
             ->all();
     }
@@ -66,6 +74,8 @@ class SystemMasterService
                 ->map(fn ($row) => [
                     'id' => (int) $row->id,
                     'name' => $row->name,
+                    'startTime' => $row->start_time ?? null,
+                    'endTime' => $row->end_time ?? null,
                     'defaultBreakMinutes' => $row->default_break_minutes != null ? (int) $row->default_break_minutes : null,
                     'standardDayMinutes' => isset($row->standard_day_minutes) ? (int) $row->standard_day_minutes : null,
                     'sortOrder' => (int) $row->sort_order,
@@ -141,18 +151,22 @@ class SystemMasterService
     public function storeDepartment(array $payload): array
     {
         $name = $this->requiredString($payload, 'name', '部門名');
-        $existing = DB::table('department_settings')->where('name', $name)->first();
+        $id = $this->nullableIntValue($payload, 'id');
+        $existing = $id !== null
+            ? DB::table('department_settings')->where('id', $id)->first()
+            : DB::table('department_settings')->where('name', $name)->first();
 
         if ($existing === null) {
             DB::table('department_settings')->insert([
                 'name' => $name,
-                'sort_order' => $this->nextSortOrder('department_settings'),
+                'sort_order' => $this->intValue($payload, 'sortOrder', $this->nextSortOrder('department_settings')),
                 'is_active' => $this->boolValue($payload, 'isActive', true),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
         } else {
             DB::table('department_settings')->where('id', $existing->id)->update([
+                'name' => $name,
                 'sort_order' => $this->intValue($payload, 'sortOrder', (int) $existing->sort_order),
                 'is_active' => $this->boolValue($payload, 'isActive', (bool) $existing->is_active),
                 'updated_at' => now(),
@@ -165,18 +179,22 @@ class SystemMasterService
     public function storeLocation(array $payload): array
     {
         $name = $this->requiredString($payload, 'name', '拠点名');
-        $existing = DB::table('location_settings')->where('name', $name)->first();
+        $id = $this->nullableIntValue($payload, 'id');
+        $existing = $id !== null
+            ? DB::table('location_settings')->where('id', $id)->first()
+            : DB::table('location_settings')->where('name', $name)->first();
 
         if ($existing === null) {
             DB::table('location_settings')->insert([
                 'name' => $name,
-                'sort_order' => $this->nextSortOrder('location_settings'),
+                'sort_order' => $this->intValue($payload, 'sortOrder', $this->nextSortOrder('location_settings')),
                 'is_active' => $this->boolValue($payload, 'isActive', true),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
         } else {
             DB::table('location_settings')->where('id', $existing->id)->update([
+                'name' => $name,
                 'sort_order' => $this->intValue($payload, 'sortOrder', (int) $existing->sort_order),
                 'is_active' => $this->boolValue($payload, 'isActive', (bool) $existing->is_active),
                 'updated_at' => now(),
@@ -209,20 +227,28 @@ class SystemMasterService
     public function storeWorkType(array $payload): array
     {
         $name = $this->requiredString($payload, 'name', '勤務区分名');
-        $existing = DB::table('work_type_settings')->where('name', $name)->first();
+        $id = $this->nullableIntValue($payload, 'id');
+        $existing = $id !== null
+            ? DB::table('work_type_settings')->where('id', $id)->first()
+            : DB::table('work_type_settings')->where('name', $name)->first();
 
         if ($existing === null) {
             DB::table('work_type_settings')->insert([
                 'name' => $name,
+                'start_time' => $this->nullableString($payload, 'startTime'),
+                'end_time' => $this->nullableString($payload, 'endTime'),
                 'default_break_minutes' => $this->nullableIntValue($payload, 'defaultBreakMinutes'),
                 'standard_day_minutes' => $this->nullableIntValue($payload, 'standardDayMinutes'),
-                'sort_order' => $this->nextSortOrder('work_type_settings'),
+                'sort_order' => $this->intValue($payload, 'sortOrder', $this->nextSortOrder('work_type_settings')),
                 'is_active' => $this->boolValue($payload, 'isActive', true),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
         } else {
             DB::table('work_type_settings')->where('id', $existing->id)->update([
+                'name' => $name,
+                'start_time' => $this->nullableString($payload, 'startTime'),
+                'end_time' => $this->nullableString($payload, 'endTime'),
                 'default_break_minutes' => $this->nullableIntValue($payload, 'defaultBreakMinutes'),
                 'standard_day_minutes' => $this->nullableIntValue($payload, 'standardDayMinutes'),
                 'sort_order' => $this->intValue($payload, 'sortOrder', (int) $existing->sort_order),
@@ -258,14 +284,20 @@ class SystemMasterService
         $code = $this->requiredString($payload, 'code', '休暇区分コード');
         $name = $this->requiredString($payload, 'name', '休暇区分名');
 
+        $values = [
+            'name' => $name,
+            'requires_balance' => $this->boolValue($payload, 'requiresBalance', false),
+            'allows_half_day' => $this->boolValue($payload, 'allowsHalfDay', false),
+            'sort_order' => $this->intValue($payload, 'sortOrder', $this->nextSortOrder('leave_types')),
+        ];
+
+        if (Schema::hasColumn('leave_types', 'is_active')) {
+            $values['is_active'] = $this->boolValue($payload, 'isActive', true);
+        }
+
         DB::table('leave_types')->updateOrInsert(
             ['code' => $code],
-            [
-                'name' => $name,
-                'requires_balance' => $this->boolValue($payload, 'requiresBalance', false),
-                'allows_half_day' => $this->boolValue($payload, 'allowsHalfDay', false),
-                'sort_order' => $this->intValue($payload, 'sortOrder', $this->nextSortOrder('leave_types')),
-            ],
+            $values,
         );
 
         return $this->overview()['leaveTypes'];
@@ -274,19 +306,32 @@ class SystemMasterService
     public function storePaidLeaveSetting(array $payload): array
     {
         $settingName = $this->requiredString($payload, 'settingName', '休暇設定名');
+        $id = $this->nullableIntValue($payload, 'id');
 
-        DB::table('paid_leave_settings')->updateOrInsert(
-            ['setting_name' => $settingName],
-            [
+        if ($id !== null && DB::table('paid_leave_settings')->where('id', $id)->exists()) {
+            DB::table('paid_leave_settings')->where('id', $id)->update([
+                'setting_name' => $settingName,
                 'annual_grant_days' => $this->floatValue($payload, 'annualGrantDays', 10),
                 'carry_forward_months' => $this->intValue($payload, 'carryForwardMonths', 24),
                 'standard_day_minutes' => $this->intValue($payload, 'standardDayMinutes', 480),
                 'note' => $this->nullableString($payload, 'note'),
                 'is_active' => $this->boolValue($payload, 'isActive', true),
                 'updated_at' => now(),
-                'created_at' => now(),
-            ],
-        );
+            ]);
+        } else {
+            DB::table('paid_leave_settings')->updateOrInsert(
+                ['setting_name' => $settingName],
+                [
+                    'annual_grant_days' => $this->floatValue($payload, 'annualGrantDays', 10),
+                    'carry_forward_months' => $this->intValue($payload, 'carryForwardMonths', 24),
+                    'standard_day_minutes' => $this->intValue($payload, 'standardDayMinutes', 480),
+                    'note' => $this->nullableString($payload, 'note'),
+                    'is_active' => $this->boolValue($payload, 'isActive', true),
+                    'updated_at' => now(),
+                    'created_at' => now(),
+                ],
+            );
+        }
 
         return $this->overview()['paidLeaveSettings'];
     }

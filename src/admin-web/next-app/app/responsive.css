@@ -96,7 +96,7 @@
 
   .login-points,
   .metrics,
-  .portal-home-grid {
+  .portal-home-list {
     grid-template-columns: 1fr;
   }
 

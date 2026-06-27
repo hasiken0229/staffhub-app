@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Services\ApiException;
 use App\Services\ApiResponse;
 use App\Services\ImportHistoryService;
 use App\Services\ReportService;
@@ -52,10 +53,27 @@ final class ReportAdminController extends Controller
         ]);
 
         $csv = $this->reportService->exportMonthlyAttendanceCsv((string) $request->query('targetMonth'));
+        $fileName = 'attendance_monthly_' . $request->query('targetMonth') . '.csv';
+        $rowCount = max(0, substr_count($csv, "\n") - 1);
+
+        $this->importHistoryService->storeAndRecord(
+            'MONTHLY_ATTENDANCE_CSV',
+            $fileName,
+            (string) $request->query('targetMonth'),
+            null,
+            $rowCount,
+            $rowCount,
+            0,
+            ['targetMonth' => (string) $request->query('targetMonth'), 'rowCount' => $rowCount],
+            $csv,
+            $fileName,
+            'text/csv; charset=UTF-8',
+            $request->user(),
+        );
 
         return response($csv, 200, [
             'Content-Type' => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="attendance_monthly_' . $request->query('targetMonth') . '.csv"',
+            'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
         ]);
     }
 
@@ -71,10 +89,32 @@ final class ReportAdminController extends Controller
             'to',
             'employeeCode',
         ]));
+        $fileName = 'attendance_daily_' . $request->query('from') . '_' . $request->query('to') . '.csv';
+        $rowCount = max(0, substr_count($csv, "\n") - 1);
+
+        $this->importHistoryService->storeAndRecord(
+            'DAILY_ATTENDANCE_CSV',
+            $fileName,
+            (string) $request->query('from') . '_' . (string) $request->query('to'),
+            null,
+            $rowCount,
+            $rowCount,
+            0,
+            [
+                'from' => (string) $request->query('from'),
+                'to' => (string) $request->query('to'),
+                'employeeCode' => $request->query('employeeCode'),
+                'rowCount' => $rowCount,
+            ],
+            $csv,
+            $fileName,
+            'text/csv; charset=UTF-8',
+            $request->user(),
+        );
 
         return response($csv, 200, [
             'Content-Type' => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="attendance_daily_' . $request->query('from') . '_' . $request->query('to') . '.csv"',
+            'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
         ]);
     }
 
@@ -85,10 +125,26 @@ final class ReportAdminController extends Controller
         ]);
 
         $pdfBinary = $this->reportService->exportDailyAttendancePdf((string) $request->query('targetMonth'));
+        $fileName = 'attendance_daily_' . $request->query('targetMonth') . '.pdf';
+
+        $this->importHistoryService->storeAndRecord(
+            'DAILY_ATTENDANCE_PDF',
+            $fileName,
+            (string) $request->query('targetMonth'),
+            null,
+            1,
+            1,
+            0,
+            ['targetMonth' => (string) $request->query('targetMonth')],
+            $pdfBinary,
+            $fileName,
+            'application/pdf',
+            $request->user(),
+        );
 
         return response($pdfBinary, 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'attachment; filename="attendance_daily_' . $request->query('targetMonth') . '.pdf"',
+            'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
         ]);
     }
 
@@ -129,7 +185,16 @@ final class ReportAdminController extends Controller
             'targetMonth' => ['required', 'string', 'size:7'],
         ]);
 
-        $export = $this->reportService->exportMonthlyWorksPdf((int) $payload['employeeId'], (string) $payload['targetMonth']);
+        try {
+            $export = $this->reportService->exportMonthlyWorksPdf((int) $payload['employeeId'], (string) $payload['targetMonth']);
+        } catch (ApiException $exception) {
+            return ApiResponse::error(
+                $exception->errorCode,
+                $exception->getMessage(),
+                $exception->status,
+                $exception->details,
+            );
+        }
         $summary = $export['summary'];
 
         $this->importHistoryService->storeAndRecord(

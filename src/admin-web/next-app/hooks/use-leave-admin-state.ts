@@ -1,16 +1,23 @@
 import { useState } from "react";
+import {
+  currentDateValue,
+  currentMonthEndValue,
+  currentMonthStartValue,
+  fiscalYearEndValue,
+  fiscalYearStartValue,
+} from "@/lib/date-defaults";
 
 export function useLeaveAdminState() {
   const [decisionComment, setDecisionComment] = useState("");
   const [decisionResult, setDecisionResult] = useState("");
   const [grantEmployeeId, setGrantEmployeeId] = useState("1");
   const [grantDays, setGrantDays] = useState("10");
-  const [grantDate, setGrantDate] = useState("2026-04-01");
-  const [grantExpiresOn, setGrantExpiresOn] = useState("2027-03-31");
+  const [grantDate, setGrantDate] = useState(fiscalYearStartValue);
+  const [grantExpiresOn, setGrantExpiresOn] = useState(fiscalYearEndValue);
   const [grantNote, setGrantNote] = useState("");
   const [adjustType, setAdjustType] = useState<"ADJUST_PLUS" | "ADJUST_MINUS">("ADJUST_PLUS");
   const [adjustDays, setAdjustDays] = useState("1");
-  const [adjustDate, setAdjustDate] = useState("2026-04-01");
+  const [adjustDate, setAdjustDate] = useState(currentDateValue);
   const [adjustNote, setAdjustNote] = useState("");
   const [leaveAdminResult, setLeaveAdminResult] = useState("");
   const [workProcedureStatus, setWorkProcedureStatus] = useState("PENDING");
@@ -19,8 +26,8 @@ export function useLeaveAdminState() {
   const [workProcedureLeaveTypeCode, setWorkProcedureLeaveTypeCode] = useState("");
   const [workProcedureRequestCategory, setWorkProcedureRequestCategory] = useState("");
   const [workProcedureTimeLeaveType, setWorkProcedureTimeLeaveType] = useState("");
-  const [workProcedureFrom, setWorkProcedureFrom] = useState("2026-03-01");
-  const [workProcedureTo, setWorkProcedureTo] = useState("2026-03-31");
+  const [workProcedureFrom, setWorkProcedureFrom] = useState(currentMonthStartValue);
+  const [workProcedureTo, setWorkProcedureTo] = useState(currentMonthEndValue);
 
   return {
     decisionComment,

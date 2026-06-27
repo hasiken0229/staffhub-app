@@ -6,6 +6,7 @@ public sealed record AppSettings(
     string DeviceSecret,
     string DeviceName,
     bool AutoStartEnabled,
+    bool StartMinimized,
     string ReaderMode,
     string? PreferredReaderName,
     int PollIntervalMilliseconds);
@@ -22,6 +23,26 @@ public sealed record EmployeeBrief(
     long Id,
     string EmployeeCode,
     string Name);
+
+public sealed record RegistrationEmployee(
+    long Id,
+    string EmployeeCode,
+    string Name,
+    string? DepartmentName,
+    string Status)
+{
+    public string DisplayName => $"{EmployeeCode} / {Name}";
+}
+
+public sealed record CardAssignmentResult(
+    long Id,
+    long EmployeeId,
+    string EmployeeCode,
+    string EmployeeName,
+    string CardUid,
+    bool IsActive,
+    DateTimeOffset AssignedAt,
+    DateTimeOffset? RevokedAt);
 
 public sealed record PunchResult(
     long AttendanceEventId,

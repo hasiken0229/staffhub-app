@@ -34,6 +34,16 @@ final class AttendanceService
         return $this->punchService->heartbeat($payload);
     }
 
+    public function listCardRegistrationEmployees(array $payload): array
+    {
+        return $this->punchService->listCardRegistrationEmployees($payload);
+    }
+
+    public function assignCardFromDevice(array $payload): array
+    {
+        return $this->punchService->assignCardFromDevice($payload);
+    }
+
     public function listEvents(array $filters): array
     {
         return $this->dailyAttendanceService->listEvents($filters);
@@ -62,6 +72,11 @@ final class AttendanceService
     public function updateDaily(int $dailyId, array $payload, GenericUser $actor): array
     {
         return $this->dailyEditService->updateDaily($dailyId, $payload, $actor);
+    }
+
+    public function createDaily(int $employeeId, string $targetDate, GenericUser $actor): array
+    {
+        return $this->dailyEditService->createDaily($employeeId, $targetDate, $actor);
     }
 
     public function resetManualEdit(int $dailyId, GenericUser $actor): array

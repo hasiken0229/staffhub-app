@@ -1,5 +1,6 @@
 import { DataTable } from "@/components/data-table";
 import { ApprovalStatusBadge } from "@/components/status-badge";
+import { formatDurationMinutes } from "@/lib/api/formatters";
 import type { LeaveRequest } from "@/types";
 import type { LeaveSectionProps } from "./leave-section-types";
 import { formatLeavePeriod, formatRequestCategory, formatTimeLeaveType } from "./leave-section-utils";
@@ -41,7 +42,7 @@ export function LeaveRequestDetailPanel({ selectedProcedure, formatters, onClose
         </div>
         <div>
           <span className="detail-label">申請量</span>
-          <strong>{selectedProcedure.requestCategory === "TIME_LEAVE" ? `${selectedProcedure.quantityMinutes ?? 0}分` : `${selectedProcedure.quantityDays ?? 0}日`}</strong>
+          <strong>{selectedProcedure.requestCategory === "TIME_LEAVE" ? formatDurationMinutes(selectedProcedure.quantityMinutes ?? 0) : `${selectedProcedure.quantityDays ?? 0}日`}</strong>
         </div>
         <div>
           <span className="detail-label">申請日時</span>

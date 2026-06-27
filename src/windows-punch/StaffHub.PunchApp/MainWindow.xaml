@@ -4,6 +4,8 @@
         Title="勤怠打刻"
         Height="720"
         Width="1200"
+        MinHeight="620"
+        MinWidth="980"
         WindowStartupLocation="CenterScreen"
         Foreground="#27344D"
         Background="{Binding FeedbackBackground}">
@@ -15,7 +17,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="ButtonChrome" Background="{TemplateBinding Background}" CornerRadius="16">
+                        <Border x:Name="ButtonChrome" Background="{TemplateBinding Background}" CornerRadius="12">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -34,19 +36,23 @@
             </Setter>
         </Style>
     </Window.Resources>
-    <Grid Margin="24" Background="{Binding FeedbackBackground}">
+
+    <Grid Margin="14" Background="{Binding FeedbackBackground}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <DockPanel Grid.Row="0" LastChildFill="False" Margin="0,0,0,24">
-            <StackPanel DockPanel.Dock="Left">
-                <TextBlock x:Name="AppTitleText" Text="職員打刻アプリ" FontSize="36" FontWeight="Bold" Foreground="#27344D" Cursor="Hand" />
-            </StackPanel>
+        <DockPanel Grid.Row="0" LastChildFill="False" Margin="0,0,0,10">
+            <TextBlock x:Name="AppTitleText"
+                       DockPanel.Dock="Left"
+                       Text="職員打刻アプリ"
+                       FontSize="28"
+                       FontWeight="Bold"
+                       Foreground="#27344D"
+                       Cursor="Hand" />
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <Button x:Name="StartPunchButton" Content="打刻を開始する" Width="150" Height="44" Margin="0,0,12,0" Style="{StaticResource GradientButtonStyle}" Foreground="White">
+                <Button x:Name="StartPunchButton" Content="再接続" Width="92" Height="34" Margin="0,0,10,0" Style="{StaticResource GradientButtonStyle}" Foreground="White">
                     <Button.Background>
                         <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                             <GradientStop Color="#6F8FE5" Offset="0" />
@@ -54,13 +60,13 @@
                         </LinearGradientBrush>
                     </Button.Background>
                 </Button>
-                <Border CornerRadius="18" Padding="18,9" Background="{Binding OfflineWarningBackground}" BorderBrush="{Binding FeedbackAccent}" BorderThickness="2">
+                <Border CornerRadius="14" Padding="12,6" Background="{Binding OfflineWarningBackground}" BorderBrush="{Binding FeedbackAccent}" BorderThickness="2">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="●" Foreground="{Binding FeedbackAccent}" FontSize="20" FontWeight="Bold" Margin="0,0,8,0" />
-                        <TextBlock Text="{Binding NetworkStatus}" Foreground="#27344D" FontSize="17" FontWeight="Bold" Margin="0,0,12,0" />
-                        <TextBlock Text="未送信 " Foreground="#27344D" FontSize="17" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding PendingCount}" Foreground="{Binding FeedbackAccent}" FontSize="20" FontWeight="Bold" />
-                        <TextBlock Text=" 件" Foreground="#27344D" FontSize="17" FontWeight="SemiBold" />
+                        <TextBlock Text="●" Foreground="{Binding FeedbackAccent}" FontSize="16" FontWeight="Bold" Margin="0,0,6,0" />
+                        <TextBlock Text="{Binding NetworkStatus}" Foreground="#27344D" FontSize="14" FontWeight="Bold" Margin="0,0,10,0" />
+                        <TextBlock Text="未送信 " Foreground="#27344D" FontSize="14" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding PendingCount}" Foreground="{Binding FeedbackAccent}" FontSize="16" FontWeight="Bold" />
+                        <TextBlock Text=" 件" Foreground="#27344D" FontSize="14" FontWeight="SemiBold" />
                     </StackPanel>
                 </Border>
             </StackPanel>
@@ -68,133 +74,171 @@
 
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="2*" />
-                <ColumnDefinition x:Name="MaintenanceColumn" Width="1*" />
+                <ColumnDefinition x:Name="ResultColumn" Width="3*" />
+                <ColumnDefinition x:Name="SideColumn" Width="1*" />
             </Grid.ColumnDefinitions>
 
-            <Border x:Name="ResultPanel" Grid.Column="0" Background="#FFFFFF" BorderBrush="{Binding FeedbackAccent}" BorderThickness="3" CornerRadius="24" Padding="36" Margin="0,0,20,0">
-                <StackPanel VerticalAlignment="Center">
-                    <Border Width="104" Height="104" CornerRadius="52" Background="{Binding FeedbackAccent}" HorizontalAlignment="Center" Margin="0,0,0,14">
-                        <TextBlock x:Name="ResultGlyphText"
-                                   Text="{Binding ResultGlyph}"
-                                   Foreground="White"
-                                   FontSize="68"
-                                   FontWeight="Black"
-                                   TextAlignment="Center"
-                                   VerticalAlignment="Center"
-                                   RenderTransformOrigin="0.5,0.5">
-                            <TextBlock.RenderTransform>
-                                <ScaleTransform ScaleX="1" ScaleY="1" />
-                            </TextBlock.RenderTransform>
-                        </TextBlock>
-                    </Border>
-                    <TextBlock Text="{Binding FeedbackStateLabel}" FontSize="24" Foreground="{Binding FeedbackAccent}" FontWeight="Bold" TextAlignment="Center" Margin="0,0,0,6" />
-                    <TextBlock Text="{Binding CurrentClockText}" FontSize="82" FontWeight="Black" Foreground="#000000" TextAlignment="Center" Margin="0,0,0,16" />
-                    <TextBlock Text="{Binding ResultHeadline}" FontSize="40" FontWeight="Black" TextAlignment="Center" TextWrapping="Wrap" LineHeight="48" Margin="0,0,0,10" />
-                    <TextBlock Text="{Binding ResultDetail}" FontSize="24" Foreground="#53647F" TextAlignment="Center" TextWrapping="Wrap" Margin="0,0,0,16" />
-                    <TextBlock Text="{Binding EmployeeName}" FontSize="60" FontWeight="Black" TextAlignment="Center" TextWrapping="Wrap" LineHeight="66" Margin="0,0,0,8" />
-                    <TextBlock Text="{Binding LastEventType}" FontSize="32" Foreground="{Binding FeedbackAccent}" FontWeight="Bold" TextAlignment="Center" />
-                </StackPanel>
-            </Border>
+            <Border x:Name="ResultPanel"
+                    Grid.Column="0"
+                    Background="#FFFFFF"
+                    BorderBrush="{Binding FeedbackAccent}"
+                    BorderThickness="3"
+                    CornerRadius="18"
+                    Padding="28"
+                    Margin="0,0,12,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
-            <Border x:Name="MaintenancePanel" Grid.Column="1" Background="#F9FBFF" BorderBrush="#DDE6FA" BorderThickness="1" CornerRadius="24" Padding="24">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
-                        <TextBlock Text="保守・試験パネル" FontSize="24" FontWeight="Bold" Margin="0,0,0,16" />
-                        <TextBlock Text="端末名" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding Settings.DeviceName}" Margin="0,0,0,10" />
-                        <TextBlock Text="カードリーダー状態" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding ReaderStatus}" Margin="0,0,0,10" TextWrapping="Wrap" />
-                        <TextBlock Text="直近カードUID" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding LastCardUid}" Margin="0,0,0,10" TextWrapping="Wrap" />
-                        <TextBlock Text="未送信件数" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding PendingCount}" Margin="0,0,0,16" FontSize="22" />
-                        <TextBlock Text="模擬カードUID" FontWeight="SemiBold" />
-                        <TextBox Text="{Binding SimulatedCardUid, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,10" Padding="8" FontSize="15" BorderBrush="#DDE6FA" Background="White" />
-                        <Button x:Name="SimulateButton" Content="模擬スキャン" Height="40" Margin="0,0,0,10" Style="{StaticResource GradientButtonStyle}" Foreground="White">
-                            <Button.Background>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                    <GradientStop Color="#6F8FE5" Offset="0" />
-                                    <GradientStop Color="#9DB2FB" Offset="1" />
-                                </LinearGradientBrush>
-                            </Button.Background>
-                        </Button>
-                        <Button x:Name="RetryButton" Content="未送信を再送" Height="40" Style="{StaticResource GradientButtonStyle}" Foreground="White">
-                            <Button.Background>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                    <GradientStop Color="#E9A6C7" Offset="0" />
-                                    <GradientStop Color="#F4BFD9" Offset="1" />
-                                </LinearGradientBrush>
-                            </Button.Background>
-                        </Button>
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
+                        <Border Width="58" Height="58" CornerRadius="29" Background="{Binding FeedbackAccent}" Margin="0,0,14,0">
+                            <TextBlock x:Name="ResultGlyphText"
+                                       Text="{Binding ResultGlyph}"
+                                       Foreground="White"
+                                       FontSize="38"
+                                       FontWeight="Black"
+                                       TextAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       RenderTransformOrigin="0.5,0.5">
+                                <TextBlock.RenderTransform>
+                                    <ScaleTransform ScaleX="1" ScaleY="1" />
+                                </TextBlock.RenderTransform>
+                            </TextBlock>
+                        </Border>
+                        <TextBlock Text="{Binding FeedbackStateLabel}" FontSize="28" Foreground="{Binding FeedbackAccent}" FontWeight="Bold" VerticalAlignment="Center" />
                     </StackPanel>
-                </ScrollViewer>
-            </Border>
-        </Grid>
 
-        <Border Grid.Row="2" Background="#F9FBFF" BorderBrush="#DDE6FA" BorderThickness="1" CornerRadius="18" Padding="12" Margin="0,14,0,0">
-            <Grid>
+                    <StackPanel Grid.Row="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding CurrentClockText}" FontSize="86" FontWeight="Black" Foreground="#000000" TextAlignment="Center" Margin="0,0,0,8" />
+                        <TextBlock Text="{Binding ResultHeadline}" FontSize="34" FontWeight="Black" TextAlignment="Center" TextWrapping="Wrap" LineHeight="40" Margin="0,0,0,8" />
+                        <TextBlock Text="{Binding ResultDetail}" FontSize="18" Foreground="#53647F" TextAlignment="Center" TextWrapping="Wrap" Margin="0,0,0,12" />
+                        <TextBlock Text="{Binding EmployeeName}" FontSize="50" FontWeight="Black" TextAlignment="Center" TextWrapping="Wrap" LineHeight="56" Margin="0,0,0,8" />
+                        <TextBlock Text="{Binding LastEventType}" FontSize="28" Foreground="{Binding FeedbackAccent}" FontWeight="Bold" TextAlignment="Center" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="2"
+                               Text="{Binding ReaderStatus}"
+                               Foreground="#7083A0"
+                               FontSize="12"
+                               TextAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               Margin="0,8,0,0" />
+                </Grid>
+            </Border>
+
+            <Grid Grid.Column="1">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
+                    <RowDefinition x:Name="MaintenanceRow" Height="0" />
                 </Grid.RowDefinitions>
 
-                <DockPanel Grid.Row="0" Margin="0,0,0,8">
-                    <TextBlock Text="直近10打刻履歴" FontSize="18" FontWeight="Bold" DockPanel.Dock="Left" />
-                    <TextBlock Text="RC-S380実機読取・API送信結果" FontSize="14" Foreground="#7083A0" HorizontalAlignment="Right" />
-                </DockPanel>
+                <Border Grid.Row="0" Background="#F9FBFF" BorderBrush="#DDE6FA" BorderThickness="1" CornerRadius="18" Padding="12">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                            <TextBlock Text="直近10打刻履歴" FontSize="20" FontWeight="Bold" />
+                            <TextBlock Text="RC-S380 読取結果" FontSize="12" Foreground="#7083A0" />
+                        </StackPanel>
+                        <ItemsControl Grid.Row="1" ItemsSource="{Binding PunchHistory}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="White" BorderBrush="#DDE6FA" BorderThickness="1" CornerRadius="10" Padding="8" Margin="0,0,0,8">
+                                        <StackPanel>
+                                            <DockPanel>
+                                                <TextBlock Text="{Binding TimeText}" FontSize="18" FontWeight="Black" DockPanel.Dock="Left" />
+                                                <TextBlock Text="{Binding EventTypeText}" FontSize="14" Foreground="#27344D" FontWeight="Bold" HorizontalAlignment="Right" />
+                                            </DockPanel>
+                                            <TextBlock Text="{Binding EmployeeName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,3,0,0" />
+                                            <TextBlock Text="{Binding ResultText}" FontSize="12" Foreground="#53647F" TextWrapping="Wrap" MaxHeight="34" />
+                                            <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="#7083A0" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Grid.Row="1" Text="まだ打刻履歴はありません" FontSize="14" Foreground="#7083A0" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding PunchHistory.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </Border>
 
-                <Grid Grid.Row="1" Margin="0,0,0,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="90" />
-                        <ColumnDefinition Width="180" />
-                        <ColumnDefinition Width="80" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="110" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="時刻" FontWeight="SemiBold" />
-                    <TextBlock Grid.Column="1" Text="職員" FontWeight="SemiBold" />
-                    <TextBlock Grid.Column="2" Text="種別" FontWeight="SemiBold" />
-                    <TextBlock Grid.Column="3" Text="結果" FontWeight="SemiBold" />
-                    <TextBlock Grid.Column="4" Text="状態" FontWeight="SemiBold" />
-                </Grid>
-
-                <ItemsControl Grid.Row="2" ItemsSource="{Binding PunchHistory}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border BorderBrush="#DDE6FA" BorderThickness="0,1,0,0" Padding="0,3">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="90" />
-                                        <ColumnDefinition Width="180" />
-                                        <ColumnDefinition Width="80" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="110" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="{Binding TimeText}" FontSize="13" />
-                                    <TextBlock Grid.Column="1" Text="{Binding EmployeeName}" FontSize="13" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Grid.Column="2" Text="{Binding EventTypeText}" FontSize="13" />
-                                    <TextBlock Grid.Column="3" Text="{Binding ResultText}" FontSize="13" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Grid.Column="4" Text="{Binding StatusText}" FontSize="13" />
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <TextBlock Grid.Row="2" Text="まだ打刻履歴はありません" FontSize="14" Foreground="#7083A0" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Visibility" Value="Collapsed" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding PunchHistory.Count}" Value="0">
-                                    <Setter Property="Visibility" Value="Visible" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
+                <Border x:Name="MaintenancePanel" Grid.Row="1" Background="#F9FBFF" BorderBrush="#DDE6FA" BorderThickness="1" CornerRadius="18" Padding="14" Margin="0,12,0,0">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <TextBlock Text="保守・試験パネル" FontSize="20" FontWeight="Bold" Margin="0,0,0,12" />
+                            <TextBlock Text="端末名" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Settings.DeviceName}" Margin="0,0,0,8" />
+                            <TextBlock Text="カードリーダー状態" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding ReaderStatus}" Margin="0,0,0,8" TextWrapping="Wrap" />
+                            <CheckBox Content="カード登録モード（打刻せずUIDだけ読む）"
+                                      IsChecked="{Binding CardRegistrationModeEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      FontWeight="SemiBold"
+                                      Margin="0,0,0,10" />
+                            <TextBlock Text="直近カードUID" FontWeight="SemiBold" />
+                            <TextBox Text="{Binding LastCardUid}" Margin="0,6,0,8" Padding="8" FontSize="14" BorderBrush="#DDE6FA" Background="White" IsReadOnly="True" />
+                            <TextBlock Text="登録先職員" FontWeight="SemiBold" />
+                            <ComboBox ItemsSource="{Binding RegistrationEmployees}"
+                                      DisplayMemberPath="DisplayName"
+                                      SelectedValuePath="Id"
+                                      SelectedValue="{Binding SelectedRegistrationEmployeeId, Mode=TwoWay}"
+                                      Margin="0,6,0,8"
+                                      Height="34" />
+                            <Button x:Name="RegisterCardButton" Content="この職員に登録" Height="36" Margin="0,0,0,8" Style="{StaticResource GradientButtonStyle}" Foreground="White">
+                                <Button.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#6F8FE5" Offset="0" />
+                                        <GradientStop Color="#9DB2FB" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Button.Background>
+                            </Button>
+                            <Button x:Name="CopyCardUidButton" Content="UIDをコピー" Height="34" Margin="0,0,0,8" Style="{StaticResource GradientButtonStyle}" Foreground="White">
+                                <Button.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#16804C" Offset="0" />
+                                        <GradientStop Color="#55B987" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Button.Background>
+                            </Button>
+                            <TextBlock Text="{Binding CardRegistrationMessage}" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="#53647F" />
+                            <TextBlock Text="未送信件数" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding PendingCount}" Margin="0,0,0,12" FontSize="20" />
+                            <TextBlock Text="模擬カードUID" FontWeight="SemiBold" />
+                            <TextBox Text="{Binding SimulatedCardUid, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,10" Padding="8" FontSize="14" BorderBrush="#DDE6FA" Background="White" />
+                            <Button x:Name="SimulateButton" Content="模擬スキャン" Height="38" Margin="0,0,0,10" Style="{StaticResource GradientButtonStyle}" Foreground="White">
+                                <Button.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#6F8FE5" Offset="0" />
+                                        <GradientStop Color="#9DB2FB" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Button.Background>
+                            </Button>
+                            <Button x:Name="RetryButton" Content="未送信を再送" Height="38" Style="{StaticResource GradientButtonStyle}" Foreground="White">
+                                <Button.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#E9A6C7" Offset="0" />
+                                        <GradientStop Color="#F4BFD9" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Button.Background>
+                            </Button>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
             </Grid>
-        </Border>
+        </Grid>
     </Grid>
 </Window>
