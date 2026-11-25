@@ -15,7 +15,7 @@ final class MobileHomeApiTest extends TestCase
     {
         $employeeId = (int) DB::table('employees')->insertGetId([
             'employee_code' => 'E0001',
-            'name' => '山田 太郎',
+            'name' => '見本姓K 職員J',
             'kana' => null,
             'department_name' => '保育',
             'employment_type' => 'FULL_TIME',
@@ -48,6 +48,18 @@ final class MobileHomeApiTest extends TestCase
             'updated_at' => now(),
         ]);
 
+        DB::table('employment_type_settings')->updateOrInsert(
+            ['code' => 'FULL_TIME'],
+            [
+                'label' => '常勤',
+                'standard_day_minutes' => 420,
+                'sort_order' => 1,
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        );
+
         $login = $this->postJson('/api/auth/login', [
             'loginId' => 'staff001',
             'password' => 'Staff1234!',
@@ -56,7 +68,7 @@ final class MobileHomeApiTest extends TestCase
 
         $token = $login->json('data.accessToken');
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/mobile/home')
             ->assertOk()
             ->assertJsonPath('data.employee.id', $employeeId)
@@ -66,5 +78,10 @@ final class MobileHomeApiTest extends TestCase
             ->assertJsonPath('data.leaveTypes.0.allowsHalfDay', true)
             ->assertJsonPath('data.leaveTypes.1.code', 'ABSENCE')
             ->assertJsonPath('data.leaveTypes.2.code', 'SPECIAL');
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/leave/standard-day-minutes?targetDate=2026-07-15')
+            ->assertOk()
+            ->assertJsonPath('data.standardDayMinutes', 420);
     }
 }

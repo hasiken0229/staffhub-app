@@ -5,6 +5,9 @@ export type AttendanceSectionProps = {
     dashboard: DashboardData;
     attendanceDecisionResult: string;
     attendanceCloseResult: string;
+    attendanceLoadError: string;
+    attendanceIsLoading: boolean;
+    attendanceMonthDataFresh: boolean;
     reportMonth: string;
     reportFrom: string;
     reportTo: string;
@@ -45,9 +48,10 @@ export type AttendanceSectionProps = {
       row: { employeeId: number; targetDate: string; errorCode: string },
       status: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "IGNORED",
     ) => Promise<void>;
-    onDownloadMonthlyAttendanceCsv: (targetMonth: string) => Promise<void>;
-    onDownloadDailyAttendanceCsv: (from: string, to: string) => Promise<void>;
-    onDownloadDailyAttendancePdf: (targetMonth: string) => Promise<void>;
+    onRetryAttendanceLoad: () => Promise<void>;
+    onDownloadMonthlyAttendanceCsv: (targetMonth: string, filters?: { employeeCode?: string; departmentName?: string }) => Promise<void>;
+    onDownloadDailyAttendanceCsv: (from: string, to: string, filters?: { employeeCode?: string; departmentName?: string }) => Promise<void>;
+    onDownloadDailyAttendancePdf: (targetMonth: string, filters?: { employeeCode?: string; departmentName?: string }) => Promise<void>;
   };
   formatters: {
     formatDateOnly: (value?: string | null) => string;

@@ -8,18 +8,20 @@ final class PayrollTemplateCatalog
         'PAYROLL' => [
             'title' => '給与明細',
             'defaultDefinitionName' => '標準給与テンプレート',
-            'sampleFileName' => 'r8.3kyuyo.csv',
+            'sampleFileName' => 'sample-payroll.csv',
             'headers' => [
                 '社員番号', '姓', '名', '基本給', '管理職手当', '特殊業務手当', '調整手当', '扶養手当', '特別手当',
                 '超過勤務手当', '住宅手当', '給与差額', '減　額', '人勧差額', '休日出勤', '主幹手当', '業務責任手当',
                 '通勤手当', '保育海外研修', '基礎分手当', '質の向上手当', '賃金改善手当', '非課税支給計', '課税支給額計',
                 '総支給額', '健康保険', '厚生年金', '雇用保険', '社保調整', '社会保険合計', '課税対象額', '所得税',
-                '住民税', '共済会', '食　費', '財　形', '保育海外研修', '控除額計', '差引支給', '振込支給',
+                '住民税', '共済会', '食　費', '財　形', '駐車場代', '保育海外研修', '控除額計', '差引支給', '振込支給',
             ],
             'sampleRow' => [
-                '101', '橋本', '良孝', '195000', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0',
-                '0', '0', '0', '0', '0', '0', '195000', '195000', '10240', '0', '0', '0', '10240', '184760', '2180',
-                '10500', '3060', '7000', '0', '0', '32980', '162020', '162020',
+                '970012', '見本姓AR', '職員F', '240000', '0', '0', '0', '0', '0', '0',
+                '0', '0', '0', '0', '0', '0', '0', '6000', '0', '0',
+                '0', '0', '6000', '240000', '246000', '12000', '21000', '1500', '0', '34500',
+                '205500', '4500', '7000', '0', '0', '0', '0', '0', '46000', '200000',
+                '200000',
             ],
             'payItems' => [
                 ['label' => '基本給', 'source' => '基本給'],
@@ -52,6 +54,7 @@ final class PayrollTemplateCatalog
                 ['label' => '共済会', 'source' => '共済会'],
                 ['label' => '食費', 'source' => '食　費'],
                 ['label' => '財形', 'source' => '財　形'],
+                ['label' => '駐車場代', 'source' => '駐車場代'],
                 ['label' => '保育海外研修', 'source' => '保育海外研修', 'occurrence' => 1],
             ],
             'summaryItems' => [
@@ -68,15 +71,15 @@ final class PayrollTemplateCatalog
         'BONUS' => [
             'title' => '賞与明細',
             'defaultDefinitionName' => '標準賞与テンプレート',
-            'sampleFileName' => 'r8.3syoyo.csv',
+            'sampleFileName' => 'sample-bonus.csv',
             'headers' => [
                 '社員番号', '姓', '名', '賞　　与', '調整', '人勧改定分', '質の向上手当', '賃金改善手当', '特別手当',
                 '課税支給額', '総支給額', '健康保険', '厚生年金', '雇用保険', '社会保険合計', '課税対象額',
                 '所得税', '控除額計', '差引支給', '振込支給',
             ],
             'sampleRow' => [
-                '103', '川野', '洋子', '0', '0', '510000', '50000', '350000', '0', '910000', '910000', '53462', '83265',
-                '5005', '141732', '768268', '62752', '204484', '705516', '705516',
+                '970021', '見本姓AG', '職員S', '300000', '0', '0', '0', '0', '0', '0',
+                '300000', '15000', '27000', '1800', '43800', '256200', '6200', '50000', '250000', '250000',
             ],
             'payItems' => [
                 ['label' => '賞与', 'source' => '賞　　与'],
@@ -107,7 +110,7 @@ final class PayrollTemplateCatalog
     public function normalizeStatementType(string $statementType): string
     {
         $normalized = strtoupper($statementType);
-        if (!isset(self::TYPE_CONFIG[$normalized])) {
+        if (! isset(self::TYPE_CONFIG[$normalized])) {
             throw new ApiException('VALIDATION_ERROR', '明細種別が不正です。', 422, [
                 ['field' => 'statementType', 'message' => 'PAYROLL または BONUS を指定してください。'],
             ]);
@@ -144,6 +147,52 @@ final class PayrollTemplateCatalog
     public function headers(string $statementType): array
     {
         return $this->config($statementType)['headers'];
+    }
+
+    public function legacyHeaders(string $statementType): array
+    {
+        $normalized = $this->normalizeStatementType($statementType);
+        $headers = $this->headers($normalized);
+
+        if ($normalized !== 'PAYROLL') {
+            return $headers;
+        }
+
+        $parkingIndex = array_search('駐車場代', $headers, true);
+        if ($parkingIndex !== false) {
+            array_splice($headers, $parkingIndex, 1);
+        }
+
+        return $headers;
+    }
+
+    public function headersAreCompatible(string $statementType, array $actualHeaders, array $expectedHeaders): bool
+    {
+        $normalized = $this->normalizeStatementType($statementType);
+        $actual = array_map(static fn ($header): string => trim((string) $header), $actualHeaders);
+        $expected = array_map(static fn ($header): string => trim((string) $header), $expectedHeaders);
+
+        if ($actual === $expected) {
+            return true;
+        }
+
+        if ($normalized !== 'PAYROLL') {
+            return false;
+        }
+
+        $current = $this->headers($normalized);
+        $legacy = $this->legacyHeaders($normalized);
+
+        return ($actual === $current && $expected === $legacy)
+            || ($actual === $legacy && $expected === $current);
+    }
+
+    public function isLegacyHeaders(string $statementType, array $headers): bool
+    {
+        $normalized = $this->normalizeStatementType($statementType);
+        $actual = array_map(static fn ($header): string => trim((string) $header), $headers);
+
+        return $normalized === 'PAYROLL' && $actual === $this->legacyHeaders($normalized);
     }
 
     public function sampleRows(string $statementType): array
@@ -214,7 +263,7 @@ final class PayrollTemplateCatalog
             ];
         }
 
-        if (!empty($statement['remarks'])) {
+        if (! empty($statement['remarks'])) {
             $lines[] = [
                 'sectionType' => 'OTHER',
                 'displayOrder' => 1,

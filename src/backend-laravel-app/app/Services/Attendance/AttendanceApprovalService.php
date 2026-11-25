@@ -19,77 +19,43 @@ final class AttendanceApprovalService extends AttendanceServiceSupport
         $perPage = max(1, min(10000, (int) ($filters['perPage'] ?? 50)));
         $status = strtoupper((string) ($filters['status'] ?? 'PENDING'));
 
-        $query = DB::table('attendance_daily as ad')
-            ->join('employees as e', 'e.id', '=', 'ad.employee_id')
-            ->select([
-                'ad.id',
-                'ad.employee_id',
-                'e.employee_code',
-                'e.name as employee_name',
-                'e.department_name',
-                'e.location_name',
-                'e.employment_type',
-                'ad.target_date',
-                'ad.schedule_name',
-                'ad.work_type_id',
-                'ad.raw_clock_in_at',
-                'ad.raw_clock_out_at',
-                'ad.clock_in_at',
-                'ad.clock_out_at',
-                'ad.break_minutes',
-                'ad.work_minutes',
-                'ad.is_manually_edited',
-                'ad.absence_flag',
-                'ad.special_leave_flag',
-                'ad.paid_leave_unit',
-                'ad.hour_paid_leave_minutes',
-                'ad.child_care_leave_minutes',
-                'ad.nursing_care_leave_minutes',
-                'ad.remark',
-                'ad.supervisor_comment',
-                'ad.approval_status',
-                'ad.approval_comment',
-                'ad.approved_at',
-                'ad.close_status',
-                'ad.manual_edited_at',
-            ]);
-
-        if ($status !== 'ALL') {
-            $query->where('ad.approval_status', $status);
+        $review = app(DailyApprovalReview::class);
+        $query = DB::table('attendance_daily as ad')->join('employees as e', 'e.id', '=', 'ad.employee_id')
+            ->select('ad.*', 'e.employee_code', 'e.name as employee_name', 'e.department_name', 'e.location_name', 'e.employment_type');
+        $review->applyFilters($query, $filters, 'ad');
+        $pendingPage = null;
+        if ($status === 'PENDING') {
+            $pending = $review->pending($filters);
+            $total = $pending->count();
+            $pendingPage = $pending->forPage($page, $perPage)->values();
+            $rows = $query->whereIntegerInRaw('ad.id', $pendingPage->pluck('id')->filter()->all())->get();
+            $decisions = $pendingPage->keyBy('id');
+            foreach ($rows as $row) {
+                $row->review_status = 'PENDING';
+                $row->review_reason = $decisions[$row->id]->review_reason;
+            }
+        } else {
+            if ($status !== 'ALL' && $status !== 'APPROVED') { $query->where('ad.approval_status', $status); }
+            if ($status === 'APPROVED') {
+                $query->where('ad.approval_status', 'APPROVED');
+                $review->restrictToConfirmedApprovals($query, $filters);
+            }
+            $total = (clone $query)->count();
+            $rows = $query->orderBy('ad.target_date')->orderBy('e.employee_code')->forPage($page, $perPage)->get();
+            $review->annotate($rows);
         }
-
-        if (!empty($filters['from'])) {
-            $query->whereDate('ad.target_date', '>=', $filters['from']);
-        }
-
-        if (!empty($filters['to'])) {
-            $query->whereDate('ad.target_date', '<=', $filters['to']);
-        }
-
-        if (!empty($filters['employeeCode'])) {
-            $query->where('e.employee_code', 'like', '%' . $filters['employeeCode'] . '%');
-        }
-
-        if (!empty($filters['departmentName'])) {
-            $query->where('e.department_name', 'like', '%' . $filters['departmentName'] . '%');
-        }
-
-        $total = (clone $query)->count();
-        $rows = $query
-            ->orderBy('ad.target_date')
-            ->orderBy('e.employee_code')
-            ->forPage($page, $perPage)
-            ->get();
+        $this->preloadProjection($rows);
+        $this->preloadDailyBreaks($rows);
         $alertSettings = $this->resolveAttendanceAlertSettings();
         $shortIntervalAlertMap = $this->buildShortIntervalAlertMap($rows, $alertSettings);
 
+        $mapped = $rows->mapWithKeys(fn (object $row) => [$row->id => [
+            ...$this->mapDailyRow($row, $this->buildAlertsForRow($row, $shortIntervalAlertMap, $alertSettings)),
+            'employmentType' => $row->employment_type,
+        ]]);
+        $items = $pendingPage === null ? $mapped->values() : $pendingPage->map(fn ($r) => $r->id !== null ? $mapped[$r->id] : $this->missingScheduledItem($r));
         return [
-            'items' => $rows->map(fn (object $row) => [
-                ...$this->mapDailyRow($row, $this->buildAlertsForRow($row, $shortIntervalAlertMap, $alertSettings)),
-                'departmentName' => $row->department_name,
-                'employmentType' => $row->employment_type,
-                'overtimeMinutes' => max(0, ((int) ($row->work_minutes ?? 0)) - 8 * 60),
-            ])->all(),
+            'items' => $items->all(),
             'meta' => [
                 'page' => $page,
                 'perPage' => $perPage,
@@ -105,7 +71,9 @@ final class AttendanceApprovalService extends AttendanceServiceSupport
             throw new ApiException('VALIDATION_ERROR', '不正な承認操作です。', 422);
         }
 
-        return DB::transaction(function () use ($dailyId, $decision, $comment, $actor) {
+        $months = MonthMutationLock::forRecord('attendance_daily', $dailyId);
+        return DB::transaction(function () use ($months, $dailyId, $decision, $comment, $actor) {
+            MonthMutationLock::acquire($months);
             $daily = DB::table('attendance_daily')
                 ->where('id', $dailyId)
                 ->lockForUpdate()
@@ -122,6 +90,28 @@ final class AttendanceApprovalService extends AttendanceServiceSupport
             }
 
             $previousStatus = $daily->approval_status ?? 'PENDING';
+            // Approval fixes the projected calculation before any subsequent month close.
+            if ($decision === 'APPROVED') {
+                $daily->employee_code = DB::table('employees')->where('id', $daily->employee_id)->value('employee_code');
+                $projected = $this->projectScheduledPunchFallback($daily);
+                if (DailyConfirmation::issue($projected) !== null || $this->singlePunchNeedsConfirmation($projected)) {
+                    throw new ApiException('INCOMPLETE_DAILY', '出退勤・実働または公休・全休の区分を確定してから承認してください。', 422);
+                }
+                if (!empty($projected->saturday_holiday)) {
+                    $values = ['clock_in_at'=>null, 'clock_out_at'=>null, 'break_minutes'=>0, 'work_minutes'=>0, 'schedule_name'=>'公休', 'work_type_id'=>null, 'remark'=>$projected->remark];
+                    DB::table('attendance_daily')->where('id', $dailyId)->update($values);
+                    $this->syncAutoBreak($dailyId, null);
+                    $this->addAudit('SYSTEM', null, 'ATTENDANCE_SATURDAY_HOLIDAY', 'ATTENDANCE_DAILY', (string) $dailyId, ['before'=>(array)$daily, 'after'=>$values]);
+                }
+                if (!empty($projected->schedule_inferred_side)) {
+                    $this->freezeSinglePunch($daily, $projected);
+                }
+            }
+            $review = app(DailyApprovalReview::class);
+            $review->annotate(collect([$daily]));
+            if ($previousStatus === $decision && $daily->review_status === $decision && ($daily->approval_comment ?? '') === ($comment ?? '')) {
+                return ['id' => $dailyId, 'status' => $decision, 'comment' => $comment, 'unchanged' => true];
+            }
             $operatorId = $this->resolveOperatorEmployeeId($actor, (int) $daily->employee_id);
 
             DB::table('attendance_daily')
@@ -129,7 +119,7 @@ final class AttendanceApprovalService extends AttendanceServiceSupport
                 ->update([
                     'approval_status' => $decision,
                     'approval_comment' => $comment,
-                    'approved_by' => $operatorId,
+                    'approved_by' => $operatorId > 0 ? $operatorId : null,
                     'approved_at' => now(),
                     'updated_at' => now(),
                 ]);
@@ -175,14 +165,6 @@ final class AttendanceApprovalService extends AttendanceServiceSupport
             ]);
         }
 
-        $items = [];
-        foreach ($dailyIds as $dailyId) {
-            $items[] = $this->decideApproval($dailyId, $decision, $comment, $actor);
-        }
-
-        return [
-            'updatedCount' => count($items),
-            'items' => $items,
-        ];
+        return \App\Services\BatchOperation::run($dailyIds, fn ($dailyId) => $this->decideApproval($dailyId, $decision, $comment, $actor));
     }
 }

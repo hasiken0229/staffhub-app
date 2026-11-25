@@ -11,6 +11,86 @@ final class AttendanceDailyEditApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_an_evening_stamp_in_the_clock_in_column_projects_as_clock_out_and_freezes_on_approval(): void
+    {
+        $this->travelTo(now()->setDate(2026, 11, 24));
+        $employee = $this->employee('970019');
+        DB::table('employee_attendance_settings')->insert(['employee_id'=>$employee, 'standard_clock_in_time'=>'08:00','standard_clock_out_time'=>'15:30']);
+        $date = '2026-07-04';
+        $id = $this->dailyAttendance($employee, [
+            'target_date'=>$date, 'raw_clock_in_at'=>"$date 15:29:00", 'raw_clock_out_at'=>null,
+            'clock_in_at'=>"$date 15:29:00", 'clock_out_at'=>"$date 15:30:00", 'break_minutes'=>0, 'work_minutes'=>1,
+        ]);
+        $attendance = app(\App\Services\Attendance\DailyAttendanceService::class);
+        $row = $attendance->detail($id);
+        $this->assertSame(['CLOCK_IN',404,45], [$row['scheduleInferredSide'],$row['workMinutes'],$row['breakMinutes']]);
+        $this->assertSame(["08:00","15:29","15:29",null], [substr($row['clockInAt'],11,5),substr($row['clockOutAt'],11,5),substr($row['rawClockInAt'],11,5),$row['rawClockOutAt']]);
+        $this->assertStringContainsString('退勤として採用', $row['remark']);
+        $this->assertDatabaseHas('attendance_daily',['id'=>$id, 'work_minutes'=>1]);
+        $list = $attendance->listDailyGrid(['targetMonth'=>'2026-07'])['items'][0];
+        $this->assertSame(['CLOCK_IN',404], [$list['scheduleInferredSide'],$list['workMinutes']]);
+        app(\App\Services\Attendance\AttendanceApprovalService::class)->decideApproval($id,'APPROVED',null,new \Illuminate\Auth\GenericUser(['id'=>$employee,'role'=>'EMPLOYEE','employee_id'=>$employee]));
+        $this->assertDatabaseHas('attendance_daily',['id'=>$id,'clock_in_at'=>"$date 08:00:00",'clock_out_at'=>"$date 15:29:00",'raw_clock_in_at'=>"$date 15:29:00",'raw_clock_out_at'=>null,'work_minutes'=>404,'break_minutes'=>45]);
+        DB::table('employee_attendance_settings')->where('employee_id',$employee)->update(['standard_clock_out_time'=>'18:00']);
+        $frozen=$attendance->detail($id);
+        $this->assertSame(['CLOCK_IN',404], [$frozen['scheduleInferredSide'],$frozen['workMinutes']]);
+    }
+
+    public function test_schedule_estimate_is_read_only_consistent_in_exports_and_frozen_on_approval(): void
+    {
+        \Carbon\CarbonImmutable::setTestNow('2026-10-08 12:00:00');
+        try {
+            $employeeId=$this->employee('970017');
+            DB::table('employee_attendance_settings')->insert(['employee_id'=>$employeeId,'standard_clock_in_time'=>'08:30','standard_clock_out_time'=>'14:30','include_before_start'=>0,'include_after_end'=>0]);
+            $id=$this->dailyAttendance($employeeId,['target_date'=>'2026-09-03','raw_clock_in_at'=>'2026-09-03 08:25:00','clock_in_at'=>'2026-09-03 08:25:00','clock_out_at'=>null,'break_minutes'=>0,'work_minutes'=>null]);
+            $before=(array) DB::table('attendance_daily')->where('id',$id)->first();
+            $svc=app(\App\Services\AttendanceService::class);
+            $item=$svc->listDailyGrid(['targetMonth'=>'2026-09'])['items'][0];
+            $this->assertSame(360,$item['workMinutes']);
+            $this->assertSame('CLOCK_OUT',$item['scheduleInferredSide']);
+            $this->assertStringContainsString('予定補完',$item['remark']);
+            $this->assertNull($item['rawClockOutAt']);
+            $this->assertNotEmpty($item['graphSegments']);
+            $csv=app(\App\Services\Reports\AttendanceReportExportService::class)->exportDailyAttendanceCsv(['from'=>'2026-09-03','to'=>'2026-09-03']);
+            $this->assertStringContainsString('予定補完',$csv);
+            $pdf=app(\App\Services\Reports\MonthlyWorksPdfExportService::class)->exportMonthlyWorksPdf($employeeId,'2026-09');
+            $this->assertSame(360,$pdf['summary']['totalActualWorkMinutes']);
+            $this->assertSame($before,(array) DB::table('attendance_daily')->where('id',$id)->first());
+            app(\App\Services\Attendance\AttendanceApprovalService::class)->decideApproval($id,'APPROVED',null,new \Illuminate\Auth\GenericUser(['id'=>$employeeId,'role'=>'EMPLOYEE','employee_id'=>$employeeId]));
+            $this->assertDatabaseHas('attendance_daily',['id'=>$id,'work_minutes'=>360,'raw_clock_out_at'=>null,'clock_out_at'=>'2026-09-03 14:30:00','approval_status'=>'APPROVED']);
+            DB::table('attendance_daily')->where('id',$id)->update(['close_status'=>'CLOSED']);
+            $this->assertSame(360,$svc->listDailyGrid(['targetMonth'=>'2026-09'])['items'][0]['workMinutes']);
+        } finally { \Carbon\CarbonImmutable::setTestNow(); }
+    }
+
+    public function test_both_daily_edit_routes_validate_the_database_character_limit_and_preserve_the_original(): void
+    {
+        $admin = $this->adminToken();
+        $employeeId = $this->employee('R255');
+        $dailyId = $this->dailyAttendance($employeeId);
+        $limit = str_repeat('備', 255);
+        $oversize = $limit.'考';
+        $url = '/api/admin/attendance/daily/'.$dailyId;
+        $this->withToken($admin)->patchJson($url, ['remark'=>$limit])->assertOk();
+        $this->withToken($admin)->patchJson($url, ['remark'=>$oversize])->assertStatus(422)->assertJsonPath('error.details.0.field','remark');
+        $this->assertDatabaseHas('attendance_daily', ['id'=>$dailyId,'remark'=>$limit]);
+
+        DB::table('employee_auth')->insert(['employee_id'=>$employeeId, 'login_id'=>'remark@example.test',
+            'password_hash'=>Hash::make('example-password'), 'created_at'=>now(), 'updated_at'=>now()]);
+        $token = $this->postJson('/api/auth/login', ['loginId'=>'remark@example.test','password'=>'example-password',
+            'audience'=>'EMPLOYEE'])->assertOk()->json('data.accessToken');
+        $payload = ['targetDate'=>'2026-04-21', 'clockInTime'=>'09:01'];
+        $this->withToken($token)->postJson('/api/attendance/daily-edit-requests', [...$payload,'remark'=>$oversize])
+            ->assertStatus(422)->assertJsonPath('error.details.0.field','remark');
+        $id = $this->withToken($token)->postJson('/api/attendance/daily-edit-requests', [...$payload,'remark'=>$limit])
+            ->assertOk()->json('data.id');
+        DB::table('attendance_daily_edit_requests')->where('id',$id)->update(['remark'=>$oversize]);
+        $this->withToken($admin)->postJson('/api/admin/attendance/daily-edit-requests/'.$id.'/approve')
+            ->assertStatus(422)->assertJsonPath('error.details.0.field','remark');
+        $this->assertDatabaseHas('attendance_daily_edit_requests', ['id'=>$id,'status'=>'PENDING']);
+        $this->assertDatabaseHas('attendance_daily', ['id'=>$dailyId,'remark'=>$limit]);
+    }
+
     public function test_admin_can_create_blank_daily_attendance_for_manual_edit(): void
     {
         $token = $this->adminToken();
@@ -141,9 +221,12 @@ final class AttendanceDailyEditApiTest extends TestCase
             'manual_edited_by' => null,
             'manual_edited_at' => null,
         ]);
-        $this->assertDatabaseMissing('attendance_daily_breaks', [
+        $this->assertDatabaseHas('attendance_daily_breaks', [
             'attendance_daily_id' => $dailyId,
+            'break_start_at' => '2026-04-21 13:00:00',
+            'break_end_at' => '2026-04-21 13:45:00',
         ]);
+        $this->assertDatabaseHas('attendance_daily', ['id' => $dailyId, 'break_minutes' => 60, 'approval_status' => 'PENDING']);
         $this->assertDatabaseHas('attendance_daily_histories', [
             'attendance_daily_id' => $dailyId,
             'action_type' => 'MANUAL_EDIT_RESET',

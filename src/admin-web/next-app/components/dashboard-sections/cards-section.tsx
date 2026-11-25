@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DataTable } from "@/components/data-table";
 import type { CardAssignment, Employee } from "@/types";
 
@@ -26,23 +28,21 @@ type CardsSectionProps = {
 
 export function CardsSection(props: CardsSectionProps) {
   const activePanel = props.data.activePanel || "cards-list";
+  const [pendingCardAction, setPendingCardAction] = useState<{ type: "revoke" | "delete"; card: CardAssignment } | null>(null);
 
-  async function revokeCard(row: CardAssignment) {
-    const confirmed = window.confirm(`${row.employeeCode} / ${row.employeeName} のカード ${row.cardUid} を解除しますか？`);
-    if (!confirmed) {
+  async function confirmCardAction() {
+    if (!pendingCardAction) {
       return;
     }
 
-    await props.actions.onRevokeCard(row.id);
-  }
+    const action = pendingCardAction;
+    setPendingCardAction(null);
 
-  async function deleteCard(row: CardAssignment) {
-    const confirmed = window.confirm(`${row.employeeCode} / ${row.employeeName} のカード ${row.cardUid} を一覧から削除しますか？`);
-    if (!confirmed) {
-      return;
+    if (action.type === "revoke") {
+      await props.actions.onRevokeCard(action.card.id);
+    } else {
+      await props.actions.onDeleteCard(action.card.id);
     }
-
-    await props.actions.onDeleteCard(row.id);
   }
 
   return (
@@ -64,11 +64,11 @@ export function CardsSection(props: CardsSectionProps) {
               render: (row) => (
                 <div className="table-action-row">
                   {row.isActive ? (
-                    <button type="button" className="secondary table-action" onClick={() => void revokeCard(row)}>
+                    <button type="button" className="secondary table-action warning-action" onClick={() => setPendingCardAction({ type: "revoke", card: row })}>
                       解除
                     </button>
                   ) : null}
-                  <button type="button" className="secondary table-action danger-action" onClick={() => void deleteCard(row)}>
+                  <button type="button" className="secondary table-action danger-action" onClick={() => setPendingCardAction({ type: "delete", card: row })}>
                     削除
                   </button>
                 </div>
@@ -100,7 +100,7 @@ export function CardsSection(props: CardsSectionProps) {
           <input
             value={props.form.assignCardUid}
             onChange={(event) => props.actions.onAssignCardUidChange(event.target.value.toUpperCase())}
-            placeholder="例: 012E4CE15C908F48"
+            placeholder="例: D0D0D0D0D0D0D0D0"
           />
         </label>
         <button type="button" onClick={() => void props.actions.onAssignCard()}>
@@ -109,6 +109,18 @@ export function CardsSection(props: CardsSectionProps) {
         {props.form.assignResult ? <p className="feedback">{props.form.assignResult}</p> : null}
         </section>
       ) : null}
+      <ConfirmDialog
+        open={pendingCardAction !== null}
+        title={pendingCardAction?.type === "revoke" ? "カード割当を解除しますか？" : "カードを削除しますか？"}
+        message={pendingCardAction
+          ? pendingCardAction.type === "revoke"
+            ? `${pendingCardAction.card.employeeCode} / ${pendingCardAction.card.employeeName}／カードUID: ${pendingCardAction.card.cardUid}。解除後、このカードでは打刻できません。`
+            : `${pendingCardAction.card.employeeCode} / ${pendingCardAction.card.employeeName}／カードUID: ${pendingCardAction.card.cardUid}。履歴確認が必要な場合は、削除前に内容を確認してください。`
+          : ""}
+        confirmLabel={pendingCardAction?.type === "revoke" ? "割当を解除" : "カードを削除"}
+        onCancel={() => setPendingCardAction(null)}
+        onConfirm={() => void confirmCardAction()}
+      />
     </section>
   );
 }

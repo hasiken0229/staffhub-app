@@ -65,6 +65,9 @@ final class NotificationMailFlowTest extends TestCase
             ->assertJsonPath('data.title', '4月のお知らせ')
             ->assertJsonPath('data.targetEmployeeId', null);
 
+        Http::assertNothingSent();
+        (new \App\Jobs\SendNoticePublication((int) $response->json('data.id')))->handle(app(\App\Services\NotificationMailService::class));
+
         Http::assertSent(function ($request) {
             $payload = $request->data();
             $text = (string) ($payload['text'] ?? '');
@@ -144,6 +147,35 @@ final class NotificationMailFlowTest extends TestCase
         });
     }
 
+    public function test_publication_job_retries_only_notification_with_the_same_event_id(): void
+    {
+        $this->configureGoogleChat();
+        \Illuminate\Support\Facades\Storage::fake('local');
+        $employeeId=DB::table('employees')->insertGetId(['employee_code'=>'VERIFY-JOB','name'=>'通知検証',
+            'employment_type'=>'FULL_TIME','status'=>'ACTIVE','joined_on'=>'2026-01-01','google_chat_user_id'=>'123456789','created_at'=>now(),'updated_at'=>now()]);
+        DB::table('employee_auth')->insert(['employee_id'=>$employeeId,'login_id'=>'notification@example.test',
+            'password_hash'=>Hash::make('VerifyOnly-2026!'),'created_at'=>now(),'updated_at'=>now()]);
+        Http::fake([
+            'https://oauth2.googleapis.com/token'=>Http::response(['access_token'=>'test-token','expires_in'=>3600,'token_type'=>'Bearer']),
+            'https://chat.googleapis.com/v1/spaces:findDirectMessage*'=>Http::response(['name'=>'spaces/AAAAemployeeDm']),
+            'https://chat.googleapis.com/v1/spaces/AAAAemployeeDm/messages*'=>Http::sequence()
+                ->push(['error'=>['message'=>'temporary']],503)->push(['name'=>'spaces/AAAAemployeeDm/messages/verified'],200),
+        ]);
+        $saved=app(\App\Services\Payroll\PayrollStatementStorageService::class)->upsertBinaryForAdmin($employeeId,'PAYROLL','2026-07',
+            \Carbon\CarbonImmutable::parse('2026-07-25'),'verify.pdf','application/pdf',"%PDF-1.4\nverified",new \Illuminate\Auth\GenericUser(['id'=>1,'role'=>'ADMIN']));
+        $statement=DB::table('payroll_statements')->where('id',$saved['id'])->first();
+        $job=new \App\Jobs\SendPayrollPublication($statement->id,$statement->file_path,$statement->published_at);
+        try { $job->handle(app(\App\Services\NotificationMailService::class)); $this->fail('Expected temporary delivery failure'); }
+        catch (\RuntimeException $error) { $this->assertStringContainsString('給与は保存済み',$error->getMessage()); }
+        $job->handle(app(\App\Services\NotificationMailService::class));
+        $job->handle(app(\App\Services\NotificationMailService::class));
+        $sent=Http::recorded(fn($request)=>str_contains($request->url(),'/messages?requestId='))->values();
+        $this->assertCount(2,$sent);
+        $this->assertSame($sent[0][0]->url(),$sent[1][0]->url());
+        $this->assertDatabaseCount('payroll_statements',1);
+        $this->assertSame(1,DB::table('audit_logs')->where('action','PAYROLL_NOTIFICATION_SENT')->count());
+    }
+
     public function test_leave_decision_sends_chat_to_employee_direct_message(): void
     {
         $this->configureGoogleChat();
@@ -166,6 +198,16 @@ final class NotificationMailFlowTest extends TestCase
             'joined_on' => '2024-04-01',
             'retired_on' => null,
             'google_chat_user_id' => '1234567890',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('paid_leave_grants')->insert([
+            'employee_id' => $employeeId,
+            'granted_on' => '2026-04-01',
+            'granted_days' => 10,
+            'used_days' => 0,
+            'expires_on' => '2027-03-31',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -343,7 +385,7 @@ final class NotificationMailFlowTest extends TestCase
             'location_name' => '玄関',
             'os_user' => null,
             'app_version' => null,
-            'device_secret_hash' => null,
+            'device_secret_hash' => Hash::make('unused'),
             'last_seen_at' => null,
             'is_active' => 1,
             'created_at' => now(),
@@ -354,7 +396,7 @@ final class NotificationMailFlowTest extends TestCase
             'employee_id' => $employeeId,
             'card_uid' => 'CARD-040',
             'is_active' => 1,
-            'assigned_at' => now(),
+            'assigned_at' => '2024-04-01 00:00:00',
             'revoked_at' => null,
             'created_at' => now(),
             'updated_at' => now(),
@@ -407,6 +449,37 @@ final class NotificationMailFlowTest extends TestCase
         });
     }
 
+    public function test_future_notice_sends_edited_content_once_at_publication_and_never_resends_after_edit(): void
+    {
+        $this->configureGoogleChat();
+        $this->travelTo(\Carbon\CarbonImmutable::parse('2026-10-10 10:00:00', 'Asia/Tokyo'));
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://oauth2.googleapis.com/token' => Http::response(['access_token'=>'chat-token','expires_in'=>3600,'token_type'=>'Bearer']),
+            'https://chat.googleapis.com/v1/spaces/AAAAallStaffSpace/messages*' => Http::response(['name'=>'spaces/AAAAallStaffSpace/messages/future']),
+        ]);
+        $service=app(NoticeService::class); $actor=new \Illuminate\Auth\GenericUser(['id'=>1,'role'=>'ADMIN']);
+        $payload=['noticeType'=>'GENERAL','title'=>'公開予定','body'=>'初稿','publishStartAt'=>'2026-10-11T09:00:00+09:00',
+            'requestId'=>'47e16f63-7969-4bdb-87df-e252a1e0966e'];
+        $notice=$service->storeForAdmin($payload,$actor);
+        $job=new \App\Jobs\SendNoticePublication($notice['id']);
+        $job->handle(app(\App\Services\NotificationMailService::class));
+        Http::assertNothingSent();
+        $service->updateForAdmin($notice['id'],[...$payload,'revision'=>1,'body'=>'公開時の本文'],$actor);
+        $this->assertDatabaseCount('jobs',1);
+        $this->travelTo(\Carbon\CarbonImmutable::parse('2026-10-11 09:01:00', 'Asia/Tokyo'));
+        $job->handle(app(\App\Services\NotificationMailService::class));
+        $job->handle(app(\App\Services\NotificationMailService::class));
+        $sent=Http::recorded(fn($request)=>str_contains($request->url(),'/messages?requestId='))->values();
+        $this->assertCount(1,$sent); $this->assertStringContainsString('公開時の本文',$sent[0][0]->data()['text']);
+        $this->assertStringContainsString(\Ramsey\Uuid\Uuid::uuid5(\Ramsey\Uuid\Uuid::NAMESPACE_URL,$job->eventId())->toString(),$sent[0][0]->url());
+        $service->updateForAdmin($notice['id'],[...$payload,'revision'=>2,'body'=>'送信後の編集'],$actor);
+        $job->handle(app(\App\Services\NotificationMailService::class));
+        $this->assertCount(1,Http::recorded(fn($request)=>str_contains($request->url(),'/messages?requestId=')));
+        $this->assertDatabaseCount('jobs',1);
+        $this->assertSame('SENT',$service->detailForAdmin($notice['id'])['notificationStatus']);
+    }
+
     private function configureGoogleChat(): void
     {
         $this->credentialsPath = $this->createServiceAccountCredentialsFile();
@@ -422,39 +495,14 @@ final class NotificationMailFlowTest extends TestCase
     private function createServiceAccountCredentialsFile(): string
     {
         $path = storage_path('framework/testing-google-chat-flow-' . uniqid('', true) . '.json');
+        $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048]);
+        $this->assertNotFalse($key);
+        $this->assertTrue(openssl_pkey_export($key, $privateKey));
         file_put_contents($path, json_encode([
             'type' => 'service_account',
             'project_id' => 'staffhub-test',
             'private_key_id' => 'test-private-key',
-            'private_key' => <<<'PEM'
------BEGIN RSA PRIVATE KEY-----
-MIIEowIBAAKCAQEArWtWsZL+mOuOPm/wA+qfNlbJPNFJ+YT+i5lMPs60krKRlYSu
-IlFsjfHdazB20tVP1N8n4Nf6Ht5wkK6eR5hNj7NyXvxxGuwbIdJVKCw3USmhMbaK
-XlJqwSCfy5qJhRezeEyiMMd4zu8Ikspk3LaCUUGBKs8P5DNqeSstKm3RDwrvF7Lg
-GhtE3vxRJx6wrw8ujPzpH1SR93Bsnk13WujN6XTugLV0N1R571GRFf2UV+1Ezydi
-tM2imwa6LEKgYNiQCW7iKb0OaNpBtB6dJn/cnxInxDbMWqXRTf1sWJLH7MXlj68+
-bX/VAIVLEHfWl0WaHtHdZggUpxmRjBCvChnI2QIDAQABAoIBACpu7VOeCDYazT9x
-3GTY8AQ30B3ViChJ5o75/7IOmhibIQxY3tL+4XUKDYfA4BJOp64KvJNDxavv+dMt
-JwWVusTCv+WGF5bi1vC7qqKdzxtI+GxVoh3aRMzk0rTbJ3MtjXiOJ9GPvXvE+XAR
-ngRzlAeV46k56UWJXzAu5GpRXKo1N4Mll4KDK6cvf4yqL1hZETqMWpDhHrI0HiXx
-Va9CwH/J1Ox6dgXU9TRfTEGPENRSVm5WsPF8dJMtKkPoqQL4HhAxF6HHCTIMjCqB
-52nPrxCoaiHHpOUZVjW9f0Dti4caQ9knmVTIyga23DsTFLVt/nGMixxZFoLHcCt0
-vET8F1ECgYEA2vcQw/6nOur5qAM3xOuOw4C4TaXCAmk5Xb8K+PWJttOn+q2W+h+9
-g7xkeHXAVZdwBIIm/rE2zgDiQZDxDtrqdglnYzb8+Ym21+YpOD4vIN5XE4X6YOzW
-Nbkbt2jZ6jT/qFKCXm9OmCO35XyhDaFIeYQSbGHfxo2W7oEz63h8678CgYEAysAx
-TA/J5BzUAH47JbRsygInR4xJlGteUvlSRa6bkOHpfB79fLSg8E2L1T5sE9mpdayD
-PmZaQwP9DHsWnUdVNon48IC5ZJxhcj+nVMGiAi5RCHVhKH7jirz89SMdHP04r74c
-KzWmTiztiIo1Kwk68Tr6wOLil5mz4wtLfsSg0WcCgYATa/izucGxiygLzAVFVTN7
-ic5PLNWxiw3Ij+p0PKszaUCsDnumwev4ZFxxBtjBfsYz0CuPSb63tQJcmHOZQrer
-MphWB4mWxK1QJx0e3P0nKDGHDMoxkLBLYZjgws8ZZAwNLQxdPfg1rG1iUJSkddrM
-1Hch3+iOXv61NwaY6z4BVwKBgQCR2tUb7LfGXF6+xBB0vWkNoaL0O52rIdpHQojH
-DCdpgLtgyUJ99ctZU8/mZfOGDC12M9Zui18fmrztv5azKl/IzlTBXzj/gegwMk6E
-EJAllYBB3383jKDQa8hl6Q7Gjfu7ob3N79hloLh4Y0SAYzF93HoLTKzJdo8MJFH5
-LiaqvQKBgB3fjSXon417iCwi8Aej+9W8PSLyNpct/15VRUkhMoa0u23TDHatJEs8
-B3NweT1kBiwodGQPTDgS4RQB11RaPHliqDuP4iNKKsPVoYQ7FD3YvWdVwRNU5Hnr
-4S4bfT2ELnt4mYKMUIJfXO9thees52FMeS4np6ZuxlrjyZnmws3z
------END RSA PRIVATE KEY-----
-PEM,
+            'private_key' => $privateKey,
             'client_email' => 'staffhub-test@staffhub-test.iam.gserviceaccount.com',
             'token_uri' => 'https://oauth2.googleapis.com/token',
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));

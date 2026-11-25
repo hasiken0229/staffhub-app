@@ -60,8 +60,13 @@ trait AttendanceDailyHistoryRecorder
 
     protected function buildDailyHistoryRow(int $dailyId, string $actionType, string $fieldKey, ?string $oldValue, ?string $newValue, GenericUser $actor, int $operatorId, ?string $comment): array
     {
-        $employee = $operatorId > 0 ? DB::table('employees')->where('id', $operatorId)->first() : null;
         $role = strtoupper((string) ($actor->role ?? 'ADMIN'));
+        $isAdmin = $role === 'ADMIN';
+        $employee = !$isAdmin ? DB::table('employees')->where('id', (int) $actor->id)->first() : null;
+        $name = $isAdmin
+            ? DB::table('users')->where('id', (int) $actor->id)->value('name')
+            : $employee?->name;
+        $name = $name ?: ($actor->name ?? null);
 
         return [
             'attendance_daily_id' => $dailyId,
@@ -69,12 +74,14 @@ trait AttendanceDailyHistoryRecorder
             'field_key' => $fieldKey,
             'old_value' => $oldValue,
             'new_value' => $newValue,
-            'actor_type' => $role === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE',
+            'actor_type' => $isAdmin ? 'ADMIN' : 'EMPLOYEE',
             'actor_id' => (int) $actor->id,
             'actor_employee_id' => $employee?->id,
             'actor_role' => $role,
-            'actor_employee_code' => $employee?->employee_code ?? (isset($actor->employeeCode) ? (string) $actor->employeeCode : null),
-            'actor_name' => $employee?->name ?? (isset($actor->name) ? (string) $actor->name : null),
+            'actor_employee_code' => $isAdmin ? null : ($employee?->employee_code ?? $actor->employeeCode ?? null),
+            // Snapshot the identity at the time of the operation; never resolve
+            // a different employee via an administrator's legacy FK fallback.
+            'actor_name' => $name ?: ($isAdmin ? '管理者' : '職員').' (ID:'.(int) $actor->id.')',
             'comment' => $comment,
             'acted_at' => now(),
         ];
@@ -95,6 +102,28 @@ trait AttendanceDailyHistoryRecorder
         return (string) $value;
     }
 
+    protected function legacyDailyHistoryAdminNames(Collection $histories): array
+    {
+        $ids = $histories->filter(fn (object $row) => $row->actor_type === 'ADMIN' && $row->actor_employee_id !== null)
+            ->pluck('actor_id')->filter()->unique()->all();
+        return $ids === [] ? [] : DB::table('users')->whereIn('id', $ids)->pluck('name', 'id')->all();
+    }
+
+    protected function dailyHistoryActorPresentation(object $row, array $adminNames): array
+    {
+        $legacyAdmin = $row->actor_type === 'ADMIN' && $row->actor_employee_id !== null;
+        return [
+            'actorRole' => $row->actor_role,
+            'actorType' => $row->actor_type,
+            'actorId' => $row->actor_id === null ? null : (int) $row->actor_id,
+            'actorEmployeeCode' => $legacyAdmin ? null : $row->actor_employee_code,
+            'actorName' => $legacyAdmin ? ($adminNames[$row->actor_id] ?? '管理者 (ID:'.($row->actor_id ?? '不明').')') : $row->actor_name,
+            'actorNameSource' => $legacyAdmin ? (isset($adminNames[$row->actor_id]) ? 'CURRENT_ADMIN_RECORD' : 'ACTOR_ID_ONLY') : 'RECORDED_SNAPSHOT',
+            'recordedActorName' => $row->actor_name,
+            'recordedActorEmployeeCode' => $row->actor_employee_code,
+        ];
+    }
+
     protected function dailyHistoryFieldLabel(string $fieldKey): string
     {
         return [
@@ -107,6 +136,7 @@ trait AttendanceDailyHistoryRecorder
             'supervisorComment' => '所属長コメント',
             'approvalStatus' => '申請承認',
             'approvalComment' => '承認コメント',
+            'breakOvertimeReview' => '始業・休憩と時間外勤務の確認',
             'breaks' => '休憩明細',
             'isManuallyEdited' => '手動補正',
             'closeStatus' => '月締状況',

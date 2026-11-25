@@ -2,7 +2,7 @@ import { useState } from "react";
 
 type SectionNavProps = {
   activeSection: string;
-  onChange: (section: string) => void;
+  onChange: (section: string, targetId?: string) => void;
   badges?: Record<string, number>;
 };
 
@@ -11,29 +11,29 @@ const groups = [
     key: "main",
     label: "メイン",
     items: [
-      { key: "dashboard", label: "ダッシュボード", icon: "主" },
-      { key: "notices", label: "お知らせ", icon: "知" },
+      { key: "dashboard", label: "ダッシュボード" },
+      { key: "notices", label: "お知らせ" },
     ],
   },
   {
     key: "operations",
     label: "業務管理",
     items: [
-      { key: "employees", label: "職員管理", icon: "職" },
-      { key: "cards", label: "カード管理", icon: "札" },
-      { key: "attendance", label: "日次勤怠", icon: "勤" },
-      { key: "leave", label: "届出・有給管理", icon: "休" },
+      { key: "employees", label: "職員管理" },
+      { key: "cards", label: "カード管理" },
+      { key: "attendance", label: "日次勤怠" },
+      { key: "leave", label: "届出・有給管理" },
     ],
   },
   {
     key: "data",
     label: "データ・集計",
     items: [
-      { key: "payroll", label: "給与明細", icon: "給" },
-      { key: "harmosMigration", label: "HARMOS移行", icon: "移" },
-      { key: "reports", label: "レポート", icon: "集" },
-      { key: "audit", label: "監査ログ", icon: "監" },
-      { key: "system", label: "システム管理", icon: "設" },
+      { key: "payroll", label: "給与明細" },
+      { key: "harmosMigration", label: "HARMOS移行" },
+      { key: "reports", label: "レポート" },
+      { key: "audit", label: "監査ログ" },
+      { key: "system", label: "システム管理" },
     ],
   },
 ];
@@ -68,19 +68,29 @@ export function SectionNav({ activeSection, onChange, badges = {} }: SectionNavP
             </button>
             {isOpen ? (
               <div className="nav-group-items">
-                {group.items.map((item) => (
-                  <button
-                    key={item.key}
-                    className={activeSection === item.key ? "nav-item is-active" : "nav-item"}
-                    onClick={() => onChange(item.key)}
-                    type="button"
-                    title={item.label}
-                  >
-                    <span className="nav-icon" aria-hidden="true">{item.icon}</span>
-                    <span className="nav-label">{item.label}</span>
-                    {badges[item.key] ? <span className="nav-badge">{badges[item.key]}</span> : null}
-                  </button>
-                ))}
+                {group.items.map((item) => {
+                  const badgeCount = badges[item.key] ?? 0;
+                  const attendanceAlert = item.key === "attendance" && badgeCount > 0;
+                  const badgeLabel = attendanceAlert ? "打刻漏れなど要確認の日次があります" : `未処理 ${badgeCount}件`;
+
+                  return (
+                    <button
+                      key={item.key}
+                      className={activeSection === item.key ? "nav-item is-active" : "nav-item"}
+                      onClick={() => attendanceAlert ? onChange(item.key, "attendance-attention") : onChange(item.key)}
+                      type="button"
+                      aria-current={activeSection === item.key ? "page" : undefined}
+                      title={badgeCount ? `${item.label} - ${badgeLabel}` : item.label}
+                    >
+                      <span className="nav-label">{item.label}</span>
+                      {badgeCount ? (
+                        <span className="nav-badge" aria-label={badgeLabel}>
+                          {attendanceAlert ? "！" : `要${badgeCount}`}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
               </div>
             ) : null}
           </div>

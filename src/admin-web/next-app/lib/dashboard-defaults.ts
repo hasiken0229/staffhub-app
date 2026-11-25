@@ -34,6 +34,7 @@ export const emptyData: DashboardData = {
   employees: [],
   cards: [],
   attendance: [],
+  attendanceDevices: [],
   todayAttendance: [],
   attendanceDaily: [],
   todayDaily: [],
@@ -43,8 +44,8 @@ export const emptyData: DashboardData = {
   attendanceMonthCloseStatus: [],
   attendanceMonthClosePrecheck: {
     targetYearMonth: currentMonthValue(),
-    canClose: true,
-    blockers: [],
+    canClose: false,
+    blockers: [{ code: "CHECK_NOT_LOADED", label: "確認未取得", count: 1, message: "月締前チェックを取得するまで月締めできません。" }],
     summary: {
       unsubmittedDailyCount: 0,
       pendingApprovalCount: 0,
@@ -75,7 +76,7 @@ export const emptyData: DashboardData = {
   attendanceBreakRule: null,
   leaveRequests: [],
   workProcedures: [],
-  attendanceMonthlyClose: emptyAttendanceMonthlyClose,
+  attendanceMonthlyClose: { ...emptyAttendanceMonthlyClose, isAvailable: false },
   payroll: [],
   payrollDefinitions: [],
   payrollImportBatches: [],
@@ -98,6 +99,11 @@ export const emptyData: DashboardData = {
     message: "環境チェックはまだ実行されていません。",
   },
   auditLogs: [],
+  auditLogsPagination: {
+    page: 1,
+    perPage: 100,
+    total: 0,
+  },
 };
 
 export const emptyEmployeePortal: EmployeePortalData = {
@@ -155,11 +161,13 @@ export const sectionSubNavItems: Partial<Record<AdminSectionKey, Array<{ label: 
     { label: "月締め", targetId: "attendance-close" },
     { label: "出力", targetId: "attendance-export" },
     { label: "日次一覧", targetId: "attendance-daily-list" },
-    { label: "承認待ち", targetId: "attendance-approvals" },
+    { label: "要確認", targetId: "attendance-attention" },
+    { label: "承認・差戻し", targetId: "attendance-approvals" },
     { label: "勤怠エラー", targetId: "attendance-errors" },
     { label: "月締状況", targetId: "attendance-month-close-status" },
     { label: "修正申請", targetId: "attendance-edit-requests" },
     { label: "打刻履歴", targetId: "attendance-events" },
+    { label: "打刻端末", targetId: "attendance-devices" },
     { label: "勤務設定", targetId: "attendance-settings" },
     { label: "月次シフト", targetId: "attendance-shifts" },
   ],
@@ -167,6 +175,7 @@ export const sectionSubNavItems: Partial<Record<AdminSectionKey, Array<{ label: 
     { label: "届出検索", targetId: "leave-filters" },
     { label: "届出承認", targetId: "leave-requests" },
     { label: "有給残数", targetId: "leave-balances" },
+    { label: "年次有給休暇管理簿", targetId: "leave-register" },
     { label: "付与・調整", targetId: "leave-grant-adjust" },
   ],
   payroll: [

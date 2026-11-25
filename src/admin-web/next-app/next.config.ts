@@ -4,6 +4,7 @@ import type { NextConfig } from "next";
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "/dakoku/admin";
 
 const nextConfig: NextConfig = {
+  distDir: process.env.STAFFHUB_NEXT_DIST_DIR ?? ".next",
   reactStrictMode: true,
   output: "export",
   trailingSlash: true,

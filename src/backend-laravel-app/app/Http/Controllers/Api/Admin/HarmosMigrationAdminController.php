@@ -28,7 +28,9 @@ final class HarmosMigrationAdminController extends Controller
         ]);
 
         try {
-            return ApiResponse::ok($this->harmosMigrationService->preview($payload, $request->file('file')));
+            $result = $this->harmosMigrationService->preview($payload, $request->file('file'));
+            $result['previewFingerprint'] = \App\Services\ImportPreviewFingerprint::make($payload, $request->file('file'));
+            return ApiResponse::ok($result);
         } catch (ApiException $exception) {
             return ApiResponse::error(
                 $exception->errorCode,
@@ -53,6 +55,7 @@ final class HarmosMigrationAdminController extends Controller
         ]);
 
         try {
+            \App\Services\ImportPreviewFingerprint::assertMatches($request->input('previewFingerprint'), $payload, $request->file('file'));
             return ApiResponse::ok($this->harmosMigrationService->import($payload, $request->file('file'), $request->user()));
         } catch (ApiException $exception) {
             return ApiResponse::error(

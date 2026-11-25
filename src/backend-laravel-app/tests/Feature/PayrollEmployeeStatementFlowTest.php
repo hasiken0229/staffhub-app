@@ -24,7 +24,7 @@ final class PayrollEmployeeStatementFlowTest extends TestCase
             'target_year_month' => '2026-04',
             'published_at' => now()->addDay(),
         ]);
-        $this->payrollStatement($otherEmployeeId, [
+        $otherEmployeeStatementId = $this->payrollStatement($otherEmployeeId, [
             'target_year_month' => '2026-03',
             'published_at' => now()->subDay(),
         ]);
@@ -61,7 +61,7 @@ final class PayrollEmployeeStatementFlowTest extends TestCase
             'audience' => 'EMPLOYEE',
         ])->json('data.accessToken');
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/payroll/statements?yearMonth=2026-03')
             ->assertOk()
             ->assertJsonPath('meta.total', 1)
@@ -70,8 +70,25 @@ final class PayrollEmployeeStatementFlowTest extends TestCase
             ->assertJsonPath('data.0.viewed', false)
             ->assertJsonPath('data.0.remarks', '3月分');
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->getJson('/api/payroll/statements/' . $statementId)
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/payroll/statements/'.$otherEmployeeStatementId)
+            ->assertStatus(404)
+            ->assertJsonPath('error.code', 'NOT_FOUND');
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/payroll/statements/'.$otherEmployeeStatementId.'/viewed', [
+                'viewedAt' => '2026-04-21T09:00:00+09:00',
+            ])
+            ->assertStatus(404)
+            ->assertJsonPath('error.code', 'NOT_FOUND');
+
+        $this->assertDatabaseMissing('payroll_statement_views', [
+            'payroll_statement_id' => $otherEmployeeStatementId,
+            'employee_id' => $employeeId,
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/payroll/statements/'.$statementId)
             ->assertOk()
             ->assertJsonPath('data.id', $statementId)
             ->assertJsonPath('data.employeeCode', 'S301')
@@ -81,8 +98,8 @@ final class PayrollEmployeeStatementFlowTest extends TestCase
             ->assertJsonPath('data.netAmount', 250000)
             ->assertJsonPath('data.deleteAvailable', false);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->postJson('/api/payroll/statements/' . $statementId . '/viewed', [
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/payroll/statements/'.$statementId.'/viewed', [
                 'viewedAt' => '2026-04-21T09:00:00+09:00',
             ])
             ->assertOk()
@@ -101,12 +118,12 @@ final class PayrollEmployeeStatementFlowTest extends TestCase
             'target_id' => (string) $statementId,
         ]);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/payroll/statements?yearMonth=2026-03')
             ->assertOk()
             ->assertJsonPath('data.0.viewed', true);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/payroll/statements?yearMonth=2026-04')
             ->assertOk()
             ->assertJsonPath('meta.total', 0);

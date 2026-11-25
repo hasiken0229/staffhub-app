@@ -3,6 +3,7 @@ import type {
   AttendanceDaily,
   AttendanceDailyEditRequest,
   AttendanceBreakRule,
+  AttendanceDeviceStatus,
   AttendanceErrorReportRow,
   AttendanceEvent,
   AttendanceMonthClosePrecheck,
@@ -25,6 +26,12 @@ export type ApiEnvelope<T> = {
     perPage?: number;
     total?: number;
   };
+};
+
+export type PaginationMeta = {
+  page: number;
+  perPage: number;
+  total: number;
 };
 
 export type Employee = {
@@ -80,6 +87,10 @@ export type CurrentUser = {
 };
 
 export type MobileHome = {
+  checkedAt?: string;
+  todayAttendance?: AttendanceDaily | null;
+  pendingDailyEditRequestCount?: number;
+  returnedRequestCount?: number;
   employee?: {
     id: number;
     employeeCode: string;
@@ -87,6 +98,7 @@ export type MobileHome = {
   } | null;
   pendingLeaveCount: number;
   paidLeaveBalance: number;
+  hourlyPaidLeaveBalance?: HourlyPaidLeaveBalance | null;
   unreadNotificationCount: number;
   leaveTypes?: LeaveTypeSetting[];
   latestPayroll?: PayrollStatement | null;
@@ -106,6 +118,7 @@ export type NotificationItem = {
 };
 
 export type EmployeePortalData = {
+  attendanceTargetMonth?: string;
   home: MobileHome;
   leaveRequests: LeaveRequest[];
   attendanceDaily: AttendanceDaily[];
@@ -116,6 +129,7 @@ export type EmployeePortalData = {
 };
 
 export type EmployeeImportResult = {
+  previewFingerprint?: string;
   processedCount: number;
   createdCount: number;
   updatedCount: number;
@@ -158,6 +172,7 @@ export type ImportHistory = {
 
 export type HarmosMigrationImportType =
   | "HARMOS_EMPLOYEE_CSV"
+  | "HARMOS_WORK_TYPE_CSV"
   | "HARMOS_ATTENDANCE_DAILY_CSV"
   | "HARMOS_ATTENDANCE_MONTHLY_CSV"
   | "HARMOS_PAID_LEAVE_BALANCE_CSV";
@@ -179,6 +194,7 @@ export type HarmosMigrationError = {
 };
 
 export type HarmosMigrationResult = {
+  previewFingerprint?: string;
   dryRun: boolean;
   importType: HarmosMigrationImportType;
   sourceFileName: string;
@@ -212,7 +228,15 @@ export type Notice = {
   createdByName?: string | null;
 };
 
+export type HourlyPaidLeaveBalance = {
+  asOf?: string; usedAsOfMinutes?: number; remainingAsOfMinutes?: number; futureApprovedMinutes?: number;
+  effectiveOn: string; expiresOn: string; openingMinutes: number; usedMinutes: number; pendingMinutes: number; remainingMinutes: number; availableMinutes: number; totalRemainingMinutes: number | null;
+};
+
 export type PaidLeaveReportRow = {
+  futureApprovedDays?: number;
+  expiryNeedsReview?: boolean;
+  hourlyBalance?: HourlyPaidLeaveBalance | null;
   employeeId: number;
   employeeCode: string;
   employeeName: string;
@@ -224,6 +248,8 @@ export type PaidLeaveReportRow = {
 };
 
 export type ReportHubSummary = {
+  checkedAt?: string;
+  pendingDailyEditRequestCount?: number;
   todayAttendanceCount: number;
   pendingAttendanceApprovalCount: number;
   pendingLeaveCount: number;
@@ -274,6 +300,8 @@ export type LeaveTypeSetting = {
   code: string;
   name: string;
   requiresBalance: boolean;
+  balanceSource?: 'NONE' | 'PAID';
+  attendanceEffect?: 'SPECIAL' | 'ABSENCE' | 'PAID' | null;
   allowsHalfDay: boolean;
   sortOrder: number;
   isActive: boolean;
@@ -348,6 +376,7 @@ export type DashboardData = {
   employees: Employee[];
   cards: CardAssignment[];
   attendance: AttendanceEvent[];
+  attendanceDevices?: AttendanceDeviceStatus[];
   todayAttendance: AttendanceEvent[];
   attendanceDaily: AttendanceDaily[];
   todayDaily: AttendanceDaily[];
@@ -375,4 +404,5 @@ export type DashboardData = {
   systemMasters: SystemMasters;
   environment: EnvironmentStatus;
   auditLogs: AuditLog[];
+  auditLogsPagination: PaginationMeta;
 };

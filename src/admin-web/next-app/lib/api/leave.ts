@@ -18,6 +18,31 @@ import type {
   WorkTypeSetting,
 } from "@/types";
 import { buildQuery, fetchJson } from "@/lib/api/core";
+import type { AdminLeaveBalance, AttendanceLeaveBaseline, AttendanceLeaveValues, GrantReviewPayload, GrantReviewPreview } from "@/types/leave";
+
+export function loadAdminLeaveBalance(employeeId: number) {
+  return fetchJson<AdminLeaveBalance>(`/api/admin/leave/employees/${employeeId}/balance`);
+}
+export function previewPaidLeaveGrantReview(id: number, payload: GrantReviewPayload) {
+  return fetchJson<GrantReviewPreview>(`/api/admin/leave/grants/${id}/review-preview`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
+}
+export function confirmPaidLeaveGrantReview(id: number, payload: GrantReviewPayload & { fingerprint: string }) {
+  return fetchJson<AdminLeaveBalance>(`/api/admin/leave/grants/${id}/review`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
+}
+export function loadAttendanceLeaveBaseline(employeeId: number, targetDate: string) {
+  return fetchJson<AttendanceLeaveBaseline>(`/api/admin/leave/attendance-baseline${buildQuery({ employeeId, targetDate })}`);
+}
+export function confirmAttendanceLeaveBaseline(payload: {
+  employeeId: number; targetDate: string; baseline: AttendanceLeaveValues; evidenceReference: string; fingerprint: string;
+}) {
+  return fetchJson<AttendanceLeaveBaseline>(`/api/admin/leave/attendance-baseline`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+  });
+}
 
 function normalizeLeaveRequestPayload(payload: LeaveRequestCreatePayload): LeaveRequestCreatePayload {
   if (payload.requestCategory === "TIME_LEAVE") {
@@ -50,11 +75,23 @@ export async function loadEmployeeLeaveTypes() {
   return home.leaveTypes ?? [];
 }
 
+export async function loadEmployeeStandardDayMinutes(targetDate?: string) {
+  return fetchJson<{ standardDayMinutes: number }>(`/api/leave/standard-day-minutes${buildQuery({ targetDate })}`);
+}
+
 export async function createEmployeeLeaveRequest(payload: LeaveRequestCreatePayload) {
   return fetchJson<LeaveRequestCreateResult>(`/api/leave/requests`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(normalizeLeaveRequestPayload(payload)),
+  });
+}
+
+export async function cancelEmployeeLeaveRequest(id: number) {
+  return fetchJson<LeaveDecisionResult>(`/api/leave/requests/${id}/cancel`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
   });
 }
 
@@ -92,7 +129,7 @@ export async function returnWorkProcedure(id: number, comment: string) {
 }
 
 export async function bulkApproveWorkProcedures(ids: number[], comment: string) {
-  return fetchJson<{ updatedCount: number }>(`/api/admin/work-procedures/bulk-approve`, {
+  return fetchJson<{ updatedCount: number; errorCount?: number; errors?: { id: number; message: string; status: string }[] }>(`/api/admin/work-procedures/bulk-approve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids, comment }),
@@ -100,7 +137,7 @@ export async function bulkApproveWorkProcedures(ids: number[], comment: string) 
 }
 
 export async function bulkReturnWorkProcedures(ids: number[], comment: string) {
-  return fetchJson<{ updatedCount: number }>(`/api/admin/work-procedures/bulk-return`, {
+  return fetchJson<{ updatedCount: number; errorCount?: number; errors?: { id: number; message: string; status: string }[] }>(`/api/admin/work-procedures/bulk-return`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids, comment }),
@@ -144,6 +181,7 @@ export async function decideLeave(id: number, decision: "approve" | "reject" | "
 }
 
 export async function createNotice(payload: {
+  requestId?: string;
   noticeType: string;
   title: string;
   body: string;
@@ -207,6 +245,8 @@ export async function saveRequestTypeSetting(payload: {
 }
 
 export async function saveLeaveTypeSetting(payload: {
+  attendanceEffect?: string;
+  balanceSource?: string;
   code: string;
   name: string;
   requiresBalance?: boolean;

@@ -33,9 +33,9 @@ final class PayrollStatementService
         return $this->employeeService->downloadForEmployee($employeeId, $statementId);
     }
 
-    public function markViewed(int $employeeId, int $statementId, string $viewedAt): array
+    public function markViewed(int $employeeId, int $statementId, string $viewedAt, ?int $revision = null): array
     {
-        return $this->employeeService->markViewed($employeeId, $statementId, $viewedAt);
+        return $this->employeeService->markViewed($employeeId, $statementId, $viewedAt, $revision);
     }
 
     public function downloadForAdmin(int $statementId, bool $inline = false)

@@ -7,7 +7,9 @@ import {
   exportPayrollImportBatchPdf,
   loadAdminPayrollStatementDetail,
   loadEmployeePayrollStatementDetail,
+  markPayrollStatementViewed,
   loadPayrollImportBatchDetail,
+  previewPayrollImportBatch,
   savePayrollDefinition,
 } from "@/lib/api";
 import type { PayrollImportBatchDetail, PayrollStatementDetail } from "@/types";
@@ -33,6 +35,8 @@ type UsePayrollActionsParams = {
   setSelectedEmployeePayrollDetail: (value: PayrollStatementDetail | null) => void;
   setErrorMessage: (value: string) => void;
   onRefresh: () => Promise<void>;
+  onRefreshPayroll: () => Promise<boolean>;
+  onEmployeePayrollViewed?: (statementId: number, revision: number) => void;
 };
 
 export function usePayrollActions(params: UsePayrollActionsParams) {
@@ -70,21 +74,32 @@ export function usePayrollActions(params: UsePayrollActionsParams) {
   }
 
   async function handlePayrollBatchCreate(formData: FormData) {
+    let result: Awaited<ReturnType<typeof createPayrollImportBatch>>;
     try {
-      const result = await createPayrollImportBatch(formData);
-      params.setPayrollBatchResult(
-        `${result.statementTypeLabel}を ${result.importedCount} 件登録しました。エラー ${result.errorCount} 件。`,
-      );
-      if (result.batchId != null) {
-        params.setSelectedPayrollBatchId(result.batchId);
-      }
-      await params.onRefresh();
-      if (result.batchId != null) {
-        await openPayrollBatchDetail(result.batchId);
-      }
+      result = await createPayrollImportBatch(formData);
     } catch (error) {
       params.setPayrollBatchResult(error instanceof Error ? error.message : "データCSV登録に失敗しました。");
+      throw error;
     }
+
+    const successMessage = `${result.statementTypeLabel}を ${result.importedCount} 件登録しました。エラー ${result.errorCount} 件。`;
+    params.setPayrollBatchResult(successMessage);
+    if (result.batchId != null) {
+      params.setSelectedPayrollBatchId(result.batchId);
+    }
+
+    if (!(await params.onRefreshPayroll())) {
+      params.setPayrollBatchResult(`${successMessage} 登録は完了していますが一覧の更新に失敗しました。「最新情報を再読込」で確認してください。再登録は不要です。`);
+      return;
+    }
+
+    if (result.batchId != null) {
+      await openPayrollBatchDetail(result.batchId);
+    }
+  }
+
+  async function handlePayrollBatchPreview(formData: FormData) {
+    return previewPayrollImportBatch(formData);
   }
 
   async function searchPayrollBatchDetail() {
@@ -147,18 +162,22 @@ export function usePayrollActions(params: UsePayrollActionsParams) {
   }
 
   async function handleLoadEmployeePayrollDetail(statementId: number) {
-    try {
-      const detail = await loadEmployeePayrollStatementDetail(statementId);
-      params.setSelectedEmployeePayrollDetail(detail);
-      params.setErrorMessage("");
-    } catch (error) {
-      params.setErrorMessage(error instanceof Error ? error.message : "明細詳細の読込に失敗しました。");
-    }
+    const detail = await loadEmployeePayrollStatementDetail(statementId);
+    await markPayrollStatementViewed(statementId, detail.revision ?? 1);
+    params.onEmployeePayrollViewed?.(statementId, detail.revision ?? 1);
+    params.setSelectedEmployeePayrollDetail({ ...detail, viewed: true });
+    params.setErrorMessage("");
   }
 
   async function handlePayrollDownload(id: number, fileName?: string) {
     try {
+      const detail = await loadEmployeePayrollStatementDetail(id);
       await downloadPayrollStatement(id, fileName);
+      await markPayrollStatementViewed(id, detail.revision ?? 1).then(() => {
+        params.onEmployeePayrollViewed?.(id, detail.revision ?? 1);
+      }).catch((error) => {
+        params.setErrorMessage(`PDFのダウンロードは開始しました。閲覧履歴の更新: ${error instanceof Error ? error.message : "一覧を再読込してください。"}`);
+      });
     } catch (error) {
       params.setErrorMessage(error instanceof Error ? error.message : "明細ダウンロードに失敗しました。");
     }
@@ -180,6 +199,7 @@ export function usePayrollActions(params: UsePayrollActionsParams) {
     handleLoadAdminPayrollDetail,
     handleLoadEmployeePayrollDetail,
     handlePayrollBatchCreate,
+    handlePayrollBatchPreview,
     handlePayrollDefinitionSave,
     handlePayrollDownload,
     openPayrollBatchDetail,

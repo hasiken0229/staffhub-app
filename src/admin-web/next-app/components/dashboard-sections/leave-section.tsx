@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { loadWorkProcedureDetail } from "@/lib/api";
 import type { LeaveRequest } from "@/types";
+import { AnnualPaidLeaveRegister } from "./leave/annual-paid-leave-register";
 import { LeaveBalancesPanel } from "./leave/leave-balances-panel";
 import { LeaveFiltersPanel } from "./leave/leave-filters-panel";
 import { LeaveGrantAdjustPanel } from "./leave/leave-grant-adjust-panel";
@@ -42,6 +43,7 @@ export function LeaveSection(props: LeaveSectionProps) {
 
   return (
     <section className="stack-section section-enter delay-3">
+      {activePanel === "leave-register" && <AnnualPaidLeaveRegister />}
       {activePanel === "leave-filters" ? (
         <LeaveFiltersPanel dashboard={props.data.dashboard} filters={props.filters} actions={props.actions} />
       ) : null}
@@ -74,7 +76,7 @@ export function LeaveSection(props: LeaveSectionProps) {
       {detailMessage ? <p className="feedback">{detailMessage}</p> : null}
 
       {activePanel === "leave-balances" ? (
-        <LeaveBalancesPanel dashboard={props.data.dashboard} formatters={props.formatters} />
+        <LeaveBalancesPanel dashboard={props.data.dashboard} formatters={props.formatters} onSaved={props.actions.onHourlyBalanceSaved} />
       ) : null}
 
       {activePanel === "leave-grant-adjust" ? (

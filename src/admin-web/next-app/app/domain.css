@@ -201,17 +201,12 @@
 }
 
 .attendance-edit-table {
-  min-width: 1120px;
+  min-width: 760px;
 }
 
 .attendance-edit-table th,
 .attendance-edit-table td {
   white-space: nowrap;
-}
-
-.attendance-edit-table td:nth-child(9) {
-  min-width: 180px;
-  white-space: normal;
 }
 
 .attendance-two-line-time {
@@ -220,6 +215,80 @@
   min-width: 62px;
   font-variant-numeric: tabular-nums;
   line-height: 1.25;
+}
+
+.attendance-status-label {
+  display: inline-block;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.attendance-row-details {
+  margin-top: 6px;
+  white-space: normal;
+}
+
+.attendance-row-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.attendance-row-details dl {
+  display: grid;
+  gap: 5px;
+  min-width: 260px;
+  margin: 8px 0 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.attendance-row-details dl > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.9fr) minmax(0, 1.2fr);
+  gap: 8px;
+}
+
+.attendance-row-details dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.attendance-row-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.attendance-row-actions {
+  flex-wrap: nowrap;
+}
+
+.attendance-missing-action {
+  white-space: nowrap;
+}
+
+.attendance-mobile-cards {
+  display: none;
+}
+
+.attendance-load-error {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.attendance-load-error strong,
+.attendance-load-error span {
+  color: var(--ink);
 }
 
 .attendance-two-line-time span:nth-child(2) {
@@ -268,6 +337,7 @@
 
 .attendance-edit-form-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -276,9 +346,11 @@
   font-weight: 800;
 }
 
-.attendance-edit-form-header strong {
+.attendance-edit-form-header h4 {
+  margin: 0;
   color: var(--ink);
-  font-size: 14px;
+  font-size: 1rem;
+  scroll-margin-block: 5rem;
 }
 
 .dashboard-visual-panel {
@@ -397,6 +469,77 @@
   color: #b63c3c;
 }
 
+.payroll-import-preview {
+  display: grid;
+  gap: 16px;
+}
+
+.payroll-preview-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.payroll-preview-summary > div {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.payroll-preview-summary .detail-label {
+  font-size: 11px;
+}
+
+.payroll-preview-headers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.payroll-preview-headers span {
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  color: var(--muted-strong);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.payroll-preview-table-wrap {
+  max-height: 360px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.payroll-preview-table-wrap table {
+  min-width: max-content;
+}
+
+.payroll-preview-table-wrap th,
+.payroll-preview-table-wrap td {
+  white-space: nowrap;
+}
+
+.amount-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.import-preview-warning {
+  border-color: rgba(184, 133, 53, 0.3);
+  background: rgba(184, 133, 53, 0.09);
+}
+
+.import-preview-warning,
+.import-preview-warning strong {
+  color: #8a5a16;
+}
+
 .detail-note-panel {
   min-height: 100%;
 }
@@ -404,6 +547,30 @@
 .payroll-detail-card .split {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.payroll-detail-card .table-wrap table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.payroll-detail-card .table-wrap th,
+.payroll-detail-card .table-wrap td {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding-inline: 8px;
+}
+
+.payroll-detail-card .table-wrap th:last-child,
+.payroll-detail-card .table-wrap td:last-child {
+  width: 44%;
+  text-align: right;
+}
+
+.payroll-detail-card .table-scroll-hint {
+  display: none;
 }
 
 .detail-note-text,
@@ -564,4 +731,3 @@
   color: #93586c;
   background: rgba(216, 119, 144, 0.14);
 }
-

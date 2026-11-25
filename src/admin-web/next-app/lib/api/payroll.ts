@@ -2,6 +2,7 @@ import type {
   PayrollDataDefinition,
   PayrollImportBatch,
   PayrollImportBatchDetail,
+  PayrollImportPreview,
   PayrollImportResult,
   PayrollStatement,
   PayrollStatementDetail,
@@ -67,6 +68,13 @@ export async function createPayrollImportBatch(formData: FormData) {
   });
 }
 
+export async function previewPayrollImportBatch(formData: FormData) {
+  return fetchJson<PayrollImportPreview>("/api/admin/payroll/import-batches/preview", {
+    method: "POST",
+    body: formData,
+  });
+}
+
 export async function deletePayrollImportBatch(id: number) {
   return fetchJson<{ id: number; deleted: boolean }>(`/api/admin/payroll/import-batches/${id}`, {
     method: "DELETE",
@@ -83,6 +91,14 @@ export async function loadAdminPayrollStatementDetail(id: number) {
 
 export async function loadEmployeePayrollStatementDetail(id: number) {
   return fetchJson<PayrollStatementDetail>(`/api/payroll/statements/${id}`);
+}
+
+export async function markPayrollStatementViewed(id: number, revision: number) {
+  return fetchJson<{ success: boolean; revision: number }>(`/api/payroll/statements/${id}/viewed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ revision, viewedAt: new Date().toISOString() }),
+  });
 }
 
 export async function deletePayrollStatement(id: number) {

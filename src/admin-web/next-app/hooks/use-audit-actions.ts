@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import { loadAuditLogs } from "@/lib/api";
+import { loadAuditLogsPage } from "@/lib/api";
 import type { DashboardData } from "@/types";
 
 type UseAuditActionsParams = {
@@ -16,23 +16,29 @@ type UseAuditActionsParams = {
 };
 
 export function useAuditActions(params: UseAuditActionsParams) {
-  async function applyAuditFilters() {
+  async function loadAuditPage(page = 1) {
     try {
-      const auditLogs = await loadAuditLogs({
+      const auditLogs = await loadAuditLogsPage({
         actor: params.auditActorFilter || undefined,
         action: params.auditActionFilter || undefined,
         from: params.auditFrom || undefined,
         to: params.auditTo || undefined,
+        page,
       });
 
       params.setDashboard((previous) => ({
         ...previous,
-        auditLogs,
+        auditLogs: auditLogs.items,
+        auditLogsPagination: auditLogs.meta,
       }));
       params.setErrorMessage("");
     } catch (error) {
       params.setErrorMessage(error instanceof Error ? error.message : "監査ログの読込に失敗しました。");
     }
+  }
+
+  async function applyAuditFilters() {
+    await loadAuditPage();
   }
 
   async function resetAuditFilters() {
@@ -42,10 +48,11 @@ export function useAuditActions(params: UseAuditActionsParams) {
     params.setAuditTo("");
 
     try {
-      const auditLogs = await loadAuditLogs();
+      const auditLogs = await loadAuditLogsPage({ page: 1 });
       params.setDashboard((previous) => ({
         ...previous,
-        auditLogs,
+        auditLogs: auditLogs.items,
+        auditLogsPagination: auditLogs.meta,
       }));
       params.setErrorMessage("");
     } catch (error) {
@@ -56,5 +63,6 @@ export function useAuditActions(params: UseAuditActionsParams) {
   return {
     applyAuditFilters,
     resetAuditFilters,
+    loadAuditPage,
   };
 }

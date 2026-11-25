@@ -9,28 +9,38 @@ use Illuminate\Support\Facades\DB;
 
 trait AttendanceErrorDetection
 {
-    protected function detectDailyErrors(object $row): array
+    protected function detectDailyErrors(object $row, ?array $rules = null): array
     {
+        $row = $this->attendanceDayProjection($row);
+        if (AttendanceDayState::classify($row) === 'FUTURE' || AttendanceDayState::isDayOff($row)) { return []; }
         $errors = [];
-        $rules = $this->attendanceErrorRules();
+        $rules ??= $this->attendanceErrorRules();
         $clockInAt = !empty($row->clock_in_at) ? CarbonImmutable::parse((string) $row->clock_in_at) : null;
         $clockOutAt = !empty($row->clock_out_at) ? CarbonImmutable::parse((string) $row->clock_out_at) : null;
         $breakMinutes = (int) ($row->break_minutes ?? 0);
         $workMinutes = $row->work_minutes !== null ? (int) $row->work_minutes : $this->calculateWorkMinutes($clockInAt, $clockOutAt, $breakMinutes);
-        $hasLeave = (bool) ($row->absence_flag ?? false)
-            || (bool) ($row->special_leave_flag ?? false)
-            || ($row->paid_leave_unit ?? null) !== null;
+        $hasLeave = AttendanceDayState::hasLeave($row);
         $hasWork = $clockInAt !== null || $clockOutAt !== null;
 
-        if (($clockInAt === null xor $clockOutAt === null) && ($rule = $this->enabledErrorRule($rules, 'MISSING_PUNCH', '出勤・退勤入力漏れ'))) {
+        if ($clockInAt !== null && $clockOutAt !== null && $clockOutAt->lessThan($clockInAt)) {
+            $errors[] = ['errorCode' => 'REVERSED_PUNCHES', 'errorName' => '採用退勤が出勤より前です'];
+        }
+        if (!AttendanceDayState::notDue($row) && ($clockInAt === null xor $clockOutAt === null) && ($rule = $this->enabledErrorRule($rules, 'MISSING_PUNCH', '出勤・退勤入力漏れ'))) {
             $errors[] = ['errorCode' => 'MISSING_PUNCH', 'errorName' => $rule['name']];
         }
-        if ($clockInAt === null && $clockOutAt === null && !$hasLeave && ($rule = $this->enabledErrorRule($rules, 'MISSING_BOTH_PUNCHES', '出勤・退勤未入力'))) {
+        if (!AttendanceDayState::notDue($row) && $clockInAt === null && $clockOutAt === null && !$hasLeave && ($rule = $this->enabledErrorRule($rules, 'MISSING_BOTH_PUNCHES', '出勤・退勤未入力'))) {
             $errors[] = ['errorCode' => 'MISSING_BOTH_PUNCHES', 'errorName' => $rule['name']];
         }
         if ($hasLeave && $hasWork && ($rule = $this->enabledErrorRule($rules, 'LEAVE_WITH_WORK', '休日・休暇の出勤'))) {
             $errors[] = ['errorCode' => 'LEAVE_WITH_WORK', 'errorName' => $rule['name']];
         }
+        $span = $clockInAt && $clockOutAt ? $clockInAt->diffInMinutes($clockOutAt, true) : null;
+        return [...$errors, ...$this->workDurationErrors($workMinutes, $breakMinutes, $span, $rules)];
+    }
+
+    protected function workDurationErrors(?int $workMinutes, int $breakMinutes, ?float $spanMinutes, array $rules): array
+    {
+        $errors = [];
         if ($workMinutes !== null && ($rule = $this->enabledErrorRule($rules, 'MISSING_BREAK', '休憩入力漏れ'))) {
             $minWorkMinutes = (int) ($rule['minWorkMinutes'] ?? 360);
             $requiredBreakMinutes = max(1, (int) ($rule['requiredBreakMinutes'] ?? 1));
@@ -53,8 +63,7 @@ trait AttendanceErrorDetection
                 $errors[] = ['errorCode' => 'SHORT_BREAK_OVER_8', 'errorName' => $rule['name']];
             }
         }
-        if ($clockInAt !== null && $clockOutAt !== null && ($rule = $this->enabledErrorRule($rules, 'BREAK_TOO_LONG', '休憩時間の超過'))) {
-            $spanMinutes = max(0, $clockOutAt->diffInMinutes($clockInAt, true));
+        if ($spanMinutes !== null && ($rule = $this->enabledErrorRule($rules, 'BREAK_TOO_LONG', '休憩時間の超過'))) {
             $maxBreakMinutes = (int) ($rule['maxBreakMinutes'] ?? 240);
             if ($breakMinutes >= $spanMinutes || $breakMinutes > $maxBreakMinutes) {
                 $errors[] = ['errorCode' => 'BREAK_TOO_LONG', 'errorName' => $rule['name']];
@@ -72,19 +81,8 @@ trait AttendanceErrorDetection
 
     protected function autoResolveClearedErrors(int $dailyId, int $operatorId): void
     {
-        $row = DB::table('attendance_daily')
-            ->where('id', $dailyId)
-            ->first([
-                'employee_id',
-                'target_date',
-                'clock_in_at',
-                'clock_out_at',
-                'break_minutes',
-                'work_minutes',
-                'absence_flag',
-                'special_leave_flag',
-                'paid_leave_unit',
-            ]);
+        $row = DB::table('attendance_daily as ad')->join('employees as e', 'e.id', '=', 'ad.employee_id')
+            ->where('ad.id', $dailyId)->select(['ad.*', 'e.employee_code', 'e.employment_type'])->first();
 
         if ($row === null) {
             return;

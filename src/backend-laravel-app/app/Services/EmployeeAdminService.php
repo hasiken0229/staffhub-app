@@ -5,6 +5,7 @@ namespace App\Services;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
 final class EmployeeAdminService
@@ -21,15 +22,15 @@ final class EmployeeAdminService
                 'ea.login_id as login_email',
             ]);
 
-        if (!empty($filters['employeeCode'])) {
-            $query->where('e.employee_code', 'like', '%' . $filters['employeeCode'] . '%');
+        if (! empty($filters['employeeCode'])) {
+            $query->where('e.employee_code', 'like', '%'.$filters['employeeCode'].'%');
         }
 
-        if (!empty($filters['name'])) {
-            $query->where('e.name', 'like', '%' . $filters['name'] . '%');
+        if (! empty($filters['name'])) {
+            $query->where('e.name', 'like', '%'.$filters['name'].'%');
         }
 
-        if (!empty($filters['status'])) {
+        if (! empty($filters['status'])) {
             $query->where('e.status', $filters['status']);
         }
 
@@ -70,7 +71,8 @@ final class EmployeeAdminService
             'kana' => $payload['kana'] ?? null,
             'department_name' => $payload['departmentName'] ?? null,
             'location_name' => $payload['locationName'] ?? null,
-            'employment_type' => $payload['employmentType'],
+            'employment_type' => EmploymentType::canonical($payload['employmentType']),
+            ...EmploymentType::flags($payload['employmentType']),
             'status' => $payload['status'],
             'joined_on' => $payload['joinedOn'],
             'retired_on' => $payload['retiredOn'] ?? null,
@@ -86,7 +88,11 @@ final class EmployeeAdminService
 
     public function update(int $id, array $payload): array
     {
-        $employee = DB::table('employees')->where('id', $id)->first();
+        $employee = DB::table('employees as e')
+            ->leftJoin('employee_auth as ea', 'ea.employee_id', '=', 'e.id')
+            ->select(['e.*', 'ea.login_id as login_email'])
+            ->where('e.id', $id)
+            ->first();
         if ($employee === null) {
             throw new ApiException('NOT_FOUND', '対象職員が見つかりません。', 404);
         }
@@ -106,31 +112,60 @@ final class EmployeeAdminService
         $this->assertGoogleChatUserIdIsAvailable($googleChatUserId, $id);
         $this->assertLoginEmailIsAvailable($loginEmail, $id);
 
-        DB::table('employees')
-            ->where('id', $id)
-            ->update([
-                'employee_code' => $employeeCode,
-                'name' => trim((string) $payload['name']),
-                'kana' => $payload['kana'] ?? null,
-                'department_name' => $payload['departmentName'] ?? null,
-                'location_name' => $payload['locationName'] ?? null,
-                'employment_type' => $payload['employmentType'],
-                'status' => $payload['status'],
-                'joined_on' => $payload['joinedOn'],
-                'retired_on' => $payload['retiredOn'] ?? null,
-                'google_chat_user_id' => $googleChatUserId,
-                'updated_at' => now(),
-            ]);
+        DB::transaction(function () use ($id, $employeeCode, $googleChatUserId, $loginEmail, $payload, $employee): void {
+            $currentEmployee = DB::table('employees')->where('id', $id)->lockForUpdate()->first();
+            if ($currentEmployee === null) { throw new ApiException('NOT_FOUND', '対象職員が見つかりません。', 404); }
+            EmploymentTypeChangeGuard::assertCanChange($currentEmployee, (string) $payload['employmentType']);
+            DB::table('employees')
+                ->where('id', $id)
+                ->update([
+                    'employee_code' => $employeeCode,
+                    'name' => trim((string) $payload['name']),
+                    'kana' => $payload['kana'] ?? null,
+                    'department_name' => $payload['departmentName'] ?? null,
+                    'location_name' => $payload['locationName'] ?? null,
+                    'employment_type' => EmploymentType::canonical($payload['employmentType']),
+                    ...EmploymentType::flags((string) $currentEmployee->employment_type),
+                    ...EmploymentType::flags($payload['employmentType']),
+                    'status' => $payload['status'],
+                    'joined_on' => $payload['joinedOn'],
+                    'retired_on' => $payload['retiredOn'] ?? null,
+                    'google_chat_user_id' => $googleChatUserId,
+                    'updated_at' => now(),
+                ]);
 
-        $this->syncLoginEmail($id, $loginEmail);
+            $this->syncLoginEmail($id, $loginEmail);
+            if (
+                strtoupper((string) $employee->status) !== strtoupper((string) $payload['status'])
+                || $this->normalizeLoginEmail($employee->login_email ?? null) !== $loginEmail
+            ) {
+                DB::table('api_access_tokens')
+                    ->where('tokenable_type', 'EMPLOYEE')
+                    ->where('tokenable_id', $id)
+                    ->delete();
+            }
+        });
 
         return $this->mapEmployee($this->findEmployeeWithAuth($id));
     }
 
     public function importFromCsv(array $payload, UploadedFile $file): array
     {
+        return DB::transaction(function () use ($payload, $file): array {
+            // Revalidate the whole file against current database values inside the save transaction.
+            $preview = $this->previewImportFromCsv($payload, $file);
+            if ($preview['errors'] !== []) {
+                throw new ApiException('CSV_VALIDATION_ERROR', 'CSVにエラーがあります。修正してプレビューを取り直してください。', 422, $preview['errors']);
+            }
+
+            return $this->saveImportFromCsv($payload, $file);
+        });
+    }
+
+    private function saveImportFromCsv(array $payload, UploadedFile $file): array
+    {
         $defaultDepartmentName = $payload['defaultDepartmentName'] ?? null;
-        $defaultEmploymentType = $payload['defaultEmploymentType'] ?? 'FULL_TIME';
+        $defaultEmploymentType = ($payload['defaultEmploymentType'] ?? 'FULL_TIME');
         $defaultStatus = $payload['defaultStatus'] ?? 'ACTIVE';
         $defaultJoinedOn = $payload['defaultJoinedOn'] ?? now()->toDateString();
 
@@ -142,9 +177,9 @@ final class EmployeeAdminService
         $header = $rows[0];
         $map = $this->buildHeaderIndexMap($header);
         foreach (['社員番号', '姓', '名'] as $required) {
-            if (!isset($map[$required])) {
+            if (! isset($map[$required])) {
                 throw new ApiException('CSV_FORMAT_ERROR', 'CSVヘッダーが不足しています。', 422, [
-                    ['field' => 'file', 'message' => '不足ヘッダー: ' . $required],
+                    ['field' => 'file', 'message' => '不足ヘッダー: '.$required],
                 ]);
             }
         }
@@ -162,15 +197,17 @@ final class EmployeeAdminService
             $employeeCode = $this->cell($row, $map, '社員番号');
             $lastName = $this->cell($row, $map, '姓');
             $firstName = $this->cell($row, $map, '名');
-            $name = trim($lastName . ' ' . $firstName);
+            $name = trim($lastName.' '.$firstName);
 
             if ($employeeCode === '' || $name === '') {
                 $skipped++;
+
                 continue;
             }
 
             $existing = DB::table('employees')
                 ->where('employee_code', $employeeCode)
+                ->lockForUpdate()
                 ->first();
             $hasKana = $this->hasHeader($map, 'ふりがな');
             $hasDepartment = $this->hasHeader($map, '所属');
@@ -185,7 +222,7 @@ final class EmployeeAdminService
             $departmentName = $hasDepartment ? ($this->cell($row, $map, '所属') ?: $defaultDepartmentName) : $defaultDepartmentName;
             $locationName = $hasLocation ? ($this->cell($row, $map, '勤務場所') ?: null) : null;
             $employmentType = $hasEmploymentType
-                ? $this->normalizeEmploymentType($this->cell($row, $map, '雇用区分') ?: $defaultEmploymentType)
+                ? ($this->cell($row, $map, '雇用区分') ?: $defaultEmploymentType)
                 : $defaultEmploymentType;
             $status = $hasStatus ? $this->normalizeStatus($this->cell($row, $map, '状態') ?: $defaultStatus) : $defaultStatus;
             $joinedOn = $hasJoinedOn ? ($this->cell($row, $map, '入職日') ?: $defaultJoinedOn) : $defaultJoinedOn;
@@ -203,7 +240,8 @@ final class EmployeeAdminService
                     'kana' => $kana,
                     'department_name' => $departmentName,
                     'location_name' => $locationName,
-                    'employment_type' => $employmentType,
+                    'employment_type' => EmploymentType::canonical($employmentType),
+                    ...EmploymentType::flags($employmentType),
                     'status' => $status,
                     'joined_on' => $joinedOn,
                     'retired_on' => $retiredOn,
@@ -216,6 +254,9 @@ final class EmployeeAdminService
                 $employee = $this->findEmployeeWithAuth($id);
                 $action = 'CREATED';
             } else {
+                if ($hasEmploymentType) {
+                    EmploymentTypeChangeGuard::assertCanChange($existing, (string) $employmentType);
+                }
                 $this->assertGoogleChatUserIdIsAvailable($googleChatUserId, (int) $existing->id);
                 $this->assertLoginEmailIsAvailable($loginEmail, (int) $existing->id);
 
@@ -235,7 +276,8 @@ final class EmployeeAdminService
                     $updates['location_name'] = $locationName;
                 }
                 if ($hasEmploymentType) {
-                    $updates['employment_type'] = $employmentType;
+                    $updates['employment_type'] = EmploymentType::canonical($employmentType);
+                    $updates += EmploymentType::flags((string) $existing->employment_type) + EmploymentType::flags($employmentType);
                 }
                 if ($hasStatus) {
                     $updates['status'] = $status;
@@ -277,7 +319,7 @@ final class EmployeeAdminService
     public function previewImportFromCsv(array $payload, UploadedFile $file): array
     {
         $defaultDepartmentName = $payload['defaultDepartmentName'] ?? null;
-        $defaultEmploymentType = $payload['defaultEmploymentType'] ?? 'FULL_TIME';
+        $defaultEmploymentType = ($payload['defaultEmploymentType'] ?? 'FULL_TIME');
         $defaultStatus = $payload['defaultStatus'] ?? 'ACTIVE';
         $defaultJoinedOn = $payload['defaultJoinedOn'] ?? now()->toDateString();
 
@@ -289,9 +331,9 @@ final class EmployeeAdminService
         $header = $rows[0];
         $map = $this->buildHeaderIndexMap($header);
         foreach (['社員番号', '姓', '名'] as $required) {
-            if (!isset($map[$required])) {
+            if (! isset($map[$required])) {
                 throw new ApiException('CSV_FORMAT_ERROR', 'CSVヘッダーが不足しています。', 422, [
-                    ['field' => 'file', 'message' => '不足ヘッダー: ' . $required],
+                    ['field' => 'file', 'message' => '不足ヘッダー: '.$required],
                 ]);
             }
         }
@@ -303,6 +345,7 @@ final class EmployeeAdminService
         $errors = [];
         $seenEmployeeCodes = [];
         $seenLoginEmails = [];
+        $seenGoogleChatUserIds = [];
 
         foreach (array_slice($rows, 1) as $lineNumber => $row) {
             $line = $lineNumber + 2;
@@ -313,27 +356,40 @@ final class EmployeeAdminService
             $employeeCode = $this->cell($row, $map, '社員番号');
             $lastName = $this->cell($row, $map, '姓');
             $firstName = $this->cell($row, $map, '名');
-            $name = trim($lastName . ' ' . $firstName);
+            $name = trim($lastName.' '.$firstName);
             $loginEmail = $this->hasHeader($map, 'メールアドレス') ? $this->normalizeLoginEmail($this->cell($row, $map, 'メールアドレス')) : null;
             $googleChatUserId = $this->normalizeGoogleChatUserId($this->cell($row, $map, 'Google Chat ID'));
 
-            if ($employeeCode === '' || $name === '') {
+            if ($employeeCode === '' || $lastName === '' || $firstName === '') {
                 $skipped++;
                 $errors[] = ['line' => $line, 'employeeCode' => $employeeCode ?: null, 'message' => '社員番号、姓、名は必須です。'];
+
                 continue;
             }
 
             if (isset($seenEmployeeCodes[$employeeCode])) {
                 $skipped++;
                 $errors[] = ['line' => $line, 'employeeCode' => $employeeCode, 'message' => 'CSV内で職員番号が重複しています。'];
+
                 continue;
             }
             $seenEmployeeCodes[$employeeCode] = true;
+
+            if ($googleChatUserId !== null) {
+                if (isset($seenGoogleChatUserIds[$googleChatUserId])) {
+                    $skipped++;
+                    $errors[] = ['line' => $line, 'employeeCode' => $employeeCode, 'message' => 'CSV内で Google Chat ID が重複しています。'];
+
+                    continue;
+                }
+                $seenGoogleChatUserIds[$googleChatUserId] = true;
+            }
 
             if ($loginEmail !== null) {
                 if (isset($seenLoginEmails[$loginEmail])) {
                     $skipped++;
                     $errors[] = ['line' => $line, 'employeeCode' => $employeeCode, 'message' => 'CSV内でメールアドレスが重複しています。'];
+
                     continue;
                 }
                 $seenLoginEmails[$loginEmail] = true;
@@ -342,12 +398,54 @@ final class EmployeeAdminService
             $existing = DB::table('employees')->where('employee_code', $employeeCode)->first();
             $ignoreEmployeeId = $existing ? (int) $existing->id : null;
 
+            $employmentType = $this->hasHeader($map, '雇用区分')
+                ? ($this->cell($row, $map, '雇用区分') ?: $defaultEmploymentType)
+                : $defaultEmploymentType;
+            $status = $this->hasHeader($map, '状態') ? $this->normalizeStatus($this->cell($row, $map, '状態') ?: $defaultStatus) : $defaultStatus;
+            $joinedOn = $this->hasHeader($map, '入職日') ? ($this->cell($row, $map, '入職日') ?: $defaultJoinedOn) : $defaultJoinedOn;
+            $departmentName = $this->hasHeader($map, '所属') ? ($this->cell($row, $map, '所属') ?: $defaultDepartmentName) : $defaultDepartmentName;
+            $validator = Validator::make([
+                'employeeCode' => $employeeCode,
+                'name' => $name,
+                'kana' => $this->cell($row, $map, 'ふりがな') ?: null,
+                'departmentName' => $departmentName,
+                'locationName' => $this->cell($row, $map, '勤務場所') ?: null,
+                'employmentType' => EmploymentType::canonical($employmentType),
+                'status' => $status,
+                'joinedOn' => $joinedOn,
+                'retiredOn' => $this->cell($row, $map, '退職日') ?: null,
+                'loginEmail' => $loginEmail,
+                'googleChatUserId' => $googleChatUserId,
+            ], [
+                'employeeCode' => ['required', 'string', 'max:30'],
+                'name' => ['required', 'string', 'max:100'],
+                'kana' => ['nullable', 'string', 'max:100'],
+                'departmentName' => ['nullable', 'string', 'max:100'],
+                'locationName' => ['nullable', 'string', 'max:100'],
+                'employmentType' => ['required', 'string', 'max:30'],
+                'status' => ['required', 'string', 'max:20'],
+                'joinedOn' => ['required', 'date_format:Y-m-d'],
+                'retiredOn' => ['nullable', 'date_format:Y-m-d'],
+                'loginEmail' => ['nullable', 'email', 'max:100'],
+                'googleChatUserId' => ['nullable', 'string', 'max:100'],
+            ]);
+            if ($validator->fails()) {
+                $skipped++;
+                $errors[] = ['line' => $line, 'employeeCode' => $employeeCode, 'message' => implode(' / ', $validator->errors()->all())];
+
+                continue;
+            }
+
             try {
+                if ($existing !== null && $this->hasHeader($map, '雇用区分')) {
+                    EmploymentTypeChangeGuard::assertCanChange($existing, (string) $employmentType);
+                }
                 $this->assertGoogleChatUserIdIsAvailable($googleChatUserId, $ignoreEmployeeId);
                 $this->assertLoginEmailIsAvailable($loginEmail, $ignoreEmployeeId);
             } catch (ApiException $exception) {
                 $skipped++;
                 $errors[] = ['line' => $line, 'employeeCode' => $employeeCode, 'message' => $exception->getMessage()];
+
                 continue;
             }
 
@@ -360,18 +458,20 @@ final class EmployeeAdminService
                 'action' => $action,
                 'employeeCode' => $employeeCode,
                 'name' => $name,
-                'departmentName' => $this->hasHeader($map, '所属') ? ($this->cell($row, $map, '所属') ?: $defaultDepartmentName) : $defaultDepartmentName,
-                'employmentType' => $this->hasHeader($map, '雇用区分')
-                    ? $this->normalizeEmploymentType($this->cell($row, $map, '雇用区分') ?: $defaultEmploymentType)
-                    : $defaultEmploymentType,
-                'status' => $this->hasHeader($map, '状態') ? $this->normalizeStatus($this->cell($row, $map, '状態') ?: $defaultStatus) : $defaultStatus,
-                'joinedOn' => $this->hasHeader($map, '入職日') ? ($this->cell($row, $map, '入職日') ?: $defaultJoinedOn) : $defaultJoinedOn,
+                'departmentName' => $departmentName,
+                'employmentType' => EmploymentType::canonical($employmentType),
+                'isDependentWithin' => !empty(EmploymentType::flags($employmentType)['is_dependent_within']) || (bool) ($existing->is_dependent_within ?? false),
+                'isManagementSupervisor' => !empty(EmploymentType::flags($employmentType)['is_management_supervisor']) || (bool) ($existing->is_management_supervisor ?? false),
+                'status' => $status,
+                'joinedOn' => $joinedOn,
                 'loginEmail' => $loginEmail,
             ];
         }
 
         return [
             'dryRun' => true,
+            'rowCount' => count($items) + $skipped,
+            'hasLoginEmail' => $this->hasHeader($map, 'メールアドレス'),
             'processedCount' => count($items) + $skipped,
             'createdCount' => $created,
             'updatedCount' => $updated,
@@ -391,6 +491,8 @@ final class EmployeeAdminService
             'departmentName' => $row->department_name,
             'locationName' => $row->location_name ?? null,
             'employmentType' => $row->employment_type,
+            'isDependentWithin' => (bool) ($row->is_dependent_within ?? false),
+            'isManagementSupervisor' => (bool) ($row->is_management_supervisor ?? false),
             'status' => $row->status,
             'joinedOn' => $row->joined_on,
             'retiredOn' => $row->retired_on,
@@ -438,6 +540,7 @@ final class EmployeeAdminService
     {
         $value ??= '';
         $value = preg_replace('/^\x{FEFF}/u', '', $value) ?? $value;
+
         return trim($value);
     }
 
@@ -478,17 +581,6 @@ final class EmployeeAdminService
         return isset($map[$header]);
     }
 
-    private function normalizeEmploymentType(string $value): string
-    {
-        return match ($value) {
-            '常勤' => 'FULL_TIME',
-            '非常勤' => 'PART_TIME',
-            '契約' => 'CONTRACT',
-            '臨時' => 'TEMPORARY',
-            default => $value,
-        };
-    }
-
     private function normalizeStatus(string $value): string
     {
         return match ($value) {
@@ -523,12 +615,13 @@ final class EmployeeAdminService
             return $normalized;
         }
 
-        return 'users/' . ltrim($normalized, '/');
+        return 'users/'.ltrim($normalized, '/');
     }
 
     private function normalizeLoginEmail(?string $value): ?string
     {
         $normalized = Str::lower(trim((string) $value));
+
         return $normalized === '' ? null : $normalized;
     }
 
@@ -572,6 +665,7 @@ final class EmployeeAdminService
     {
         if ($loginEmail === null) {
             DB::table('employee_auth')->where('employee_id', $employeeId)->delete();
+
             return;
         }
 

@@ -12,10 +12,12 @@ public partial class MainWindow : Window
     private DateTime _lastTitleClickAt = DateTime.MinValue;
     private bool _isMaintenanceVisible;
 
-    public MainWindow()
+    public MainWindow() : this(null) { }
+
+    internal MainWindow(MainWindowViewModel? viewModel)
     {
         InitializeComponent();
-        _viewModel = new MainWindowViewModel();
+        _viewModel = viewModel ?? new MainWindowViewModel();
         DataContext = _viewModel;
         SetMaintenanceVisibility(false);
         if (_viewModel.Settings.StartMinimized)
@@ -27,6 +29,9 @@ public partial class MainWindow : Window
         StartPunchButton.Click += async (_, _) => await _viewModel.RestartReaderAsync();
         SimulateButton.Click += async (_, _) => await _viewModel.SimulateScanAsync();
         RetryButton.Click += async (_, _) => await _viewModel.RetryPendingAsync();
+        TodayReceiptsExpander.Expanded += async (_, _) => await _viewModel.LoadTodayReceiptsAsync();
+        ConfirmShortShiftButton.Click += (_, _) => _viewModel.ChooseShortShiftClockOut();
+        ContinueWorkingButton.Click += (_, _) => _viewModel.DismissShortShiftPrompt();
         CopyCardUidButton.Click += (_, _) => _viewModel.CopyLastCardUid();
         RegisterCardButton.Click += async (_, _) => await _viewModel.RegisterLastCardAsync();
         _viewModel.PropertyChanged += (_, args) =>
@@ -54,8 +59,12 @@ public partial class MainWindow : Window
         SetMaintenanceVisibility(!_isMaintenanceVisible);
     }
 
-    private void SetMaintenanceVisibility(bool isVisible)
+    internal void SetMaintenanceVisibility(bool isVisible)
     {
+        if (!isVisible)
+        {
+            _viewModel.CardRegistrationModeEnabled = false;
+        }
         _isMaintenanceVisible = isVisible;
         MaintenancePanel.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
         MaintenanceRow.Height = isVisible ? new GridLength(260) : new GridLength(0);

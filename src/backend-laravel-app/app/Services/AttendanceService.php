@@ -34,6 +34,11 @@ final class AttendanceService
         return $this->punchService->heartbeat($payload);
     }
 
+    public function todayDeviceReceipts(array $credentials): array
+    {
+        return $this->punchService->todayDeviceReceipts($credentials);
+    }
+
     public function listCardRegistrationEmployees(array $payload): array
     {
         return $this->punchService->listCardRegistrationEmployees($payload);
@@ -92,6 +97,11 @@ final class AttendanceService
     public function createDailyEditRequest(int $employeeId, array $payload): array
     {
         return $this->dailyEditRequestService->createDailyEditRequest($employeeId, $payload);
+    }
+
+    public function cancelDailyEditRequest(int $requestId, int $employeeId): array
+    {
+        return $this->dailyEditRequestService->cancelDailyEditRequest($requestId, $employeeId);
     }
 
     public function listDailyEditRequestsForEmployee(int $employeeId, array $filters = []): array

@@ -36,7 +36,7 @@
 
 | 項目 | 結果 | 備考 |
 |---|---|---|
-| 管理者ログイン | ✅ 成功 | `hasiken0229@gmail.com / hasiken0229` で確認 |
+- 管理者の認証情報は管理用CLIで設定し、初回ログイン時にパスワードを変更します。
 | 職員ログイン | ✅ 成功 | `staff001 / Staff1234!` で確認 |
 | 管理者画面 desktop | ✅ 正常 | console error なし |
 | 管理者画面 mobile | ✅ 正常 | 横スクロールなし |
@@ -90,9 +90,9 @@
 
 | ファイル | 変更理由 |
 |---|---|
-| [globals.css](file:///c:/Users/ikega/OneDrive/%E3%83%87%E3%82%B9%E3%82%AF%E3%83%88%E3%83%83%E3%83%97/%E8%81%B7%E5%93%A1%E6%89%93%E5%88%BB%E6%9C%89%E7%B5%A6%E7%94%B3%E8%AB%8B%E7%B5%A6%E4%B8%8E%E6%98%8E%E7%B4%B0%E3%82%A2%E3%83%97%E3%83%AA/src/admin-web/next-app/app/globals.css) | **主要変更対象** — CSS変数 + 一部ハードコード色の更新 |
-| [manifest.webmanifest](file:///c:/Users/ikega/OneDrive/%E3%83%87%E3%82%B9%E3%82%AF%E3%83%88%E3%83%83%E3%83%97/%E8%81%B7%E5%93%A1%E6%89%93%E5%88%BB%E6%9C%89%E7%B5%A6%E7%94%B3%E8%AB%8B%E7%B5%A6%E4%B8%8E%E6%98%8E%E7%B4%B0%E3%82%A2%E3%83%97%E3%83%AA/src/admin-web/next-app/public/manifest.webmanifest) | `background_color` と `theme_color` の変更 |
-| [icon.svg](file:///c:/Users/ikega/OneDrive/%E3%83%87%E3%82%B9%E3%82%AF%E3%83%88%E3%83%83%E3%83%97/%E8%81%B7%E5%93%A1%E6%89%93%E5%88%BB%E6%9C%89%E7%B5%A6%E7%94%B3%E8%AB%8B%E7%B5%A6%E4%B8%8E%E6%98%8E%E7%B4%B0%E3%82%A2%E3%83%97%E3%83%AA/src/admin-web/next-app/public/icon.svg) | アイコンの配色変更 |
+| [globals.css](file:///c:/Users/developer/OneDrive/%E3%83%87%E3%82%B9%E3%82%AF%E3%83%88%E3%83%83%E3%83%97/%E8%81%B7%E5%93%A1%E6%89%93%E5%88%BB%E6%9C%89%E7%B5%A6%E7%94%B3%E8%AB%8B%E7%B5%A6%E4%B8%8E%E6%98%8E%E7%B4%B0%E3%82%A2%E3%83%97%E3%83%AA/src/admin-web/next-app/app/globals.css) | **主要変更対象** — CSS変数 + 一部ハードコード色の更新 |
+| [manifest.webmanifest](file:///c:/Users/developer/OneDrive/%E3%83%87%E3%82%B9%E3%82%AF%E3%83%88%E3%83%83%E3%83%97/%E8%81%B7%E5%93%A1%E6%89%93%E5%88%BB%E6%9C%89%E7%B5%A6%E7%94%B3%E8%AB%8B%E7%B5%A6%E4%B8%8E%E6%98%8E%E7%B4%B0%E3%82%A2%E3%83%97%E3%83%AA/src/admin-web/next-app/public/manifest.webmanifest) | `background_color` と `theme_color` の変更 |
+| [icon.svg](file:///c:/Users/developer/OneDrive/%E3%83%87%E3%82%B9%E3%82%AF%E3%83%88%E3%83%83%E3%83%97/%E8%81%B7%E5%93%A1%E6%89%93%E5%88%BB%E6%9C%89%E7%B5%A6%E7%94%B3%E8%AB%8B%E7%B5%A6%E4%B8%8E%E6%98%8E%E7%B4%B0%E3%82%A2%E3%83%97%E3%83%AA/src/admin-web/next-app/public/icon.svg) | アイコンの配色変更 |
 
 > [!IMPORTANT]
 > テーマの大半は `globals.css` に集約されているため、**配色変更の中心は `:root` と既存グラデーションの更新**です。大規模な JSX 修正は不要ですが、PWA アイコンや manifest は別途更新が必要です。
@@ -281,7 +281,7 @@
 
 #### 3-1. 現状の職員ポータル機能確認
 
-現在の [employee-portal-section.tsx](file:///c:/Users/ikega/OneDrive/%E3%83%87%E3%82%B9%E3%82%AF%E3%83%88%E3%83%83%E3%83%97/%E8%81%B7%E5%93%A1%E6%89%93%E5%88%BB%E6%9C%89%E7%B5%A6%E7%94%B3%E8%AB%8B%E7%B5%A6%E4%B8%8E%E6%98%8E%E7%B4%B0%E3%82%A2%E3%83%97%E3%83%AA/src/admin-web/next-app/components/dashboard-sections/employee-portal-section.tsx) に実装済みの機能：
+現在の [employee-portal-section.tsx](file:///c:/Users/developer/OneDrive/%E3%83%87%E3%82%B9%E3%82%AF%E3%83%88%E3%83%83%E3%83%97/%E8%81%B7%E5%93%A1%E6%89%93%E5%88%BB%E6%9C%89%E7%B5%A6%E7%94%B3%E8%AB%8B%E7%B5%A6%E4%B8%8E%E6%98%8E%E7%B4%B0%E3%82%A2%E3%83%97%E3%83%AA/src/admin-web/next-app/components/dashboard-sections/employee-portal-section.tsx) に実装済みの機能：
 
 | 機能 | 実装状態 | 状況 |
 |---|---|---|

@@ -10,6 +10,7 @@
         Foreground="#27344D"
         Background="{Binding FeedbackBackground}">
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
         <Style x:Key="GradientButtonStyle" TargetType="Button">
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
@@ -117,15 +118,25 @@
                         <TextBlock Text="{Binding ResultDetail}" FontSize="18" Foreground="#53647F" TextAlignment="Center" TextWrapping="Wrap" Margin="0,0,0,12" />
                         <TextBlock Text="{Binding EmployeeName}" FontSize="50" FontWeight="Black" TextAlignment="Center" TextWrapping="Wrap" LineHeight="56" Margin="0,0,0,8" />
                         <TextBlock Text="{Binding LastEventType}" FontSize="28" Foreground="{Binding FeedbackAccent}" FontWeight="Bold" TextAlignment="Center" TextWrapping="Wrap" />
+                        <WrapPanel HorizontalAlignment="Center" Margin="0,8,0,0" Visibility="{Binding ShowShortShiftActions, Converter={StaticResource BoolToVisibility}}">
+                            <Button x:Name="ContinueWorkingButton" Content="勤務を続ける" MinHeight="44" Padding="14,4" Margin="4" />
+                            <Button x:Name="ConfirmShortShiftButton" Content="退勤する" MinHeight="44" Padding="14,4" Margin="4" IsEnabled="{Binding CanChooseShortShift}" />
+                        </WrapPanel>
                     </StackPanel>
 
-                    <TextBlock Grid.Row="2"
-                               Text="{Binding ReaderStatus}"
-                               Foreground="#7083A0"
-                               FontSize="12"
-                               TextAlignment="Center"
-                               TextTrimming="CharacterEllipsis"
-                               Margin="0,8,0,0" />
+                    <StackPanel Grid.Row="2" Margin="0,8,0,0">
+                        <TextBlock Text="{Binding ReaderStatus}"
+                                   Foreground="#7083A0"
+                                   FontSize="12"
+                                   TextAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding ClockDriftStatus}"
+                                   Foreground="#7083A0"
+                                   FontSize="12"
+                                   TextAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   Margin="0,3,0,0" />
+                    </StackPanel>
                 </Grid>
             </Border>
 
@@ -143,25 +154,37 @@
                         </Grid.RowDefinitions>
                         <StackPanel Grid.Row="0" Margin="0,0,0,10">
                             <TextBlock Text="直近10打刻履歴" FontSize="20" FontWeight="Bold" />
-                            <TextBlock Text="RC-S380 読取結果" FontSize="12" Foreground="#7083A0" />
+                            <TextBlock Text="{Binding ReceiptStatus}" FontSize="12" Foreground="#7083A0" TextWrapping="Wrap" />
+                            <Expander x:Name="TodayReceiptsExpander" Header="今日の確定打刻を照会（カード不要）" Margin="0,8,0,0">
+                                <ScrollViewer MaxHeight="190" VerticalScrollBarVisibility="Auto">
+                                    <StackPanel Margin="4">
+                                        <TextBlock Text="この端末の最新10件。別端末の打刻は職員ポータルの「最新情報を再読込」で確認できます。" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding TodayReceiptsText}" TextWrapping="Wrap" Margin="0,5,0,0" />
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Expander>
                         </StackPanel>
-                        <ItemsControl Grid.Row="1" ItemsSource="{Binding PunchHistory}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="White" BorderBrush="#DDE6FA" BorderThickness="1" CornerRadius="10" Padding="8" Margin="0,0,0,8">
-                                        <StackPanel>
-                                            <DockPanel>
-                                                <TextBlock Text="{Binding TimeText}" FontSize="18" FontWeight="Black" DockPanel.Dock="Left" />
-                                                <TextBlock Text="{Binding EventTypeText}" FontSize="14" Foreground="#27344D" FontWeight="Bold" HorizontalAlignment="Right" />
-                                            </DockPanel>
-                                            <TextBlock Text="{Binding EmployeeName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,3,0,0" />
-                                            <TextBlock Text="{Binding ResultText}" FontSize="12" Foreground="#53647F" TextWrapping="Wrap" MaxHeight="34" />
-                                            <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="#7083A0" />
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                        <ScrollViewer x:Name="PunchHistoryScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled" Focusable="True" IsTabStop="True"
+                                      AutomationProperties.Name="直近10打刻履歴">
+                            <ItemsControl ItemsSource="{Binding PunchHistory}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="White" BorderBrush="#DDE6FA" BorderThickness="1" CornerRadius="10" Padding="8" Margin="0,0,0,8">
+                                            <StackPanel>
+                                                <DockPanel>
+                                                    <TextBlock Text="{Binding TimeText}" FontSize="18" FontWeight="Black" DockPanel.Dock="Left" />
+                                                    <TextBlock Text="{Binding EventTypeText}" FontSize="14" Foreground="#27344D" FontWeight="Bold" HorizontalAlignment="Right" />
+                                                </DockPanel>
+                                                <TextBlock Text="{Binding EmployeeName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,3,0,0" />
+                                                <TextBlock Text="{Binding ResultText}" FontSize="12" Foreground="#53647F" TextWrapping="Wrap" MaxHeight="34" />
+                                                <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="#7083A0" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
                         <TextBlock Grid.Row="1" Text="まだ打刻履歴はありません" FontSize="14" Foreground="#7083A0" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
@@ -185,6 +208,9 @@
                             <TextBlock Text="{Binding Settings.DeviceName}" Margin="0,0,0,8" />
                             <TextBlock Text="カードリーダー状態" FontWeight="SemiBold" />
                             <TextBlock Text="{Binding ReaderStatus}" Margin="0,0,0,8" TextWrapping="Wrap" />
+                            <TextBlock Text="端末通信" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding LastHeartbeatText}" Margin="0,0,0,4" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding ClockDriftStatus}" Margin="0,0,0,8" TextWrapping="Wrap" />
                             <CheckBox Content="カード登録モード（打刻せずUIDだけ読む）"
                                       IsChecked="{Binding CardRegistrationModeEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                       FontWeight="SemiBold"
@@ -217,6 +243,19 @@
                             <TextBlock Text="{Binding CardRegistrationMessage}" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="#53647F" />
                             <TextBlock Text="未送信件数" FontWeight="SemiBold" />
                             <TextBlock Text="{Binding PendingCount}" Margin="0,0,0,12" FontSize="20" />
+                            <TextBlock Text="受付拒否・確認対象の保存結果" FontWeight="SemiBold" />
+                            <TextBlock Text="記録追加時に30日超を整理・最大200件。管理者が時刻と理由を確認してください。" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,8" />
+                            <ItemsControl ItemsSource="{Binding ReviewReceipts}" Margin="0,0,0,12">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,0,0,10">
+                                            <TextBlock Text="{Binding TimeText}" FontWeight="Bold" />
+                                            <TextBlock Text="{Binding ReasonText}" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding ReferenceText}" FontSize="11" TextWrapping="Wrap" Foreground="#53647F" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                             <TextBlock Text="模擬カードUID" FontWeight="SemiBold" />
                             <TextBox Text="{Binding SimulatedCardUid, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,10" Padding="8" FontSize="14" BorderBrush="#DDE6FA" Background="White" />
                             <Button x:Name="SimulateButton" Content="模擬スキャン" Height="38" Margin="0,0,0,10" Style="{StaticResource GradientButtonStyle}" Foreground="White">

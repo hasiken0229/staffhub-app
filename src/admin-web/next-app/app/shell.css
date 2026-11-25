@@ -208,6 +208,14 @@
   padding: 0 2px 2px;
 }
 
+.admin-primary-navigation {
+  display: contents;
+}
+
+.mobile-admin-nav-toggle {
+  display: none;
+}
+
 .nav-group {
   display: grid;
   gap: 6px;
@@ -248,7 +256,7 @@
 .nav-item {
   position: relative;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   justify-content: stretch;
   gap: 8px;
@@ -277,25 +285,6 @@
   white-space: nowrap;
   font-size: 13px;
   font-weight: 700;
-}
-
-.nav-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  color: var(--muted-strong);
-  border-radius: 10px;
-  background: rgba(111, 143, 229, 0.1);
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.nav-item.is-active .nav-icon,
-.nav-item:hover .nav-icon {
-  color: var(--primary-start);
-  background: rgba(255, 255, 255, 0.94);
 }
 
 .nav-badge {
@@ -370,4 +359,3 @@
 .skeleton-panel span:nth-child(3) {
   width: 68%;
 }
-

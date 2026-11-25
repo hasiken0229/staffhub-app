@@ -875,8 +875,8 @@ public sealed class InMemoryAppStore
     {
         _employees.AddRange(
         [
-            new EmployeeModel(1, "E0001", "山田 太郎", "ヤマダ タロウ", "総務部", "FULL_TIME", "ACTIVE", new DateOnly(2024, 4, 1), null),
-            new EmployeeModel(2, "E0002", "佐藤 花子", "サトウ ハナコ", "介護部", "PART_TIME", "ACTIVE", new DateOnly(2024, 4, 1), null),
+            new EmployeeModel(1, "E0001", "見本姓K 職員J", "ヤマダ タロウ", "総務部", "FULL_TIME", "ACTIVE", new DateOnly(2024, 4, 1), null),
+            new EmployeeModel(2, "E0002", "見本姓V 職員AU", "サトウ ハナコ", "介護部", "PART_TIME", "ACTIVE", new DateOnly(2024, 4, 1), null),
             new EmployeeModel(100, "A0001", "管理者", "カンリシャ", "管理部", "ADMIN", "ACTIVE", new DateOnly(2024, 4, 1), null)
         ]);
 
@@ -887,14 +887,14 @@ public sealed class InMemoryAppStore
         ]);
 
         _devices.Add(new AttendanceDeviceModel(1, "PC-ENTRANCE-01", "玄関端末", "玄関", "0.1.0", true, DateTimeOffset.Now.AddMinutes(-2)));
-        _cards.Add(new CardAssignmentModel(1, 1, "E0001", "山田 太郎", "0123456789ABCDEF", true, DateTimeOffset.Now.AddDays(-20), null));
-        _cards.Add(new CardAssignmentModel(2, 2, "E0002", "佐藤 花子", "1111222233334444", true, DateTimeOffset.Now.AddDays(-19), null));
+        _cards.Add(new CardAssignmentModel(1, 1, "E0001", "見本姓K 職員J", "0123456789ABCDEF", true, DateTimeOffset.Now.AddDays(-20), null));
+        _cards.Add(new CardAssignmentModel(2, 2, "E0002", "見本姓V 職員AU", "1111222233334444", true, DateTimeOffset.Now.AddDays(-19), null));
 
         _paidLeaveGrants.Add(new PaidLeaveGrantModel(1, 1, new DateOnly(2025, 4, 1), 10m, 1.5m, new DateOnly(2027, 3, 31), "初期付与"));
         _paidLeaveGrants.Add(new PaidLeaveGrantModel(2, 2, new DateOnly(2025, 4, 1), 10m, 0m, new DateOnly(2027, 3, 31), "初期付与"));
 
-        var leaveAction = new LeaveActionModel(1, 1, "APPLIED", 1, "山田 太郎", null, DateTimeOffset.Now.AddDays(-1));
-        _leaveRequests.Add(new LeaveRequestModel(1, 1, "山田 太郎", "PAID", "有給休暇", new DateOnly(2026, 4, 3), new DateOnly(2026, 4, 3), "HALF", "AM", 0.5m, "私用のため", "PENDING", null, null, null, DateTimeOffset.Now.AddDays(-1), [leaveAction]));
+        var leaveAction = new LeaveActionModel(1, 1, "APPLIED", 1, "見本姓K 職員J", null, DateTimeOffset.Now.AddDays(-1));
+        _leaveRequests.Add(new LeaveRequestModel(1, 1, "見本姓K 職員J", "PAID", "有給休暇", new DateOnly(2026, 4, 3), new DateOnly(2026, 4, 3), "HALF", "AM", 0.5m, "私用のため", "PENDING", null, null, null, DateTimeOffset.Now.AddDays(-1), [leaveAction]));
 
         _payrollStatements.Add(new PayrollStatementModel(1, 1, "2026-02", "salary_2026_02.pdf", DateTimeOffset.Now.AddDays(-1), false, "https://example.local/payroll/2026-02/salary_2026_02.pdf"));
         _payrollStatements.Add(new PayrollStatementModel(2, 1, "2026-01", "salary_2026_01.pdf", DateTimeOffset.Now.AddDays(-30), true, "https://example.local/payroll/2026-01/salary_2026_01.pdf"));
@@ -905,9 +905,9 @@ public sealed class InMemoryAppStore
 
         var previousDay = DateTime.Today.AddDays(-1);
         var previousDayStart = new DateTimeOffset(previousDay, TimeSpan.FromHours(9));
-        _attendanceEvents.Add(new AttendanceEventModel(1, 1, "E0001", "山田 太郎", 1, "PC-ENTRANCE-01", "玄関端末", "0123456789ABCDEF", previousDayStart.AddHours(8).AddMinutes(31), "CLOCK_IN", "ACCEPTED", null, false));
-        _attendanceEvents.Add(new AttendanceEventModel(2, 1, "E0001", "山田 太郎", 1, "PC-ENTRANCE-01", "玄関端末", "0123456789ABCDEF", previousDayStart.AddHours(17).AddMinutes(30), "CLOCK_OUT", "ACCEPTED", null, false));
-        _attendanceDaily.Add(new AttendanceDailyModel(1, "E0001", "山田 太郎", DateOnly.FromDateTime(previousDay), previousDayStart.AddHours(8).AddMinutes(31), previousDayStart.AddHours(17).AddMinutes(30), 539, false, false, null));
+        _attendanceEvents.Add(new AttendanceEventModel(1, 1, "E0001", "見本姓K 職員J", 1, "PC-ENTRANCE-01", "玄関端末", "0123456789ABCDEF", previousDayStart.AddHours(8).AddMinutes(31), "CLOCK_IN", "ACCEPTED", null, false));
+        _attendanceEvents.Add(new AttendanceEventModel(2, 1, "E0001", "見本姓K 職員J", 1, "PC-ENTRANCE-01", "玄関端末", "0123456789ABCDEF", previousDayStart.AddHours(17).AddMinutes(30), "CLOCK_OUT", "ACCEPTED", null, false));
+        _attendanceDaily.Add(new AttendanceDailyModel(1, "E0001", "見本姓K 職員J", DateOnly.FromDateTime(previousDay), previousDayStart.AddHours(8).AddMinutes(31), previousDayStart.AddHours(17).AddMinutes(30), 539, false, false, null));
         _auditLogs.Add(new AuditLogModel(1, "SYSTEM", null, "SEED_DATA_CREATED", "SYSTEM", "BOOTSTRAP", "初期データを生成しました。", DateTimeOffset.Now.AddMinutes(-5)));
     }
 

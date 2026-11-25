@@ -263,8 +263,8 @@ VALUES
 
 INSERT INTO employees (id, employee_code, name, kana, department_name, employment_type, status, joined_on, retired_on)
 VALUES
-    (1, 'E0001', '山田 太郎', 'ヤマダ タロウ', '総務部', 'FULL_TIME', 'ACTIVE', '2024-04-01', NULL),
-    (2, 'E0002', '佐藤 花子', 'サトウ ハナコ', '介護部', 'PART_TIME', 'ACTIVE', '2024-04-01', NULL),
+    (1, 'E0001', '見本姓K 職員J', 'ヤマダ タロウ', '総務部', 'FULL_TIME', 'ACTIVE', '2024-04-01', NULL),
+    (2, 'E0002', '見本姓V 職員AU', 'サトウ ハナコ', '介護部', 'PART_TIME', 'ACTIVE', '2024-04-01', NULL),
     (100, 'A0001', '管理者', 'カンリシャ', '管理部', 'ADMIN', 'ACTIVE', '2024-04-01', NULL);
 
 INSERT INTO employee_auth (employee_id, login_id, password_hash)

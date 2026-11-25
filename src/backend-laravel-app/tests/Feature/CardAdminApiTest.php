@@ -16,7 +16,7 @@ final class CardAdminApiTest extends TestCase
         $token = $this->issueAdminToken();
         $employeeId = (int) DB::table('employees')->insertGetId([
             'employee_code' => 'E0001',
-            'name' => '山田 太郎',
+            'name' => '見本姓K 職員J',
             'kana' => null,
             'department_name' => 'サンプル',
             'location_name' => '本園',
@@ -29,7 +29,7 @@ final class CardAdminApiTest extends TestCase
         ]);
         $cardId = (int) DB::table('employee_cards')->insertGetId([
             'employee_id' => $employeeId,
-            'card_uid' => '012E4CE15C908F48',
+            'card_uid' => 'D0D0D0D0D0D0D0D0',
             'is_active' => 1,
             'assigned_at' => now(),
             'revoked_at' => null,

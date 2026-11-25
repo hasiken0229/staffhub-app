@@ -22,11 +22,15 @@ vendor/
 
 # Frontend build output
 .next/
+.next-business/
+*.tsbuildinfo
 out/
 out-login/
 dist/
 build/
 coverage/
+test-results/
+playwright-report/
 
 # Laravel runtime output
 src/backend-laravel-app/bootstrap/cache/*.php
@@ -71,3 +75,17 @@ Thumbs.db
 # .NET artifacts
 bin/
 obj/
+
+# Private HRMOS migration source data and generated personal records
+migration-staging/2026-09-30/source/
+migration-staging/2026-09-30/prepared/
+
+# Private operational files and intermediate verification builds
+/migration-staging/
+/.audit-work/
+/.codex/
+.next-*/
+__pycache__/
+*.sqlite.*
+pending-punches.json
+punch-review-receipts.json

@@ -10,6 +10,7 @@ use App\Services\PayrollDefinitionService;
 use App\Services\PayrollImportBatchService;
 use App\Services\PayrollStatementService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 final class PayrollAdminController extends Controller
 {
@@ -18,8 +19,7 @@ final class PayrollAdminController extends Controller
         private readonly PayrollImportBatchService $payrollImportBatchService,
         private readonly PayrollDefinitionService $payrollDefinitionService,
         private readonly ImportHistoryService $importHistoryService,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request)
     {
@@ -148,7 +148,7 @@ final class PayrollAdminController extends Controller
 
             return response($template['csv'], 200, [
                 'Content-Type' => $template['contentType'],
-                'Content-Disposition' => 'attachment; filename="' . $template['fileName'] . '"',
+                'Content-Disposition' => 'attachment; filename="'.$template['fileName'].'"',
             ]);
         } catch (ApiException $exception) {
             return ApiResponse::error(
@@ -204,7 +204,41 @@ final class PayrollAdminController extends Controller
         ]);
 
         try {
-            return ApiResponse::ok($this->payrollImportBatchService->importFromCsv($payload, $request->file('file'), $request->user()));
+            $preflight = $this->payrollImportBatchService->previewFromCsv($payload, $request->file('file'));
+            return ApiResponse::ok(DB::transaction(function () use ($request, $payload, $preflight) {
+                $this->lockPreviewEmployees($preflight);
+                $preflight = $this->payrollImportBatchService->previewFromCsv($payload, $request->file('file'));
+                \App\Services\ImportPreviewFingerprint::assertMatches($request->input('previewFingerprint'), [...$payload, 'payrollState' => $preflight['stateFingerprint']], $request->file('file'));
+                return $this->payrollImportBatchService->importFromCsv($payload, $request->file('file'), $request->user());
+            }));
+        } catch (ApiException $exception) {
+            return ApiResponse::error(
+                $exception->errorCode,
+                $exception->getMessage(),
+                $exception->status,
+                $exception->details,
+            );
+        }
+    }
+
+    public function previewImportBatch(Request $request)
+    {
+        $payload = $request->validate([
+            'definitionId' => ['nullable', 'integer', 'min:1'],
+            'statementType' => ['required', 'string', 'in:PAYROLL,BONUS'],
+            'targetYearMonth' => ['required', 'string', 'size:7'],
+            'periodStartOn' => ['required', 'date'],
+            'periodEndOn' => ['required', 'date'],
+            'payDate' => ['required', 'date'],
+            'publishDate' => ['required', 'date'],
+            'remarks' => ['nullable', 'string'],
+            'file' => ['required', 'file', 'extensions:csv,txt', 'max:10240'],
+        ]);
+
+        try {
+            $result = $this->payrollImportBatchService->previewFromCsv($payload, $request->file('file'));
+            $result['previewFingerprint'] = \App\Services\ImportPreviewFingerprint::make([...$payload, 'payrollState' => $result['stateFingerprint']], $request->file('file'));
+            return ApiResponse::ok($result);
         } catch (ApiException $exception) {
             return ApiResponse::error(
                 $exception->errorCode,
@@ -225,7 +259,9 @@ final class PayrollAdminController extends Controller
         ]);
 
         try {
-            return ApiResponse::ok($this->payrollImportBatchService->previewLegacyCsv($payload, $request->file('file'), $request->user()));
+            $result = $this->payrollImportBatchService->previewLegacyCsv($payload, $request->file('file'), $request->user());
+            $result['previewFingerprint'] = \App\Services\ImportPreviewFingerprint::make([...$payload, 'payrollState' => $result['stateFingerprint']], $request->file('file'));
+            return ApiResponse::ok($result);
         } catch (ApiException $exception) {
             return ApiResponse::error(
                 $exception->errorCode,
@@ -275,7 +311,7 @@ final class PayrollAdminController extends Controller
 
             return response($export['content'], 200, [
                 'Content-Type' => $export['contentType'],
-                'Content-Disposition' => 'attachment; filename="' . $export['fileName'] . '"',
+                'Content-Disposition' => 'attachment; filename="'.$export['fileName'].'"',
             ]);
         } catch (ApiException $exception) {
             return ApiResponse::error(
@@ -297,7 +333,13 @@ final class PayrollAdminController extends Controller
         ]);
 
         try {
-            return ApiResponse::ok($this->payrollImportBatchService->importLegacyCsv($payload, $request->file('file'), $request->user()));
+            $preflight = $this->payrollImportBatchService->previewLegacyCsv($payload, $request->file('file'), $request->user());
+            return ApiResponse::ok(DB::transaction(function () use ($request, $payload, $preflight) {
+                $this->lockPreviewEmployees($preflight);
+                $preflight = $this->payrollImportBatchService->previewLegacyCsv($payload, $request->file('file'), $request->user());
+                \App\Services\ImportPreviewFingerprint::assertMatches($request->input('previewFingerprint'), [...$payload, 'payrollState' => $preflight['stateFingerprint']], $request->file('file'));
+                return $this->payrollImportBatchService->importLegacyCsv($payload, $request->file('file'), $request->user());
+            }));
         } catch (ApiException $exception) {
             return ApiResponse::error(
                 $exception->errorCode,
@@ -311,5 +353,13 @@ final class PayrollAdminController extends Controller
     public function downloadTemplateCsv(Request $request)
     {
         return $this->downloadDefinitionTemplateCsv($request);
+    }
+
+    private function lockPreviewEmployees(array $preview): void
+    {
+        // Storage takes the same employee lock. Keep preview verification and replacement in one transaction.
+        $ids = array_values(array_unique(array_column($preview['items'], 'employeeId')));
+        sort($ids, SORT_NUMERIC);
+        DB::table('employees')->whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get();
     }
 }

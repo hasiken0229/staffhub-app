@@ -30,6 +30,9 @@ export function buildDashboardOverviewSectionProps(params: UseDashboardSectionPr
       formatWorkMinutes,
       formatApprovalStatus,
     },
+    actions: {
+      onOpenQueue: params.handleDashboardNavigation,
+    },
   };
 }
 
@@ -46,6 +49,7 @@ export function buildEmployeesSectionProps(params: UseDashboardSectionPropsParam
       onEmployeeImport: params.handleEmployeeImport,
       onTemplateDownload: () => params.handleTemplateDownload("employees"),
       onEmployeeUpdate: params.handleEmployeeUpdate,
+      onUnsavedEditChange: params.setHasUnsavedEmployeeEdit,
     },
     formatters: {
       formatEmploymentType,
@@ -83,6 +87,7 @@ export function buildNoticesSectionProps(params: UseDashboardSectionPropsParams)
   return {
     data: {
       notices: params.dashboard.notices,
+      employees: params.dashboard.employees,
       activePanel: params.currentSubNavId,
     },
     form: {
@@ -128,6 +133,7 @@ export function buildAuditSectionProps(params: UseDashboardSectionPropsParams): 
   return {
     data: {
       auditLogs: params.dashboard.auditLogs,
+      pagination: params.dashboard.auditLogsPagination,
       activePanel: params.currentSubNavId,
     },
     filters: {
@@ -143,6 +149,7 @@ export function buildAuditSectionProps(params: UseDashboardSectionPropsParams): 
       onAuditToChange: params.setAuditTo,
       onApplyAuditFilters: params.applyAuditFilters,
       onResetAuditFilters: params.resetAuditFilters,
+      onAuditPageChange: params.loadAuditPage,
     },
     formatters: {
       formatDateTime,

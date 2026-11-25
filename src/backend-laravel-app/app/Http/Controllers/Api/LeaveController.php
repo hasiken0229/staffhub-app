@@ -10,13 +10,20 @@ use Illuminate\Http\Request;
 
 final class LeaveController extends Controller
 {
-    public function __construct(private readonly LeaveRequestService $leaveRequestService)
-    {
-    }
+    public function __construct(private readonly LeaveRequestService $leaveRequestService) {}
 
     public function balance(Request $request)
     {
-        return ApiResponse::ok($this->leaveRequestService->balance((int) $request->user()->id));
+        $payload = $request->validate([
+            'asOf' => ['nullable', 'date_format:Y-m-d'],
+            'through' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:asOf'],
+        ]);
+        $id = (int) $request->user()->id;
+        $result = $this->leaveRequestService->balance($id, $payload['asOf'] ?? null);
+        if (isset($payload['asOf'], $payload['through'])) {
+            $result['workdays'] = \App\Services\Leave\LeaveWorkdays::preview($id, $payload['asOf'], $payload['through']);
+        }
+        return ApiResponse::ok($result);
     }
 
     public function index(Request $request)
@@ -30,6 +37,20 @@ final class LeaveController extends Controller
         ]));
 
         return ApiResponse::ok($result['items'], $result['meta']);
+    }
+
+    public function standardDayMinutes(Request $request)
+    {
+        $payload = $request->validate([
+            'targetDate' => ['nullable', 'date'],
+        ]);
+
+        return ApiResponse::ok([
+            'standardDayMinutes' => $this->leaveRequestService->standardDayMinutesForEmployee(
+                (int) $request->user()->id,
+                $payload['targetDate'] ?? null,
+            ),
+        ]);
     }
 
     public function ledger(Request $request)
@@ -51,14 +72,16 @@ final class LeaveController extends Controller
         $payload = $request->validate([
             'requestCategory' => ['nullable', 'string', 'in:LEAVE,TIME_LEAVE'],
             'leaveTypeCode' => ['nullable', 'string', 'max:20'],
-            'startDate' => ['nullable', 'date'],
-            'endDate' => ['nullable', 'date'],
+            'startDate' => ['nullable', 'date_format:Y-m-d'],
+            'endDate' => ['nullable', 'date_format:Y-m-d'],
+            'expectedDates' => ['sometimes', 'array'],
+            'expectedDates.*' => ['date_format:Y-m-d', 'distinct'],
             'dayUnit' => ['nullable', 'string', 'max:10'],
             'halfDayType' => ['nullable', 'string', 'max:10'],
             'timeLeaveType' => ['nullable', 'string', 'in:PAID_HOURLY,CHILD_CARE_HOURLY,NURSING_CARE_HOURLY'],
-            'targetDate' => ['nullable', 'date'],
-            'startTime' => ['nullable', 'string', 'max:5'],
-            'endTime' => ['nullable', 'string', 'max:5'],
+            'targetDate' => ['required_if:requestCategory,TIME_LEAVE', 'nullable', 'date_format:Y-m-d'],
+            'startTime' => ['required_if:requestCategory,TIME_LEAVE', 'nullable', 'date_format:H:i'],
+            'endTime' => ['required_if:requestCategory,TIME_LEAVE', 'nullable', 'date_format:H:i'],
             'quantityMinutes' => ['nullable', 'integer', 'min:1'],
             'reason' => ['nullable', 'string'],
         ]);

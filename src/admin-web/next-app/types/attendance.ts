@@ -9,7 +9,25 @@ export type AttendanceEvent = {
   cardUid: string;
 };
 
+export type AttendanceDeviceStatus = {
+  id: number;
+  deviceCode: string;
+  name: string;
+  locationName?: string | null;
+  appVersion?: string | null;
+  lastSeenAt?: string | null;
+  clientTimeAt?: string | null;
+  diagnosticsSchemaReady?: boolean;
+  clockDriftSeconds?: number | null;
+  pendingOfflineCount: number | null;
+  readerStatus?: string | null;
+  isActive: boolean;
+};
+
 export type AttendanceDaily = {
+  dayState?: "FUTURE" | "HOLIDAY" | "LEAVE" | "WORKING" | "NOT_DUE" | "COMPLETE" | "MISSING";
+  periodStart?: string;
+  periodEnd?: string;
   id: number | null;
   employeeId: number;
   employeeCode: string;
@@ -24,17 +42,27 @@ export type AttendanceDaily = {
   clockInAt?: string | null;
   clockOutAt?: string | null;
   breakMinutes?: number;
+  breakReview?: AttendanceBreakReview;
   workMinutes?: number | null;
+  reportWorkMinutes?: number | null;
+  overtimeMinutes?: number | null;
+  overtimeMinutesOverride?: number | null;
   isManuallyEdited?: boolean;
+  scheduleInferredSide?: "CLOCK_IN" | "CLOCK_OUT" | null;
+  sourceSystem?: string | null;
+  timeSource?: "MANUAL" | "SCHEDULE" | "IMPORTED" | "RULE" | "PUNCH";
   absenceFlag: boolean;
   specialLeaveFlag: boolean;
   paidLeaveUnit?: number | null;
   hourPaidLeaveMinutes?: number;
   childCareLeaveMinutes?: number;
   nursingCareLeaveMinutes?: number;
+  childCareLeaveDays?: number;
+  nursingCareLeaveDays?: number;
   remark?: string | null;
   supervisorComment?: string | null;
   approvalStatus?: string;
+  approvalReviewReason?: string | null;
   approvalComment?: string | null;
   approvedAt?: string | null;
   closeStatus?: string;
@@ -44,6 +72,18 @@ export type AttendanceDaily = {
   workStyleName?: string;
   graphSegments?: AttendanceGraphSegment[];
   breaks?: AttendanceDailyBreak[];
+};
+
+export type AttendanceBreakReview = {
+  source: "AUTOMATIC" | "MANUAL_OR_RETAINED" | "IMPORTED" | "UNDETERMINED" | "ADMIN_RULE";
+  sourceLabel: string;
+  recordedMinutes: number;
+  actualBreakStatus: "UNCONFIRMED" | "CONFIRMED";
+  requiredMinutes: number | null;
+  shortageMinutes: number | null;
+  needsConfirmation: boolean;
+  note: string;
+  message: string | null;
 };
 
 export type AttendanceDailyBreak = {
@@ -58,11 +98,53 @@ export type AttendanceDailyBreak = {
 };
 
 export type AttendanceDailyDetail = AttendanceDaily & {
+  breakOvertimeReview?: { breakMinutes: number; workMinutes: number; overtimeMinutes: number; confirmationSource?: "ACTUAL" | "ADMIN_RULE" } | null;
+  adoptionReasons?: string[];
   id: number;
   employmentType?: string | null;
   manualEditedByName?: string | null;
   manualEditedByCode?: string | null;
   hasHistories?: boolean;
+};
+
+export type BreakOvertimeInputs = {
+  plannedStart?: string;
+  startBasis?: "RULE" | "ACTUAL";
+  actualStart?: string;
+  actualStartNextDay?: boolean;
+  actualBreakMinutes?: number;
+  breakBasis?: "SCHEDULE_END" | "REGULAR_PUNCH";
+};
+
+export type BreakOvertimePreview = {
+  eligible: boolean;
+  message?: string | null;
+  defaultStartBasis?: "RULE" | null;
+  defaultBreakMinutes?: number | null;
+  defaultBreakBasis?: BreakOvertimeInputs["breakBasis"];
+  scheduledEnd?: string | null;
+  scheduledEndSource?: string | null;
+  additionalBreakStart?: string | null;
+  additionalBreakStartSource?: "PLANNED_START_8H45" | null;
+  additionalBreakMinutes?: number | null;
+  ruleKind?: string | null;
+  plannedStart: string | null;
+  plannedStartSource: string | null;
+  recordedBreakMinutes: number;
+  branch: "SCHEDULED" | "RAW" | "ACTUAL" | null;
+  adoptedStart: string | null;
+  rawEnd: string | null;
+  breakMinutes: number | null;
+  workMinutes: number | null;
+  overtimeMinutes: number | null;
+  token: string | null;
+  canApply: boolean;
+};
+
+export type BreakOvertimeConfirmation = BreakOvertimeInputs & {
+  startBasis: "RULE" | "ACTUAL";
+  token: string;
+  confirmed: true;
 };
 
 export type AttendanceDailyHistory = {
@@ -133,6 +215,8 @@ export type AttendanceMonthCloseStatusRow = {
   };
   targetYearMonth: string;
   unsubmittedCount: number;
+  missingBreakdown?: { workday: number; future: number; holiday: number; today: number };
+  dayDetails?: Array<{ targetDate: string; dailyId: number | null; state: string; approvalStatus: string | null; notElapsed?: boolean; holidayName?: string | null; shift?: { name: string | null; start: string | null; end: string | null } | null; incompleteApproved?: boolean }>;
   pendingCount: number;
   returnedCount: number;
   approvedCount: number;
@@ -147,6 +231,13 @@ export type AttendanceMonthCloseCheckItem = {
   label: string;
   count: number;
   message: string;
+};
+
+export type AttendanceApprovalCandidate = { daily: AttendanceDaily; eligible: boolean; reasons: string[]; fingerprint: string };
+export type AttendanceApprovalPreview = { targetMonth: string; items: AttendanceApprovalCandidate[]; eligibleCount: number; excludedCount: number };
+export type AttendanceBatchResult = {
+  targetMonth?: string; updatedCount: number; unchangedCount?: number; skippedCount?: number; errorCount: number;
+  errors: Array<{ id: number; code: string; message: string; status: "FAILED" | "UNKNOWN" | "SKIPPED" }>;
 };
 
 export type AttendanceMonthClosePrecheck = {
@@ -172,6 +263,13 @@ export type AttendanceMonthClosePrecheck = {
 };
 
 export type AttendanceDailyEditRequest = {
+  reviewConflict?: string | null;
+  reviewChanges?: Array<{ label: string; original: string; current: string; requested: string }>;
+  effectiveClockInAt?: string | null;
+  effectiveClockOutAt?: string | null;
+  currentDaily?: AttendanceDailyDetail | null;
+  proposedBreakMinutes?: number;
+  proposedWorkMinutes?: number | null;
   id: number;
   employee: {
     id: number;
@@ -232,6 +330,7 @@ export type AttendanceGraphSegment = {
 
 export type AttendanceMonthlyCloseSummary = {
   targetYearMonth: string;
+  isAvailable?: boolean;
   status: string;
   note?: string | null;
   closedAt?: string | null;

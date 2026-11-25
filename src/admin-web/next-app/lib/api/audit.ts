@@ -1,7 +1,7 @@
 import type { AuditLog } from "@/types";
-import { buildQuery, fetchJson } from "@/lib/api/core";
+import { buildQuery, fetchJsonPage } from "@/lib/api/core";
 
-export async function loadAuditLogs(filters?: {
+export async function loadAuditLogsPage(filters?: {
   actor?: string;
   action?: string;
   from?: string;
@@ -9,5 +9,5 @@ export async function loadAuditLogs(filters?: {
   page?: number;
   perPage?: number;
 }) {
-  return fetchJson<AuditLog[]>(`/api/admin/audit-logs${buildQuery(filters ?? {})}`);
+  return fetchJsonPage<AuditLog>(`/api/admin/audit-logs${buildQuery({ perPage: 100, ...filters })}`);
 }

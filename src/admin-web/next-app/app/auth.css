@@ -288,3 +288,17 @@
   justify-self: start;
 }
 
+.login-card-simple .login-note { color: #495b73; }
+.login-form input { min-height: 44px; font-size: 16px; }
+.login-form button { min-height: 44px; }
+.login-form .login-submit {
+  min-height: 48px;
+  color: #fff;
+  background: #254d91;
+}
+.login-form .login-help-button { color: #254d91; }
+.login-form :is(input, button):focus-visible { outline: 3px solid #2d5296; outline-offset: 2px; }
+.login-feedback { margin: 8px 0; color: #31455d; font-size: 15px; line-height: 1.5; }
+.login-feedback[role="alert"] { color: #8b263b; }
+.login-feedback:empty { margin: 0; }
+

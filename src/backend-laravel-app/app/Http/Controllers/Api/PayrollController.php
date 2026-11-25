@@ -58,11 +58,12 @@ final class PayrollController extends Controller
     {
         $request->validate([
             'viewedAt' => ['required', 'date'],
+            'revision' => ['nullable', 'integer', 'min:1'],
         ]);
 
         try {
             return ApiResponse::ok(
-                $this->payrollStatementService->markViewed((int) $request->user()->id, $id, $request->input('viewedAt'))
+                $this->payrollStatementService->markViewed((int) $request->user()->id, $id, $request->input('viewedAt'), $request->integer('revision') ?: null)
             );
         } catch (ApiException $exception) {
             return ApiResponse::error(

@@ -16,6 +16,7 @@ export type LeaveRequest = {
   dayUnit?: string;
   halfDayType?: string | null;
   quantityDays?: number;
+  effectiveDates?: string[] | null;
   requestCategory?: "LEAVE" | "TIME_LEAVE" | string;
   timeLeaveType?: "PAID_HOURLY" | "CHILD_CARE_HOURLY" | "NURSING_CARE_HOURLY" | string | null;
   targetDate?: string | null;
@@ -46,6 +47,7 @@ export type LeaveDecisionResult = {
 };
 
 export type LeaveRequestCreatePayload = {
+  expectedDates?: string[];
   requestCategory?: "LEAVE" | "TIME_LEAVE";
   leaveTypeCode?: string;
   startDate?: string;
@@ -61,6 +63,7 @@ export type LeaveRequestCreatePayload = {
 };
 
 export type LeaveRequestCreateResult = {
+  effectiveDates?: string[] | null;
   id: number;
   status: string;
   quantityDays: number;
@@ -76,5 +79,29 @@ export type LeaveLedgerEntry = {
   daysDelta: number;
   balanceAfter?: number | null;
   note?: string | null;
-  createdAt: string;
+  createdAt: string | null;
+};
+
+export type PaidLeaveGrantLot = {
+  id: number; grantedOn: string; grantedDays: number; usedDays: number; adjustedDays?: number; remainingDays: number;
+  expiresOn: string | null; note: string | null; sourceSystem: string | null;
+  originalGrantedOn: string | null; expiryNeedsReview: boolean; expiryReviewedAt: string | null; evidenceReference: string | null;
+};
+export type AdminLeaveBalance = {
+  employeeId: number; asOf: string; currentBalance: number; availableDays: number; futureApprovedDays: number; grants: PaidLeaveGrantLot[];
+};
+export type GrantReviewPayload = {
+  lots: Array<{ days: number; expiresOn: string; originalGrantedOn?: string }>;
+  evidenceReference: string;
+};
+export type GrantReviewPreview = GrantReviewPayload & {
+  grantId: number; employeeId: number; effectiveOn: string; totalDays: number; beforeBalance: number; afterBalance: number; fingerprint: string;
+};
+export type AttendanceLeaveValues = {
+  absence_flag: number; special_leave_flag: number; paid_leave_unit: number | null;
+  hour_paid_leave_minutes: number; child_care_leave_minutes: number; nursing_care_leave_minutes: number;
+};
+export type AttendanceLeaveBaseline = {
+  employeeId: number; targetDate: string; current: AttendanceLeaveValues; applied: AttendanceLeaveValues;
+  baseline: AttendanceLeaveValues | null; requestIds: number[]; fingerprint: string; requiresDuplicateResolution?: boolean;
 };

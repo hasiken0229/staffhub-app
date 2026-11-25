@@ -3,6 +3,7 @@ import type {
   AttendanceDaily,
   AttendanceDailyEditRequest,
   AttendanceBreakRule,
+  AttendanceDeviceStatus,
   AttendanceErrorReportRow,
   AttendanceEvent,
   AttendanceMonthClosePrecheck,
@@ -29,8 +30,8 @@ import type {
   ReportHubSummary,
   SystemMasters,
 } from "@/types";
-import { fetchHealthStatus, fetchJson, fetchJsonOptional, toDateValue, toMonthValue } from "@/lib/api/core";
-import { emptyData } from "@/lib/dashboard-defaults";
+import { buildQuery, fetchHealthStatus, fetchJson, fetchJsonOptional, fetchJsonPage, toDateValue, toMonthValue } from "@/lib/api/core";
+import { emptyData, emptyEmployeePortal } from "@/lib/dashboard-defaults";
 
 type AdminSectionKey =
   | "dashboard"
@@ -45,7 +46,41 @@ type AdminSectionKey =
   | "system"
   | "audit";
 
-export async function loadDashboardData(): Promise<DashboardData> {
+export type AttendanceSectionLoadOptions = {
+  targetMonth?: string;
+  employeeCode?: string;
+  departmentName?: string;
+  approvalStatus?: string;
+  eventFrom?: string;
+  eventTo?: string;
+  errorCode?: string;
+  errorHandlingStatus?: string;
+  monthCloseApprovalStatus?: string;
+  monthCloseStatus?: string;
+};
+
+function unavailableMonthClosePrecheck(targetYearMonth: string): AttendanceMonthClosePrecheck {
+  return {
+    targetYearMonth,
+    canClose: false,
+    blockers: [{
+      code: "CHECK_UNAVAILABLE",
+      label: "確認未取得",
+      count: 1,
+      message: "月締前チェックを取得できないため、月締めできません。",
+    }],
+    payrollReady: false,
+    payrollBlockers: [{
+      code: "CHECK_UNAVAILABLE",
+      label: "確認未取得",
+      count: 1,
+      message: "給与連携前チェックを取得できません。",
+    }],
+    payrollWarnings: [],
+  };
+}
+
+export async function loadDashboardData(): Promise<Partial<DashboardData>> {
   const today = new Date();
   const todayValue = toDateValue(today);
   const monthValue = toMonthValue(today);
@@ -59,7 +94,6 @@ export async function loadDashboardData(): Promise<DashboardData> {
   ]);
 
   return {
-    ...emptyData,
     health,
     employees,
     todayDaily: reportTodayAttendance,
@@ -74,11 +108,24 @@ export async function loadDashboardData(): Promise<DashboardData> {
     attendanceMonthlyClose: {
       ...emptyData.attendanceMonthlyClose,
       targetYearMonth: monthValue,
+      isAvailable: false,
     },
   };
 }
 
-export async function loadAdminSectionData(section: AdminSectionKey): Promise<Partial<DashboardData>> {
+export async function loadAdminSectionData(section: AdminSectionKey, attendanceOptions?: AttendanceSectionLoadOptions): Promise<Partial<DashboardData>> {
+  if (section === "dashboard" || section === "reports") return loadAdminSectionDataInner(section, attendanceOptions);
+  const [sectionData, reportsHub] = await Promise.all([
+    loadAdminSectionDataInner(section, attendanceOptions),
+    fetchJson<ReportHubSummary>("/api/admin/reports/hub").catch(() => ({ ...emptyData.reportsHub, checkedAt: undefined })),
+  ]);
+  return { ...sectionData, reportsHub };
+}
+
+async function loadAdminSectionDataInner(
+  section: AdminSectionKey,
+  attendanceOptions?: AttendanceSectionLoadOptions,
+): Promise<Partial<DashboardData>> {
   const today = new Date();
   const todayValue = toDateValue(today);
   const monthValue = toMonthValue(today);
@@ -121,8 +168,15 @@ export async function loadAdminSectionData(section: AdminSectionKey): Promise<Pa
   }
 
   if (section === "attendance") {
+    const targetMonth = attendanceOptions?.targetMonth || monthValue;
+    const employeeCode = attendanceOptions?.employeeCode || undefined;
+    const departmentName = attendanceOptions?.departmentName || undefined;
+    const approvalStatus = attendanceOptions?.approvalStatus || undefined;
+    const eventFrom = attendanceOptions?.eventFrom || undefined;
+    const eventTo = attendanceOptions?.eventTo || undefined;
     const [
       attendance,
+      attendanceDevices,
       todayAttendance,
       attendanceDaily,
       dailyGrid,
@@ -135,24 +189,32 @@ export async function loadAdminSectionData(section: AdminSectionKey): Promise<Pa
       employeeAttendanceSettings,
       attendanceShiftSchedules,
       attendanceBreakRule,
+      systemMasters,
     ] = await Promise.all([
-      fetchJson<AttendanceEvent[]>("/api/admin/attendance/events"),
+      fetchJson<AttendanceEvent[]>(`/api/admin/attendance/events${buildQuery({ from: eventFrom, to: eventTo, employeeCode })}`),
+      fetchJson<AttendanceDeviceStatus[]>("/api/admin/attendance/devices"),
       fetchJson<AttendanceEvent[]>(`/api/admin/attendance/events?from=${todayValue}&to=${todayValue}`),
-      fetchJson<AttendanceDaily[]>(`/api/admin/attendance/daily?targetMonth=${monthValue}`),
-      fetchJson<AttendanceDaily[]>(`/api/admin/attendance/daily-grid?targetMonth=${monthValue}`),
-      fetchJson<AttendanceApproval[]>("/api/admin/attendance/approvals?status=PENDING"),
-      fetchJson<AttendanceErrorReportRow[]>(`/api/admin/attendance/errors?fromMonth=${monthValue}&toMonth=${monthValue}`),
-      fetchJson<AttendanceMonthCloseStatusRow[]>(`/api/admin/attendance/month-close-status?targetMonth=${monthValue}`),
-      fetchJsonOptional<AttendanceMonthClosePrecheck>(`/api/admin/attendance/month-close/precheck?targetMonth=${monthValue}`, emptyData.attendanceMonthClosePrecheck!),
-      fetchJson<AttendanceDailyEditRequest[]>("/api/admin/attendance/daily-edit-requests?status=PENDING"),
-      fetchJsonOptional<AttendanceMonthlyCloseSummary>(`/api/admin/attendance/month-close?targetMonth=${monthValue}`, emptyData.attendanceMonthlyClose),
+      fetchJson<AttendanceDaily[]>(`/api/admin/attendance/daily${buildQuery({ targetMonth, employeeCode, departmentName })}`),
+      fetchJson<AttendanceDaily[]>(`/api/admin/attendance/daily-grid${buildQuery({ targetMonth, employeeCode, departmentName })}`),
+      fetchJson<AttendanceApproval[]>(`/api/admin/attendance/approvals${buildQuery({ status: attendanceOptions?.approvalStatus === "" ? "ALL" : approvalStatus, from: eventFrom, to: eventTo, employeeCode, departmentName })}`),
+      fetchJson<AttendanceErrorReportRow[]>(`/api/admin/attendance/errors${buildQuery({ fromMonth: targetMonth, toMonth: targetMonth, errorCode: attendanceOptions?.errorCode, handlingStatus: attendanceOptions?.errorHandlingStatus, employeeCode, departmentName, approvalStatus })}`),
+      fetchJson<AttendanceMonthCloseStatusRow[]>(`/api/admin/attendance/month-close-status${buildQuery({ targetMonth, employeeCode, departmentName, approvalStatus: attendanceOptions?.monthCloseApprovalStatus, closeStatus: attendanceOptions?.monthCloseStatus, page:1, perPage:10000 })}`),
+      fetchJsonOptional<AttendanceMonthClosePrecheck>(`/api/admin/attendance/month-close/precheck?targetMonth=${targetMonth}`, unavailableMonthClosePrecheck(targetMonth)),
+      fetchJson<AttendanceDailyEditRequest[]>(`/api/admin/attendance/daily-edit-requests${buildQuery({ status: "PENDING", employeeCode, departmentName, from: eventFrom, to: eventTo })}`),
+      fetchJsonOptional<AttendanceMonthlyCloseSummary>(`/api/admin/attendance/month-close?targetMonth=${targetMonth}`, {
+        ...emptyData.attendanceMonthlyClose,
+        targetYearMonth: targetMonth,
+        isAvailable: false,
+      }),
       fetchJson<EmployeeAttendanceSetting[]>("/api/admin/attendance/employee-settings"),
-      fetchJson<AttendanceShiftSchedule[]>(`/api/admin/attendance/shift-schedules?targetMonth=${monthValue}`),
+      fetchJson<AttendanceShiftSchedule[]>(`/api/admin/attendance/shift-schedules?targetMonth=${targetMonth}`),
       fetchJsonOptional<AttendanceBreakRule | null>("/api/admin/attendance/break-rules", null),
+      fetchJson<SystemMasters>("/api/admin/system-masters"),
     ]);
 
     return {
       attendance,
+      attendanceDevices,
       todayAttendance,
       attendanceDaily,
       todayDaily: attendanceDaily.filter((item) => item.targetDate === todayValue),
@@ -166,18 +228,20 @@ export async function loadAdminSectionData(section: AdminSectionKey): Promise<Pa
       employeeAttendanceSettings,
       attendanceShiftSchedules,
       attendanceBreakRule,
+      systemMasters,
     };
   }
 
   if (section === "leave") {
-    const [employees, leaveRequests, workProcedures, paidLeaveReport] = await Promise.all([
+    const [employees, leaveRequests, workProcedures, paidLeaveReport, systemMasters] = await Promise.all([
       fetchJson<Employee[]>("/api/admin/employees"),
       fetchJson<LeaveRequest[]>("/api/admin/leave/requests"),
       fetchJson<LeaveRequest[]>("/api/admin/work-procedures?status=PENDING"),
       fetchJson<PaidLeaveReportRow[]>("/api/admin/reports/paid-leave"),
+      fetchJson<SystemMasters>("/api/admin/system-masters"),
     ]);
 
-    return { employees, leaveRequests, workProcedures, paidLeaveReport };
+    return { employees, leaveRequests, workProcedures, paidLeaveReport, systemMasters };
   }
 
   if (section === "notices") {
@@ -209,7 +273,7 @@ export async function loadAdminSectionData(section: AdminSectionKey): Promise<Pa
     const [reportsHub, reportTodayAttendance, reportAttendanceApprovals, paidLeaveReport, importHistory] = await Promise.all([
       fetchJson<ReportHubSummary>("/api/admin/reports/hub"),
       fetchJson<AttendanceDaily[]>(`/api/admin/reports/today-attendance?targetDate=${todayValue}`),
-      fetchJson<AttendanceApproval[]>("/api/admin/reports/attendance-approvals"),
+      fetchJson<AttendanceApproval[]>("/api/admin/reports/attendance-approvals?page=1&perPage=100"),
       fetchJson<PaidLeaveReportRow[]>("/api/admin/reports/paid-leave"),
       fetchJson<ImportHistory[]>("/api/admin/files/history"),
     ]);
@@ -226,8 +290,8 @@ export async function loadAdminSectionData(section: AdminSectionKey): Promise<Pa
   }
 
   if (section === "audit") {
-    const auditLogs = await fetchJson<AuditLog[]>("/api/admin/audit-logs");
-    return { auditLogs };
+    const auditLogs = await fetchJsonPage<AuditLog>("/api/admin/audit-logs?page=1&perPage=100");
+    return { auditLogs: auditLogs.items, auditLogsPagination: auditLogs.meta };
   }
 
   return {};
@@ -275,41 +339,15 @@ export async function loadDashboardDataFull(): Promise<DashboardData> {
     fetchJson<AttendanceDaily[]>(`/api/admin/attendance/daily-grid?targetMonth=${monthValue}`),
     fetchJson<AttendanceApproval[]>(`/api/admin/attendance/approvals?status=PENDING`),
     fetchJson<AttendanceErrorReportRow[]>(`/api/admin/attendance/errors?fromMonth=${monthValue}&toMonth=${monthValue}`),
-    fetchJson<AttendanceMonthCloseStatusRow[]>(`/api/admin/attendance/month-close-status?targetMonth=${monthValue}`),
-    fetchJsonOptional<AttendanceMonthClosePrecheck>(`/api/admin/attendance/month-close/precheck?targetMonth=${monthValue}`, {
-      targetYearMonth: monthValue,
-      canClose: true,
-      blockers: [],
-      summary: {
-        unsubmittedDailyCount: 0,
-        pendingApprovalCount: 0,
-        returnedApprovalCount: 0,
-        openErrorCount: 0,
-        inProgressErrorCount: 0,
-        pendingDailyEditRequestCount: 0,
-        dailyCount: 0,
-        closedDailyCount: 0,
-        openDailyCount: 0,
-        payrollBatchCount: 0,
-        monthCloseStatus: "OPEN",
-      },
-      payrollReady: false,
-      payrollBlockers: [
-        {
-          code: "MONTH_NOT_CLOSED",
-          label: "月締未完了",
-          count: 1,
-          message: "給与連携前に対象月を月締めしてください。",
-        },
-      ],
-      payrollWarnings: [],
-    }),
+    fetchJson<AttendanceMonthCloseStatusRow[]>(`/api/admin/attendance/month-close-status${buildQuery({targetMonth:monthValue,page:1,perPage:10000})}`),
+    fetchJsonOptional<AttendanceMonthClosePrecheck>(`/api/admin/attendance/month-close/precheck?targetMonth=${monthValue}`, unavailableMonthClosePrecheck(monthValue)),
     fetchJson<AttendanceDailyEditRequest[]>("/api/admin/attendance/daily-edit-requests?status=PENDING"),
     fetchJson<LeaveRequest[]>("/api/admin/leave/requests"),
     fetchJson<LeaveRequest[]>("/api/admin/work-procedures?status=PENDING"),
     fetchJsonOptional<AttendanceMonthlyCloseSummary>(`/api/admin/attendance/month-close?targetMonth=${monthValue}`, {
       targetYearMonth: monthValue,
       status: "OPEN",
+      isAvailable: false,
       note: null,
       closedAt: null,
       closedByName: null,
@@ -328,11 +366,11 @@ export async function loadDashboardDataFull(): Promise<DashboardData> {
     fetchJson<Notice[]>("/api/admin/notices"),
     fetchJson<ReportHubSummary>("/api/admin/reports/hub"),
     fetchJson<AttendanceDaily[]>(`/api/admin/reports/today-attendance?targetDate=${todayValue}`),
-    fetchJson<AttendanceApproval[]>("/api/admin/reports/attendance-approvals"),
+    fetchJson<AttendanceApproval[]>("/api/admin/reports/attendance-approvals?page=1&perPage=100"),
     fetchJson<PaidLeaveReportRow[]>("/api/admin/reports/paid-leave"),
     fetchJson<SystemMasters>("/api/admin/system-masters"),
     fetchJson<EnvironmentStatus>("/api/admin/environment"),
-    fetchJson<AuditLog[]>("/api/admin/audit-logs"),
+    fetchJsonPage<AuditLog>("/api/admin/audit-logs?page=1&perPage=100"),
   ]);
 
   const todayDaily = attendanceDaily.filter((item) => item.targetDate === todayValue);
@@ -365,12 +403,17 @@ export async function loadDashboardDataFull(): Promise<DashboardData> {
     paidLeaveReport,
     systemMasters,
     environment,
-    auditLogs,
+    auditLogs: auditLogs.items,
+    auditLogsPagination: auditLogs.meta,
   };
 }
 
-export async function loadEmployeePortalData(): Promise<EmployeePortalData> {
-  const monthValue = toMonthValue(new Date());
+export async function loadEmployeePortalData(targetMonth?: string, todayOnly = false): Promise<EmployeePortalData> {
+  if (todayOnly) {
+    const today = await loadEmployeeToday();
+    return { ...emptyEmployeePortal, home: { ...emptyEmployeePortal.home, ...today } };
+  }
+  const monthValue = targetMonth || toMonthValue(new Date());
   const [home, leaveRequests, attendanceDaily, attendanceDailyEditRequests, payroll, notifications, leaveLedger] = await Promise.all([
     loadEmployeePortalHome(),
     loadEmployeeLeaveRequests(),
@@ -382,6 +425,7 @@ export async function loadEmployeePortalData(): Promise<EmployeePortalData> {
   ]);
 
   return {
+    attendanceTargetMonth: monthValue,
     home,
     leaveRequests,
     attendanceDaily,
@@ -394,6 +438,18 @@ export async function loadEmployeePortalData(): Promise<EmployeePortalData> {
 
 export async function loadEmployeePortalHome() {
   return fetchJson<MobileHome>("/api/mobile/home");
+}
+
+export function loadEmployeeToday() {
+  return fetchJson<Pick<MobileHome, "employee" | "todayAttendance" | "checkedAt">>("/api/mobile/home?view=today");
+}
+
+export function loadEmployeeAttention() {
+  return fetchJson<Pick<MobileHome, "returnedRequestCount" | "unreadNotificationCount">>("/api/mobile/home?view=attention");
+}
+
+export function loadEmployeeLeaveOptions() {
+  return fetchJson<Pick<MobileHome, "pendingLeaveCount" | "paidLeaveBalance" | "hourlyPaidLeaveBalance" | "leaveTypes">>("/api/mobile/home?view=leave");
 }
 
 export async function loadEmployeeLeaveRequests() {

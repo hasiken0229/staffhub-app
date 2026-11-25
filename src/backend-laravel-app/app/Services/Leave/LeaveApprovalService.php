@@ -3,6 +3,7 @@
 namespace App\Services\Leave;
 
 use App\Services\ApiException;
+use App\Services\Attendance\MonthMutationLock;
 use Illuminate\Auth\GenericUser;
 use Illuminate\Support\Facades\DB;
 
@@ -32,6 +33,9 @@ final class LeaveApprovalService extends LeaveRequestSupport
             ->join('employees as e', 'e.id', '=', 'lr.employee_id')
             ->join('leave_types as lt', 'lt.code', '=', 'lr.leave_type_code')
             ->leftJoin('employees as approver', 'approver.id', '=', 'lr.approved_by')
+            ->leftJoin('users as admin_approver', function ($join) {
+                $join->on('admin_approver.id', '=', 'lr.approved_actor_id')->where('lr.approved_actor_type', 'ADMIN');
+            })
             ->select([
                 'lr.id',
                 'lr.employee_id',
@@ -41,12 +45,12 @@ final class LeaveApprovalService extends LeaveRequestSupport
                 'e.location_name',
                 'e.employment_type',
                 'lr.leave_type_code',
-                'lt.name as leave_type_name',
+                DB::raw('COALESCE(lr.attendance_label, lt.name) as leave_type_name'),
                 'lr.start_date',
                 'lr.end_date',
                 'lr.day_unit',
                 'lr.half_day_type',
-                'lr.quantity_days',
+                'lr.quantity_days', 'lr.hourly_day_minutes', 'lr.effective_dates',
                 'lr.request_category',
                 'lr.time_leave_type',
                 'lr.target_date',
@@ -56,7 +60,7 @@ final class LeaveApprovalService extends LeaveRequestSupport
                 'lr.reason',
                 'lr.status',
                 'lr.approved_by',
-                'approver.name as approved_by_name',
+                DB::raw('COALESCE(admin_approver.name, approver.name) as approved_by_name'),
                 'lr.approved_at',
                 'lr.decision_comment',
                 'lr.created_at',
@@ -87,11 +91,11 @@ final class LeaveApprovalService extends LeaveRequestSupport
         }
 
         if (!empty($filters['from'])) {
-            $query->whereDate('lr.start_date', '>=', $filters['from']);
+            $query->whereDate('lr.end_date', '>=', $filters['from']);
         }
 
         if (!empty($filters['to'])) {
-            $query->whereDate('lr.end_date', '<=', $filters['to']);
+            $query->whereDate('lr.start_date', '<=', $filters['to']);
         }
 
         $total = (clone $query)->count();
@@ -129,7 +133,11 @@ final class LeaveApprovalService extends LeaveRequestSupport
             throw new ApiException('VALIDATION_ERROR', '不正な承認操作です。', 422);
         }
 
-        return DB::transaction(function () use ($requestId, $decision, $comment, $actor) {
+        $months = MonthMutationLock::forRecord('leave_requests', $requestId, 'start_date', 'end_date');
+        $employeeId = DB::table('leave_requests')->where('id', $requestId)->value('employee_id');
+        return DB::transaction(function () use ($months, $requestId, $decision, $comment, $actor, $employeeId) {
+            MonthMutationLock::acquire($months);
+            if ($employeeId !== null) { DB::table('employees')->where('id', $employeeId)->lockForUpdate()->first(); }
             $request = DB::table('leave_requests')
                 ->where('id', $requestId)
                 ->lockForUpdate()
@@ -144,6 +152,29 @@ final class LeaveApprovalService extends LeaveRequestSupport
             }
 
             $this->assertRequestMonthOpen($request);
+            if ($decision === 'APPROVED') {
+                if ($request->attendance_effect === null && !in_array($request->leave_type_code, ['PAID', 'SPECIAL', 'ABSENCE'], true)) {
+                    throw new ApiException('LEAVE_TYPE_REVIEW_REQUIRED', '旧方式で申請された独自休暇です。勤怠反映・消化先の設定を確認して再申請してください。', 422);
+                }
+                $checkDates = $request->effective_dates !== null
+                    || ($request->attendance_effect === null && $request->leave_type_code === 'PAID' && $request->request_category !== 'TIME_LEAVE');
+                if ($checkDates && LeaveWorkdays::dates($request) !== LeaveWorkdays::preview((int) $request->employee_id, $request->start_date, $request->end_date)['dates']) {
+                    throw new ApiException('LEAVE_DATES_CHANGED', '申請後に対象勤務日が変わりました。対象日を確認して再申請してください。', 409);
+                }
+                $this->assertNoOverlappingLeave((int) $request->employee_id, $request, $requestId);
+                if (($request->balance_source ?? ($request->leave_type_code === 'PAID' ? 'PAID' : 'NONE')) === 'PAID' && ($request->hourly_day_minutes || (float) $request->quantity_days > 0)) {
+                    $this->ledgerService->assertPaidLeaveAvailable((int) $request->employee_id, $request->start_date,
+                        $request->end_date, (float) $request->quantity_days, $requestId, LeaveWorkdays::dates($request), $request->hourly_day_minutes, $request->quantity_minutes);
+                }
+                app(LeaveAttendanceProjection::class)->prepare((int) $request->employee_id, LeaveWorkdays::dates($request));
+            }
+            if ($decision === 'APPROVED' && $request->time_leave_type === 'PAID_HOURLY') {
+                app(HourlyPaidLeaveService::class)->assertAvailable((int) $request->employee_id, $request->start_date, (int) $request->quantity_minutes, $requestId);
+                $managed = app(HourlyPaidLeaveService::class)->balance((int) $request->employee_id, $request->start_date) !== null;
+                if ($managed && ($request->hourly_day_minutes || (float) $request->quantity_days > 0)) {
+                    throw new ApiException('HOURLY_BALANCE_CHANGED', '申請後に時間有給の管理方法が変わりました。残数を確認して取消・再申請してください。', 422);
+                }
+            }
 
             $operatorEmployeeId = $this->resolveOperatorEmployeeId($actor, (int) $request->employee_id);
             $approvedAt = $decision === 'APPROVED' ? now() : null;
@@ -154,6 +185,8 @@ final class LeaveApprovalService extends LeaveRequestSupport
                 ->update([
                     'status' => $decision,
                     'approved_by' => $approvedBy,
+                    'approved_actor_type' => $decision === 'APPROVED' ? 'ADMIN' : null,
+                    'approved_actor_id' => $decision === 'APPROVED' ? (int) $actor->id : null,
                     'approved_at' => $approvedAt,
                     'decision_comment' => $comment,
                     'cancelled_by' => null,
@@ -164,13 +197,15 @@ final class LeaveApprovalService extends LeaveRequestSupport
             DB::table('leave_request_actions')->insert([
                 'leave_request_id' => $requestId,
                 'action_by' => $operatorEmployeeId,
+                'actor_type' => 'ADMIN',
+                'actor_id' => (int) $actor->id,
                 'action_type' => $decision,
                 'comment' => $comment,
                 'acted_at' => now(),
             ]);
 
             $this->ledgerService->recalculatePaidLeaveUsage((int) $request->employee_id);
-            $this->syncAttendanceDailyFromApprovedLeaves((int) $request->employee_id);
+            if ($decision === 'APPROVED') { app(LeaveAttendanceProjection::class)->sync((int) $request->employee_id, LeaveWorkdays::dates($request)); }
             $this->ledgerService->syncPaidLeaveLedger((int) $request->employee_id);
             $this->createDecisionNotification((int) $request->employee_id, $requestId, $decision, $comment);
 
@@ -200,15 +235,7 @@ final class LeaveApprovalService extends LeaveRequestSupport
             ]);
         }
 
-        $items = [];
-        foreach ($requestIds as $requestId) {
-            $items[] = $this->decide($requestId, $decision, $comment, $actor);
-        }
-
-        return [
-            'updatedCount' => count($items),
-            'items' => $items,
-        ];
+        return \App\Services\BatchOperation::run($requestIds, fn ($requestId) => $this->decide($requestId, $decision, $comment, $actor));
     }
 
     public function listWorkProcedures(array $filters): array

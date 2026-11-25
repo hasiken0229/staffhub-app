@@ -4,6 +4,32 @@
   gap: 12px;
 }
 
+.attendance-month-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.attendance-month-controls {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  flex: 1 1 320px;
+  min-width: 0;
+  max-width: 460px;
+}
+
+.attendance-month-controls input {
+  min-width: 0;
+  width: 100%;
+}
+
+.attendance-month-controls > button {
+  min-height: 44px;
+}
+
 .workspace-hero,
 .metrics,
 .panel {
@@ -28,6 +54,33 @@
   white-space: nowrap;
 }
 
+.page-subnav-shell {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.page-subnav-shell::before,
+.page-subnav-shell::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 3px;
+  z-index: 1;
+  width: 26px;
+  pointer-events: none;
+}
+
+.page-subnav-shell::before {
+  left: 0;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0));
+}
+
+.page-subnav-shell::after {
+  right: 0;
+  background: linear-gradient(270deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0));
+}
+
 .page-subnav {
   display: flex;
   flex: 0 1 auto;
@@ -36,8 +89,10 @@
   gap: 2px;
   min-width: 0;
   overflow-x: auto;
-  padding: 2px;
+  padding: 2px 26px;
   border-bottom: 1px solid var(--line);
+  scroll-padding-inline: 26px;
+  scrollbar-width: thin;
 }
 
 .page-subnav-item {
@@ -54,6 +109,16 @@
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+}
+
+.page-subnav-shell.with-shortcut .page-subnav {
+  flex-wrap: wrap;
+  padding-inline: 0;
+}
+
+.page-subnav-shell.with-shortcut::before,
+.page-subnav-shell.with-shortcut::after {
+  display: none;
 }
 
 .page-subnav-item:hover {
@@ -73,6 +138,10 @@
   align-items: flex-end;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.workspace-account-actions {
+  display: none;
 }
 
 .admin-shell-with-sidebar .workspace-hero {
@@ -374,6 +443,24 @@
   white-space: nowrap;
 }
 
+.panel-meta-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -447,4 +534,3 @@
   flex-direction: column;
   gap: 14px;
 }
-

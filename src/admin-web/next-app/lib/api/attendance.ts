@@ -1,4 +1,6 @@
 import type {
+  AttendanceApprovalPreview,
+  AttendanceBatchResult,
   AttendanceApproval,
   AttendanceBreakRule,
   AttendanceDaily,
@@ -15,11 +17,29 @@ import type {
   AttendanceMonthlyCloseSummary,
   AttendanceShiftSchedule,
   EmployeeAttendanceSetting,
+  BreakOvertimeInputs,
+  BreakOvertimePreview,
+  BreakOvertimeConfirmation,
   LeaveDecisionResult,
 } from "@/types";
-import { buildQuery, fetchJson } from "@/lib/api/core";
+import { buildQuery, fetchJson, fetchJsonPage } from "@/lib/api/core";
+
+export function loadAttendanceAttentionPage(page: number, signal: AbortSignal) {
+  return fetchJsonPage<AttendanceApproval>(`/api/admin/attendance/approvals${buildQuery({status: "PENDING", page, perPage: 25})}`, { signal });
+}
+
+export function loadAttendanceApprovalPreview(targetMonth: string) {
+  return fetchJson<AttendanceApprovalPreview>(`/api/admin/attendance/month-close/approval-preview${buildQuery({targetMonth})}`);
+}
+
+export function approveAttendanceMonthCandidates(targetMonth: string, candidates: Array<{id: number; fingerprint: string}>, comment: string) {
+  return fetchJson<AttendanceBatchResult>("/api/admin/attendance/month-close/approve-candidates", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({targetMonth, candidates, comment}),
+  });
+}
 
 export async function loadAttendanceDailyGrid(filters: {
+  periodBasis?: "CALENDAR" | "PAYROLL";
   targetMonth?: string;
   employeeId?: number;
   employeeCode?: string;
@@ -48,6 +68,18 @@ export async function loadAttendanceMonthClosePrecheck(targetMonth: string) {
 
 export async function loadAttendanceDailyDetail(id: number) {
   return fetchJson<AttendanceDailyDetail>(`/api/admin/attendance/daily/${id}`);
+}
+
+export function previewBreakOvertime(id: number, inputs: BreakOvertimeInputs, signal?: AbortSignal) {
+  return fetchJson<BreakOvertimePreview>(`/api/admin/attendance/daily/${id}/break-overtime/preview`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(inputs), signal,
+  });
+}
+
+export function applyBreakOvertime(id: number, inputs: BreakOvertimeConfirmation) {
+  return fetchJson<{ dailyId: number; workMinutes: number; overtimeMinutes: number }>(`/api/admin/attendance/daily/${id}/break-overtime/apply`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(inputs),
+  });
 }
 
 export async function createAttendanceDaily(payload: AttendanceDailyCreatePayload) {
@@ -106,6 +138,8 @@ export async function resolveAttendanceError(payload: {
 }
 
 export async function loadAttendanceMonthCloseStatus(filters: {
+  page?: number;
+  perPage?: number;
   targetMonth?: string;
   employeeCode?: string;
   employeeName?: string;
@@ -115,7 +149,7 @@ export async function loadAttendanceMonthCloseStatus(filters: {
   approvalStatus?: string;
   closeStatus?: string;
 }) {
-  return fetchJson<AttendanceMonthCloseStatusRow[]>(`/api/admin/attendance/month-close-status${buildQuery(filters)}`);
+  return fetchJson<AttendanceMonthCloseStatusRow[]>(`/api/admin/attendance/month-close-status${buildQuery({page:1,perPage:10000,...filters})}`);
 }
 
 export async function loadAttendanceDailyEditRequests(filters: {
@@ -253,7 +287,7 @@ export async function returnAttendanceDaily(id: number, comment: string) {
 }
 
 export async function bulkApproveAttendanceDaily(ids: number[], comment: string) {
-  return fetchJson<{ updatedCount: number }>(`/api/admin/attendance/approvals/bulk-approve`, {
+  return fetchJson<{ updatedCount: number; errorCount?: number; errors?: { id: number; message: string; status: string }[] }>(`/api/admin/attendance/approvals/bulk-approve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids, comment }),
@@ -261,9 +295,13 @@ export async function bulkApproveAttendanceDaily(ids: number[], comment: string)
 }
 
 export async function bulkReturnAttendanceDaily(ids: number[], comment: string) {
-  return fetchJson<{ updatedCount: number }>(`/api/admin/attendance/approvals/bulk-return`, {
+  return fetchJson<{ updatedCount: number; errorCount?: number; errors?: { id: number; message: string; status: string }[] }>(`/api/admin/attendance/approvals/bulk-return`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids, comment }),
   });
+}
+
+export async function cancelEmployeeAttendanceDailyEditRequest(id: number) {
+  return fetchJson<AttendanceDailyEditRequest>(`/api/attendance/daily-edit-requests/${id}/cancel`, { method: "POST" });
 }

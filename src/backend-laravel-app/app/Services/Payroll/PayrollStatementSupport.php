@@ -94,8 +94,18 @@ trait PayrollStatementSupport
             $summaryLookup[$line['itemLabel']] = (float) $line['amount'];
         }
 
+        $views = DB::table('payroll_statement_views')->where('payroll_statement_id', $statement->id)
+            ->where('revision', $statement->revision)->where('employee_id', $statement->employee_id);
+        $lastViewedAt = (clone $views)->max('viewed_at');
+        $viewCount = $views->count();
+
         return [
             'id' => (int) $statement->id,
+            'revision' => (int) $statement->revision,
+            'replacedAt' => $statement->replaced_at ? CarbonImmutable::parse($statement->replaced_at)->toIso8601String() : null,
+            'viewCount' => $viewCount,
+            'viewed' => $viewCount > 0,
+            'lastViewedAt' => $lastViewedAt ? CarbonImmutable::parse($lastViewedAt)->toIso8601String() : null,
             'employeeId' => (int) $statement->employee_id,
             'employeeCode' => $statement->employee_code ?? null,
             'employeeName' => $statement->employee_name ?? null,

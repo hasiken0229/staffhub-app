@@ -4,7 +4,7 @@ using StaffHub.PunchApp.Models;
 
 namespace StaffHub.PunchApp.Services;
 
-public sealed class RcS380CardReaderService : ICardReaderService
+public sealed class RcS380CardReaderService : ICardReaderService, IReaderWorkerStatus
 {
     private const uint ScardScopeUser = 0x0000;
     private const uint ScardShareShared = 0x0002;
@@ -16,36 +16,31 @@ public sealed class RcS380CardReaderService : ICardReaderService
     private static readonly byte[] GetUidCommand = [0xFF, 0xCA, 0x00, 0x00, 0x00];
 
     private readonly AppSettings _settings;
-    private readonly CancellationTokenSource _cts = new();
-    private Task? _monitorTask;
+    private readonly CardReaderWorker _worker;
+    private string _status = "PC/SC 初期化待ち";
     private string? _lastCardUid;
     private DateTimeOffset _lastSeenAt;
 
-    public RcS380CardReaderService(AppSettings settings)
+    public RcS380CardReaderService(AppSettings settings, Func<CancellationToken, Task>? monitor = null)
     {
         _settings = settings;
+        _worker = new CardReaderWorker(monitor ?? MonitorLoopAsync, () => _status);
     }
 
     public event EventHandler<string>? CardScanned;
 
-    public string StatusText { get; private set; } = "RC-S380 初期化待ち";
+    public string StatusText { get => _worker.Failure ?? _status; private set => _status = value; }
+    public bool IsWorkerActive => _worker.IsWorkerActive;
+    public bool NeedsReconnect => _worker.NeedsReconnect;
 
     public void Start()
     {
-        _monitorTask ??= Task.Run(() => MonitorLoopAsync(_cts.Token));
+        _worker.Start();
     }
 
     public void Dispose()
     {
-        _cts.Cancel();
-        try
-        {
-            _monitorTask?.Wait(TimeSpan.FromSeconds(1));
-        }
-        catch
-        {
-        }
-        _cts.Dispose();
+        _worker.Dispose();
     }
 
     private async Task MonitorLoopAsync(CancellationToken cancellationToken)
@@ -139,6 +134,21 @@ public sealed class RcS380CardReaderService : ICardReaderService
         return buffer.ToString()
             .Split('\0', StringSplitOptions.RemoveEmptyEntries)
             .ToArray();
+    }
+
+    public static (string Status, string[] Readers) ProbeReaders()
+    {
+        IntPtr context = IntPtr.Zero;
+        try
+        {
+            var result = NativeMethods.SCardEstablishContext(ScardScopeUser, IntPtr.Zero, IntPtr.Zero, out context);
+            if (result != ScardSuccess) return ($"PCSC_ERROR_{result:X8}", []);
+            var readers = ListReaders(context);
+            return (readers.Length > 0 ? "OK" : "NOT_FOUND", readers);
+        }
+        catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException)
+        { return ("PCSC_UNAVAILABLE", []); }
+        finally { if (context != IntPtr.Zero) NativeMethods.SCardReleaseContext(context); }
     }
 
     private static bool TryReadCardUid(IntPtr context, string readerName, out string cardUid)

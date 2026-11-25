@@ -2,19 +2,23 @@
 
 namespace App\Services;
 
+use App\Services\Reports\ReportFormatting;
 use Illuminate\Http\UploadedFile;
 use TCPDF;
 
 final class PayrollCsvImportService
 {
-    public function __construct(private readonly PayrollTemplateCatalog $catalog)
-    {
-    }
+    use ReportFormatting;
+
+    public function __construct(private readonly PayrollTemplateCatalog $catalog) {}
 
     public function prepareRows(UploadedFile $file, string $statementType, array $expectedHeaders = []): array
     {
         $normalizedType = $this->catalog->normalizeStatementType($statementType);
         $rows = $this->readCsvRows($file);
+        $source = $this->normalizeSourceRows($rows, $normalizedType);
+        $rows = $source['rows'];
+
         if (count($rows) < 2) {
             throw new ApiException('CSV_FORMAT_ERROR', 'CSVに明細データがありません。', 422);
         }
@@ -22,7 +26,7 @@ final class PayrollCsvImportService
         $header = array_map([$this, 'normalizeString'], $rows[0]);
         $normalizedExpectedHeaders = array_map([$this, 'normalizeString'], $expectedHeaders);
 
-        if ($normalizedExpectedHeaders !== [] && $header !== $normalizedExpectedHeaders) {
+        if ($normalizedExpectedHeaders !== [] && ! $this->catalog->headersAreCompatible($normalizedType, $header, $normalizedExpectedHeaders)) {
             throw new ApiException('CSV_FORMAT_ERROR', '選択したCSV定義と一致しないため登録できません。', 422, [
                 ['field' => 'file', 'message' => '定義の列名・列順と一致するCSVを選択してください。'],
             ]);
@@ -37,25 +41,33 @@ final class PayrollCsvImportService
             $this->catalog->summaryItems($normalizedType),
         ] as $section) {
             foreach ($section as $item) {
+                if (
+                    ! isset($headerIndexMap[$item['source']])
+                    && $this->catalog->isLegacyHeaders($normalizedType, $header)
+                    && $item['source'] === '駐車場代'
+                ) {
+                    continue;
+                }
+
                 $requiredHeaders[] = $item['source'];
             }
         }
 
         $missingHeaders = [];
         foreach (array_unique($requiredHeaders) as $requiredHeader) {
-            if (!isset($headerIndexMap[$requiredHeader])) {
+            if (! isset($headerIndexMap[$requiredHeader])) {
                 $missingHeaders[] = $requiredHeader;
             }
         }
 
         if ($missingHeaders !== []) {
             throw new ApiException('CSV_FORMAT_ERROR', 'CSVヘッダーが不足しています。', 422, [
-                ['field' => 'file', 'message' => '不足ヘッダー: ' . implode(', ', $missingHeaders)],
+                ['field' => 'file', 'message' => '不足ヘッダー: '.implode(', ', $missingHeaders)],
             ]);
         }
 
         if ($normalizedExpectedHeaders !== []) {
-            $expectedFieldCount = count($normalizedExpectedHeaders);
+            $expectedFieldCount = count($header);
             foreach (array_slice($rows, 1) as $index => $row) {
                 if ($this->rowIsEmpty($row)) {
                     continue;
@@ -63,7 +75,7 @@ final class PayrollCsvImportService
 
                 if (count($row) !== $expectedFieldCount) {
                     throw new ApiException('CSV_FORMAT_ERROR', 'CSVの列数が定義と一致しない行があります。', 422, [
-                        ['field' => 'file', 'message' => ($index + 2) . '行目の列数が定義と一致しません。'],
+                        ['field' => 'file', 'message' => ($index + 2).'行目の列数が定義と一致しません。'],
                     ]);
                 }
             }
@@ -73,6 +85,11 @@ final class PayrollCsvImportService
             'rows' => $rows,
             'header' => $header,
             'headerIndexMap' => $headerIndexMap,
+            'sourceFormat' => $source['sourceFormat'],
+            'sourceRowCount' => $source['sourceRowCount'],
+            'candidateRowCount' => $source['candidateRowCount'],
+            'skippedRowCount' => $source['skippedRowCount'],
+            'skippedRows' => $source['skippedRows'],
         ];
     }
 
@@ -105,7 +122,7 @@ final class PayrollCsvImportService
         $payItems = $this->extractItems($row, $headerIndexMap, $this->catalog->payItems($normalizedType));
         $deductionItems = $this->extractItems($row, $headerIndexMap, $this->catalog->deductionItems($normalizedType));
         $summaryItems = $this->extractItems($row, $headerIndexMap, $this->catalog->summaryItems($normalizedType), false);
-        $employeeName = trim($this->cell($row, $headerIndexMap, '姓') . ' ' . $this->cell($row, $headerIndexMap, '名'));
+        $employeeName = trim($this->cell($row, $headerIndexMap, '姓').' '.$this->cell($row, $headerIndexMap, '名'));
 
         $summaryBySource = [];
         foreach ($summaryItems as $item) {
@@ -140,8 +157,9 @@ final class PayrollCsvImportService
         $pdf->SetAutoPageBreak(true, 10);
         $pdf->setFontSubsetting(true);
         $pdf->AddPage();
-        $pdf->SetFont('kozminproregular', '', 9.5);
-        $pdf->writeHTML($this->buildPdfHtml($statement), true, false, true, false, '');
+        $fontFamily = $this->resolveReportPdfFontFamily();
+        $pdf->SetFont($fontFamily, '', 9.5);
+        $pdf->writeHTML('<style>body, table, th, td, h1, h2, h3 { font-family: '.htmlspecialchars($fontFamily, ENT_QUOTES, 'UTF-8').'; }</style>'.$this->buildPdfHtml($statement), true, false, true, false, '');
 
         return $pdf->Output('', 'S');
     }
@@ -150,7 +168,7 @@ final class PayrollCsvImportService
     {
         $normalizedType = $this->catalog->normalizeStatementType($statementType);
 
-        return strtolower($normalizedType) . '_statement_' . $targetYearMonth . '_' . $employeeCode . '.pdf';
+        return strtolower($normalizedType).'_statement_'.$targetYearMonth.'_'.$employeeCode.'.pdf';
     }
 
     private function readCsvRows(UploadedFile $file): array
@@ -170,7 +188,7 @@ final class PayrollCsvImportService
         rewind($handle);
 
         $rows = [];
-        while (($row = fgetcsv($handle)) !== false) {
+        while (($row = fgetcsv($handle, null, ',', '"', '')) !== false) {
             $rows[] = array_map([$this, 'normalizeString'], $row);
         }
 
@@ -179,10 +197,143 @@ final class PayrollCsvImportService
         return $rows;
     }
 
+    private function normalizeSourceRows(array $rows, string $statementType): array
+    {
+        $empty = [
+            'rows' => $rows,
+            'sourceFormat' => null,
+            'sourceRowCount' => null,
+            'candidateRowCount' => null,
+            'skippedRowCount' => 0,
+            'skippedRows' => [],
+        ];
+
+        if (! in_array($statementType, ['PAYROLL', 'BONUS'], true)) {
+            return $empty;
+        }
+
+        $headerIndex = null;
+        $codeIndex = null;
+        $nameIndex = null;
+        $netAmountIndex = null;
+
+        foreach ($rows as $index => $row) {
+            $candidateCodeIndex = $this->findHeaderIndex($row, '個人コード');
+            $candidateNameIndex = $this->findHeaderIndex($row, '氏名');
+            $candidateNetAmountIndex = $this->findHeaderIndex($row, '振込支給');
+
+            if ($candidateCodeIndex === null || $candidateNameIndex === null || $candidateNetAmountIndex === null) {
+                continue;
+            }
+
+            $headerIndex = $index;
+            $codeIndex = $candidateCodeIndex;
+            $nameIndex = $candidateNameIndex;
+            $netAmountIndex = $candidateNetAmountIndex;
+            break;
+        }
+
+        if ($headerIndex === null || $codeIndex === null || $nameIndex === null || $netAmountIndex === null) {
+            return $empty;
+        }
+
+        $sourceHeader = $rows[$headerIndex];
+        $targetHeader = array_merge(
+            ['社員番号', '姓', '名'],
+            array_slice($sourceHeader, 3, count($this->catalog->headers($statementType)) - 3),
+        );
+
+        if ($targetHeader !== $this->catalog->headers($statementType)) {
+            throw new ApiException('CSV_FORMAT_ERROR', '給与・賞与ソフトの支給・控除一覧表の列構成を確認できません。', 422, [
+                ['field' => 'file', 'message' => '個人コード・氏名・支給項目の列構成が標準形式と一致しません。'],
+            ]);
+        }
+
+        $normalizedRows = [$targetHeader];
+        $sourceRowCount = 0;
+        $candidateRowCount = 0;
+        $skippedRows = [];
+
+        foreach (array_slice($rows, $headerIndex + 1) as $offset => $row) {
+            $lineNumber = $headerIndex + $offset + 2;
+            if ($this->rowIsEmpty($row)) {
+                continue;
+            }
+
+            $sourceRowCount++;
+            $rawEmployeeCode = $this->normalizeString($row[$codeIndex] ?? '');
+            if (! preg_match('/^\d+$/u', $rawEmployeeCode)) {
+                continue;
+            }
+
+            $candidateRowCount++;
+            $netAmount = $this->parseAmount($row[$netAmountIndex] ?? '');
+            if (abs($netAmount) < 0.0001) {
+                $skippedRows[] = [
+                    'line' => $lineNumber,
+                    'employeeCode' => $this->normalizeEmployeeCode($rawEmployeeCode),
+                    'reason' => '振込支給が0円のため除外',
+                ];
+
+                continue;
+            }
+
+            [$surname, $givenName] = $this->splitEmployeeName($row[$nameIndex] ?? '');
+            $normalizedRows[] = array_merge(
+                [$this->normalizeEmployeeCode($rawEmployeeCode), $surname, $givenName],
+                array_slice($row, 3, count($this->catalog->headers($statementType)) - 3),
+            );
+        }
+
+        return [
+            'rows' => $normalizedRows,
+            'sourceFormat' => $statementType === 'BONUS'
+                ? 'BONUS_SOFTWARE_PAYMENT_DEDUCTION_REPORT'
+                : 'PAYROLL_SOFTWARE_PAYMENT_DEDUCTION_REPORT',
+            'sourceRowCount' => $sourceRowCount,
+            'candidateRowCount' => $candidateRowCount,
+            'skippedRowCount' => count($skippedRows),
+            'skippedRows' => $skippedRows,
+        ];
+    }
+
+    private function findHeaderIndex(array $row, string $expectedHeader): ?int
+    {
+        $expected = $this->compactHeader($expectedHeader);
+
+        foreach ($row as $index => $value) {
+            if ($this->compactHeader((string) $value) === $expected) {
+                return $index;
+            }
+        }
+
+        return null;
+    }
+
+    private function compactHeader(string $value): string
+    {
+        return preg_replace('/[\s\x{3000}]+/u', '', trim($value)) ?? trim($value);
+    }
+
+    private function normalizeEmployeeCode(string $value): string
+    {
+        $normalized = ltrim(trim($value), '0');
+
+        return $normalized === '' ? '0' : $normalized;
+    }
+
+    private function splitEmployeeName(string $value): array
+    {
+        $parts = preg_split('/[\s\x{3000}]+/u', trim($value), 2, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        return [$parts[0] ?? '', $parts[1] ?? ''];
+    }
+
     private function normalizeString(?string $value): string
     {
         $value ??= '';
         $value = preg_replace('/^\x{FEFF}/u', '', $value) ?? $value;
+
         return trim($value);
     }
 
@@ -243,6 +394,10 @@ final class PayrollCsvImportService
             return 0.0;
         }
 
+        if (!preg_match('/^[+-]?\d+(?:\.\d+)?$/D', $normalized) || !is_finite((float) $normalized)) {
+            throw new ApiException('CSV_AMOUNT_ERROR', '金額として読み取れない値があります: '.$rawValue, 422);
+        }
+
         return (float) $normalized;
     }
 
@@ -266,7 +421,7 @@ final class PayrollCsvImportService
         $deductionRows = $this->buildTableRows((array) $statement['deductionItems']);
         $summaryRows = $this->buildTableRows((array) $statement['summaryItems']);
         $remarks = trim((string) ($statement['remarks'] ?? ''));
-        $remarksHtml = $remarks !== '' ? '<br /><table class="box" width="100%" cellpadding="0" cellspacing="0"><tr><th>備考</th></tr><tr><td>' . $this->escape($remarks) . '</td></tr></table>' : '';
+        $remarksHtml = $remarks !== '' ? '<br /><table class="box" width="100%" cellpadding="0" cellspacing="0"><tr><th>備考</th></tr><tr><td>'.$this->escape($remarks).'</td></tr></table>' : '';
 
         return <<<HTML
 <style>

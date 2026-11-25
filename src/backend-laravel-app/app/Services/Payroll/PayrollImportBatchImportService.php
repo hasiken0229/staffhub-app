@@ -23,18 +23,17 @@ final class PayrollImportBatchImportService
         private readonly PayrollCsvImportService $csvImportService,
         private readonly PayrollStatementService $payrollStatementService,
         private readonly ImportHistoryService $importHistoryService,
-    ) {
-    }
+    ) {}
 
     public function importLegacyCsv(array $payload, UploadedFile $file, GenericUser $actor): array
     {
         $statementType = $this->catalog->normalizeStatementType((string) ($payload['statementType'] ?? 'PAYROLL'));
         $targetYearMonth = $this->validateYearMonth((string) ($payload['targetYearMonth'] ?? ''));
-        $publishAt = !empty($payload['publishedAt'])
+        $publishAt = ! empty($payload['publishedAt'])
             ? CarbonImmutable::parse((string) $payload['publishedAt'])
             : CarbonImmutable::now();
 
-        $periodStart = CarbonImmutable::parse($targetYearMonth . '-01');
+        $periodStart = CarbonImmutable::parse($targetYearMonth.'-01');
         $periodEnd = $periodStart->endOfMonth();
 
         return $this->importFromCsv([
@@ -51,11 +50,11 @@ final class PayrollImportBatchImportService
     {
         $statementType = $this->catalog->normalizeStatementType((string) ($payload['statementType'] ?? 'PAYROLL'));
         $targetYearMonth = $this->validateYearMonth((string) ($payload['targetYearMonth'] ?? ''));
-        $publishAt = !empty($payload['publishedAt'])
+        $publishAt = ! empty($payload['publishedAt'])
             ? CarbonImmutable::parse((string) $payload['publishedAt'])
             : CarbonImmutable::now();
 
-        $periodStart = CarbonImmutable::parse($targetYearMonth . '-01');
+        $periodStart = CarbonImmutable::parse($targetYearMonth.'-01');
         $periodEnd = $periodStart->endOfMonth();
 
         return $this->previewFromCsv([
@@ -82,8 +81,13 @@ final class PayrollImportBatchImportService
         $payDate = CarbonImmutable::parse((string) $payload['payDate']);
         $publishDate = CarbonImmutable::parse((string) $payload['publishDate']);
 
+        if ($periodEndOn->lt($periodStartOn)) {
+            throw new ApiException('VALIDATION_ERROR', '対象期間の終了日は開始日以降にしてください。', 422,
+                [['field' => 'periodEndOn', 'message' => '対象期間の終了日は開始日以降にしてください。']]);
+        }
+
         $expectedHeaders = [];
-        if (!empty($definition->sample_headers_json)) {
+        if (! empty($definition->sample_headers_json)) {
             $expectedHeaders = json_decode((string) $definition->sample_headers_json, true) ?: [];
         }
         if ($expectedHeaders === []) {
@@ -108,6 +112,7 @@ final class PayrollImportBatchImportService
                     'employeeCode' => null,
                     'message' => '社員番号が空です。',
                 ];
+
                 continue;
             }
 
@@ -117,6 +122,7 @@ final class PayrollImportBatchImportService
                     'employeeCode' => $employeeCode,
                     'message' => 'CSV内で社員番号が重複しています。',
                 ];
+
                 continue;
             }
             $seenEmployeeCodes[$employeeCode] = true;
@@ -132,6 +138,7 @@ final class PayrollImportBatchImportService
                     'employeeCode' => $employeeCode,
                     'message' => 'employees に該当職員が存在しません。',
                 ];
+
                 continue;
             }
 
@@ -145,6 +152,9 @@ final class PayrollImportBatchImportService
                     null
                 );
 
+                $existing = DB::table('payroll_statements')->where('employee_id', $employee->id)
+                    ->where('statement_type', $statementType)->where('target_year_month', $targetYearMonth)
+                    ->when(DB::transactionLevel() > 0, fn ($query) => $query->lockForUpdate())->first();
                 $results[] = [
                     'line' => $actualLineNo,
                     'employeeId' => (int) $employee->id,
@@ -153,6 +163,9 @@ final class PayrollImportBatchImportService
                     'grossAmount' => $statement['grossAmount'],
                     'deductionAmount' => $statement['deductionAmount'],
                     'netAmount' => $statement['netAmount'],
+                    'action' => $existing === null ? 'CREATE' : 'REPLACE',
+                    'existingStatementId' => $existing?->id,
+                    'revision' => $existing === null ? 1 : ((int) $existing->revision + 1),
                 ];
             } catch (\Throwable $throwable) {
                 $errors[] = [
@@ -177,13 +190,31 @@ final class PayrollImportBatchImportService
             'processedCount' => count($results) + count($errors),
             'importedCount' => count($results),
             'errorCount' => count($errors),
+            'canImport' => $errors === [] && $results !== [],
+            'newCount' => count(array_filter($results, fn ($item) => $item['action'] === 'CREATE')),
+            'replacementCount' => count(array_filter($results, fn ($item) => $item['action'] === 'REPLACE')),
+            'totals' => [
+                'grossAmount' => array_sum(array_column($results, 'grossAmount')),
+                'deductionAmount' => array_sum(array_column($results, 'deductionAmount')),
+                'netAmount' => array_sum(array_column($results, 'netAmount')),
+            ],
+            'stateFingerprint' => hash('sha256', json_encode(array_map(fn ($item) => [
+                $item['employeeId'], $item['employeeCode'], $item['employeeName'], $item['action'], $item['existingStatementId'], $item['revision'],
+            ], $results), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
             'items' => $results,
             'errors' => $errors,
+            'preview' => $this->buildPreviewPayload($prepared),
         ];
     }
 
     public function importFromCsv(array $payload, UploadedFile $file, GenericUser $actor): array
     {
+        // Preflight every row before creating a batch, PDF, notification or replacement.
+        $preflight = $this->previewFromCsv($payload, $file);
+        if (!$preflight['canImport']) {
+            throw new ApiException('PAYROLL_IMPORT_ERRORS', 'CSVにエラーがあるため登録していません。エラーを修正してプレビューを取り直してください。', 422,
+                array_map(fn ($error) => ['field' => 'file', 'message' => $error['line'].'行目: '.$error['message']], $preflight['errors']));
+        }
         $statementType = $this->resolveStatementType($payload);
         $definition = $this->definitionService->resolveDefinition(
             isset($payload['definitionId']) ? (int) $payload['definitionId'] : null,
@@ -195,7 +226,7 @@ final class PayrollImportBatchImportService
         $periodEndOn = CarbonImmutable::parse((string) $payload['periodEndOn']);
         $payDate = CarbonImmutable::parse((string) $payload['payDate']);
         $publishDate = CarbonImmutable::parse((string) $payload['publishDate']);
-        $remarks = !empty($payload['remarks']) ? trim((string) $payload['remarks']) : null;
+        $remarks = ! empty($payload['remarks']) ? trim((string) $payload['remarks']) : null;
         $actorEmployeeId = $this->resolveActorEmployeeId($actor);
 
         if ($periodEndOn->lt($periodStartOn)) {
@@ -205,7 +236,7 @@ final class PayrollImportBatchImportService
         }
 
         $expectedHeaders = [];
-        if (!empty($definition->sample_headers_json)) {
+        if (! empty($definition->sample_headers_json)) {
             $expectedHeaders = json_decode((string) $definition->sample_headers_json, true) ?: [];
         }
         if ($expectedHeaders === []) {
@@ -249,6 +280,7 @@ final class PayrollImportBatchImportService
                     'employeeCode' => null,
                     'message' => '社員番号が空です。',
                 ];
+
                 continue;
             }
 
@@ -263,6 +295,7 @@ final class PayrollImportBatchImportService
                     'employeeCode' => $employeeCode,
                     'message' => 'employees に該当職員が存在しません。',
                 ];
+
                 continue;
             }
 
@@ -276,41 +309,44 @@ final class PayrollImportBatchImportService
                     $remarks
                 );
                 $pdfBinary = $this->csvImportService->renderPdf($statement);
-                $result = $this->payrollStatementService->upsertBinaryForAdmin(
-                    (int) $employee->id,
-                    $statementType,
-                    $targetYearMonth,
-                    $publishDate->startOfDay(),
-                    $this->csvImportService->makeOriginalFileName($statementType, $targetYearMonth, $employeeCode),
-                    'application/pdf',
-                    $pdfBinary,
-                    $actor,
-                    [
-                        'payDate' => $payDate,
-                        'periodStartOn' => $periodStartOn,
-                        'periodEndOn' => $periodEndOn,
-                        'payrollDataDefinitionId' => (int) $definition->id,
-                        'payrollImportBatchId' => $batchId,
-                        'remarks' => $remarks,
-                    ]
-                );
+                $result = DB::transaction(function () use ($employee, $statementType, $targetYearMonth, $publishDate, $employeeCode, $pdfBinary, $actor, $payDate, $periodStartOn, $periodEndOn, $definition, $batchId, $remarks, $statement, $actualLineNo) {
+                    $result = $this->payrollStatementService->upsertBinaryForAdmin(
+                        (int) $employee->id,
+                        $statementType,
+                        $targetYearMonth,
+                        $publishDate->startOfDay(),
+                        $this->csvImportService->makeOriginalFileName($statementType, $targetYearMonth, $employeeCode),
+                        'application/pdf',
+                        $pdfBinary,
+                        $actor,
+                        [
+                            'payDate' => $payDate,
+                            'periodStartOn' => $periodStartOn,
+                            'periodEndOn' => $periodEndOn,
+                            'payrollDataDefinitionId' => (int) $definition->id,
+                            'payrollImportBatchId' => $batchId,
+                            'remarks' => $remarks,
+                        ]
+                    );
 
-                $lines = $this->catalog->buildLines($statementType, $statement);
-                $this->payrollStatementService->replaceStatementLines((int) $result['id'], $lines);
+                    $lines = $this->catalog->buildLines($statementType, $statement);
+                    $this->payrollStatementService->replaceStatementLines((int) $result['id'], $lines);
 
-                DB::table('payroll_import_batch_items')->insert([
-                    'payroll_import_batch_id' => $batchId,
-                    'employee_id' => (int) $employee->id,
-                    'employee_code' => $employeeCode,
-                    'employee_name' => (string) $employee->name,
-                    'gross_amount' => $statement['grossAmount'],
-                    'deduction_amount' => $statement['deductionAmount'],
-                    'net_amount' => $statement['netAmount'],
-                    'statement_id' => (int) $result['id'],
-                    'line_no' => $actualLineNo,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                    DB::table('payroll_import_batch_items')->insert([
+                        'payroll_import_batch_id' => $batchId,
+                        'employee_id' => (int) $employee->id,
+                        'employee_code' => $employeeCode,
+                        'employee_name' => (string) $employee->name,
+                        'gross_amount' => $statement['grossAmount'],
+                        'deduction_amount' => $statement['deductionAmount'],
+                        'net_amount' => $statement['netAmount'],
+                        'statement_id' => (int) $result['id'],
+                        'line_no' => $actualLineNo,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    return $result;
+                });
 
                 $results[] = [
                     'line' => $actualLineNo,
@@ -396,16 +432,34 @@ final class PayrollImportBatchImportService
             'errorCount' => count($errors),
             'items' => $results,
             'errors' => $errors,
+            'sourceFormat' => $prepared['sourceFormat'],
+            'sourceRowCount' => $prepared['sourceRowCount'],
+            'candidateRowCount' => $prepared['candidateRowCount'],
+            'skippedRowCount' => $prepared['skippedRowCount'],
+        ];
+    }
+
+    private function buildPreviewPayload(array $prepared): array
+    {
+        return [
+            'sourceFormat' => $prepared['sourceFormat'],
+            'sourceRowCount' => $prepared['sourceRowCount'],
+            'candidateRowCount' => $prepared['candidateRowCount'],
+            'skippedRowCount' => $prepared['skippedRowCount'],
+            'skippedRows' => $prepared['skippedRows'],
+            'normalizedRowCount' => max(0, count($prepared['rows']) - 1),
+            'headers' => $prepared['header'],
+            'rows' => array_slice(array_slice($prepared['rows'], 1), 0, 10),
         ];
     }
 
     private function resolveStatementType(array $payload): string
     {
-        if (!empty($payload['statementType'])) {
+        if (! empty($payload['statementType'])) {
             return $this->catalog->normalizeStatementType((string) $payload['statementType']);
         }
 
-        if (!empty($payload['definitionId'])) {
+        if (! empty($payload['definitionId'])) {
             $definition = DB::table('payroll_data_definitions')->where('id', (int) $payload['definitionId'])->first();
             if ($definition === null) {
                 throw new ApiException('NOT_FOUND', 'データ定義が見つかりません。', 404);

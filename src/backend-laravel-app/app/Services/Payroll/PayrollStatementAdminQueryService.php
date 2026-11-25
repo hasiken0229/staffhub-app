@@ -44,7 +44,20 @@ final class PayrollStatementAdminQueryService
             throw new ApiException('NOT_FOUND', '給与明細が見つかりません。', 404);
         }
 
-        return $this->buildStatementDetail($statement, true);
+        if ($statement->published_at === null) {
+            return [...$this->buildStatementDetail($statement, true), 'notificationStatus' => 'UNPUBLISHED'];
+        }
+
+        $job = new \App\Jobs\SendPayrollPublication((int) $statement->id, $statement->file_path, $statement->published_at);
+        $delivery = DB::table('audit_logs')->where('target_type', 'PAYROLL_NOTIFICATION')
+            ->where('target_id', $job->eventId())->orderByDesc('id')->first();
+        $notificationStatus = match ($delivery?->action) {
+            'PAYROLL_NOTIFICATION_SENT' => 'SENT',
+            'PAYROLL_NOTIFICATION_INCOMPLETE' => 'INCOMPLETE',
+            'PAYROLL_NOTIFICATION_QUEUED' => CarbonImmutable::parse($statement->published_at)->isFuture() ? 'SCHEDULED' : 'QUEUED',
+            default => 'UNKNOWN',
+        };
+        return [...$this->buildStatementDetail($statement, true), 'notificationStatus' => $notificationStatus];
     }
 
     public function listForAdmin(array $filters): array
@@ -70,10 +83,14 @@ final class PayrollStatementAdminQueryService
 
         $total = (clone $baseQuery)->distinct()->count('ps.id');
         $rows = (clone $baseQuery)
-            ->leftJoin('payroll_statement_views as psv', 'psv.payroll_statement_id', '=', 'ps.id')
+            ->leftJoin('payroll_statement_views as psv', function ($join) {
+                $join->on('psv.payroll_statement_id', '=', 'ps.id')->on('psv.revision', '=', 'ps.revision');
+            })
             ->leftJoin('payroll_data_definitions as pdd', 'pdd.id', '=', 'ps.payroll_data_definition_id')
             ->select([
                 'ps.id',
+                'ps.revision',
+                'ps.replaced_at',
                 'ps.employee_id',
                 'ps.statement_type',
                 'e.employee_code',
@@ -92,6 +109,8 @@ final class PayrollStatementAdminQueryService
             ])
             ->groupBy(
                 'ps.id',
+                'ps.revision',
+                'ps.replaced_at',
                 'ps.employee_id',
                 'ps.statement_type',
                 'e.employee_code',
@@ -115,6 +134,8 @@ final class PayrollStatementAdminQueryService
         return [
             'items' => $rows->map(fn (object $row) => [
                 'id' => (int) $row->id,
+                'revision' => (int) $row->revision,
+                'replacedAt' => $row->replaced_at ? CarbonImmutable::parse($row->replaced_at)->toIso8601String() : null,
                 'employeeId' => (int) $row->employee_id,
                 'employeeCode' => $row->employee_code,
                 'employeeName' => $row->employee_name,

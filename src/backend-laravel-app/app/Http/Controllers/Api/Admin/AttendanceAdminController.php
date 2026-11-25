@@ -6,6 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Services\ApiException;
 use App\Services\ApiResponse;
 use App\Services\AttendanceService;
+use App\Services\Attendance\BreakOvertimeReviewService;
+use App\Services\Attendance\MonthMutationLock;
+use App\Services\AuditLogService;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -30,6 +34,45 @@ final class AttendanceAdminController extends Controller
         return ApiResponse::ok($result['items'], $result['meta']);
     }
 
+    public function devices()
+    {
+        $columns = \Illuminate\Support\Facades\Schema::getColumnListing('attendance_devices');
+        $diagnosticsSchemaReady = array_diff(['client_time_at', 'clock_drift_seconds', 'pending_offline_count', 'reader_status'], $columns) === [];
+        $fields = [
+                'id',
+                'device_code',
+                'name',
+                'location_name',
+                'app_version',
+                'last_seen_at',
+                'client_time_at',
+                'clock_drift_seconds',
+                'pending_offline_count',
+                'reader_status',
+                'is_active',
+            ];
+        // Older installations do not have heartbeat detail columns. Keep their DB unchanged.
+        $rows = DB::table('attendance_devices')
+            ->select(array_map(static fn ($field) => in_array($field, $columns, true) ? $field : DB::raw('NULL AS '.$field), $fields))
+            ->orderBy('device_code')
+            ->get();
+
+        return ApiResponse::ok($rows->map(static fn (object $row) => [
+            'id' => (int) $row->id,
+            'deviceCode' => (string) $row->device_code,
+            'name' => (string) $row->name,
+            'locationName' => $row->location_name,
+            'appVersion' => $row->app_version,
+            'lastSeenAt' => $row->last_seen_at ? CarbonImmutable::parse((string) $row->last_seen_at)->toIso8601String() : null,
+            'clientTimeAt' => $row->client_time_at ? CarbonImmutable::parse((string) $row->client_time_at)->toIso8601String() : null,
+            'clockDriftSeconds' => $row->client_time_at !== null && $row->clock_drift_seconds !== null ? (int) $row->clock_drift_seconds : null,
+            'pendingOfflineCount' => $row->client_time_at !== null && $row->pending_offline_count !== null ? (int) $row->pending_offline_count : null,
+            'readerStatus' => $row->client_time_at !== null ? $row->reader_status : null,
+            'diagnosticsSchemaReady' => $diagnosticsSchemaReady,
+            'isActive' => (bool) $row->is_active,
+        ])->all());
+    }
+
     public function daily(Request $request)
     {
         $result = $this->attendanceService->listDaily($request->only([
@@ -45,10 +88,12 @@ final class AttendanceAdminController extends Controller
 
     public function dailyGrid(Request $request)
     {
+        $request->validate(['periodBasis' => ['nullable', 'in:CALENDAR,PAYROLL']]);
         $result = $this->attendanceService->listDailyGrid($request->only([
             'targetMonth',
             'employeeCode',
             'departmentName',
+            'periodBasis',
         ]));
 
         return ApiResponse::ok($result['items'], $result['meta']);
@@ -87,6 +132,28 @@ final class AttendanceAdminController extends Controller
         }
     }
 
+    public function breakOvertime(Request $request, int $id, string $operation, BreakOvertimeReviewService $service)
+    {
+        $input = $request->validate([
+            'plannedStart' => ['nullable', 'date_format:H:i'],
+            'startBasis' => ['nullable', 'in:RULE,ACTUAL'],
+            'actualStart' => ['nullable', 'date_format:H:i'],
+            'actualStartNextDay' => ['nullable', 'boolean'],
+            'actualBreakMinutes' => ['nullable', 'integer', 'between:0,1440'],
+            'breakBasis' => ['nullable', 'in:SCHEDULE_END,REGULAR_PUNCH'],
+            'confirmed' => ['nullable', 'boolean'],
+            'token' => ['nullable', 'string', 'max:256'],
+        ]);
+        try {
+            $result = $operation === 'apply'
+                ? $service->apply($id, $input, $request->user())
+                : $service->preview($id, $input, $request->user());
+            return ApiResponse::ok($result);
+        } catch (ApiException $exception) {
+            return ApiResponse::error($exception->errorCode, $exception->getMessage(), $exception->status, $exception->details);
+        }
+    }
+
     public function updateDaily(Request $request, int $id)
     {
         $payload = $request->validate([
@@ -100,7 +167,7 @@ final class AttendanceAdminController extends Controller
             'breaks.*.startNextDay' => ['nullable', 'boolean'],
             'breaks.*.endTime' => ['nullable', 'string', 'max:5'],
             'breaks.*.endNextDay' => ['nullable', 'boolean'],
-            'remark' => ['nullable', 'string'],
+            'remark' => ['nullable', 'string', 'max:255'],
             'supervisorComment' => ['nullable', 'string'],
             'approvalStatus' => ['nullable', 'string', 'in:PENDING,APPROVED,RETURNED'],
             'approvalComment' => ['nullable', 'string'],
@@ -169,8 +236,8 @@ final class AttendanceAdminController extends Controller
     {
         $payload = $request->validate([
             'employeeId' => ['required', 'integer', 'exists:employees,id'],
-            'standardClockInTime' => ['nullable', 'string', 'max:5'],
-            'standardClockOutTime' => ['nullable', 'string', 'max:5'],
+            'standardClockInTime' => ['nullable', 'date_format:H:i'],
+            'standardClockOutTime' => ['nullable', 'date_format:H:i'],
             'includeBeforeStart' => ['nullable', 'boolean'],
             'includeAfterEnd' => ['nullable', 'boolean'],
         ]);
@@ -245,7 +312,7 @@ final class AttendanceAdminController extends Controller
     public function shiftSchedules(Request $request)
     {
         $payload = $request->validate([
-            'targetMonth' => ['nullable', 'string', 'size:7'],
+            'targetMonth' => ['nullable', 'date_format:Y-m'],
             'employeeId' => ['nullable', 'integer'],
         ]);
         $targetMonth = $payload['targetMonth'] ?? now()->format('Y-m');
@@ -283,28 +350,76 @@ final class AttendanceAdminController extends Controller
     {
         $payload = $request->validate([
             'employeeId' => ['required', 'integer', 'exists:employees,id'],
-            'targetDate' => ['required', 'date'],
+            'targetDate' => ['required', 'date_format:Y-m-d'],
             'workTypeId' => ['nullable', 'integer', 'exists:work_type_settings,id'],
-            'scheduledClockInTime' => ['nullable', 'string', 'max:5'],
-            'scheduledClockOutTime' => ['nullable', 'string', 'max:5'],
+            'scheduledClockInTime' => ['nullable', 'date_format:H:i'],
+            'scheduledClockOutTime' => ['nullable', 'date_format:H:i'],
             'note' => ['nullable', 'string', 'max:1000'],
         ]);
-        DB::table('attendance_shift_schedules')->updateOrInsert(
-            [
-                'employee_id' => (int) $payload['employeeId'],
-                'target_date' => (string) $payload['targetDate'],
-            ],
-            [
-                'work_type_id' => $payload['workTypeId'] ?? null,
-                'scheduled_clock_in_time' => $payload['scheduledClockInTime'] ?? null,
-                'scheduled_clock_out_time' => $payload['scheduledClockOutTime'] ?? null,
-                'note' => $payload['note'] ?? null,
-                'created_by' => null,
-                'updated_by' => null,
-                'updated_at' => now(),
-                'created_at' => now(),
-            ],
-        );
+        try {
+            DB::transaction(function () use ($payload, $request): void {
+                $date = (string) $payload['targetDate'];
+                $employeeId = (int) $payload['employeeId'];
+                // Serialize with punching, corrections, bulk approval and month close.
+                MonthMutationLock::acquire([substr($date, 0, 7)]);
+                $daily = DB::table('attendance_daily')->where('employee_id', $employeeId)
+                    ->where('target_date', $date)->lockForUpdate()->first();
+                if (($daily->close_status ?? 'OPEN') === 'CLOSED') {
+                    throw new ApiException('CLOSED_PERIOD', '日次勤怠が締め済みのためシフトを変更できません。', 422);
+                }
+
+                $setting = DB::table('employee_attendance_settings')->where('employee_id', $employeeId)->first();
+                $clockIn = $payload['scheduledClockInTime'] ?? null;
+                $clockOut = $payload['scheduledClockOutTime'] ?? null;
+                $effectiveIn = $clockIn ?? $setting?->standard_clock_in_time;
+                $effectiveOut = $clockOut ?? $setting?->standard_clock_out_time;
+                if ($effectiveIn !== null && $effectiveOut !== null) {
+                    // This is the existing attendance-day boundary: 00:00–05:00 is next day.
+                    $minutes = static function (string $time): int {
+                        $value = (int) substr($time, 0, 2) * 60 + (int) substr($time, 3, 2);
+                        return $value <= 300 ? $value + 1440 : $value;
+                    };
+                    if ($minutes($effectiveOut) <= $minutes($effectiveIn)) {
+                        throw new ApiException('VALIDATION_ERROR', '予定退勤は予定出勤より後にしてください。00:00〜05:00は翌日扱いです。', 422, [
+                            ['field' => 'scheduledClockOutTime', 'message' => '予定出勤より後の時刻を指定してください。00:00〜05:00は翌日扱いです。'],
+                        ]);
+                    }
+                }
+
+                $existing = DB::table('attendance_shift_schedules')->where('employee_id', $employeeId)
+                    ->where('target_date', $date)->lockForUpdate()->first();
+                $values = [
+                    'work_type_id' => $payload['workTypeId'] ?? null,
+                    'scheduled_clock_in_time' => $clockIn !== null ? $clockIn.':00' : null,
+                    'scheduled_clock_out_time' => $clockOut !== null ? $clockOut.':00' : null,
+                    'note' => $payload['note'] ?? null,
+                ];
+                if ($existing !== null) {
+                    $changed = collect($values)->contains(function ($value, $key) use ($existing): bool {
+                        $before = $existing->{$key};
+                        if (str_starts_with($key, 'scheduled_clock_') && $before !== null) {
+                            $before = substr($before, 0, 5).':00';
+                        }
+                        return $before != $value;
+                    });
+                    if (!$changed) { return; }
+                    $id = (int) $existing->id;
+                    DB::table('attendance_shift_schedules')->where('id', $id)->update([...$values, 'updated_at' => now()]);
+                } else {
+                    $id = (int) DB::table('attendance_shift_schedules')->insertGetId([
+                        ...$values, 'employee_id' => $employeeId, 'target_date' => $date,
+                        'created_by' => null, 'updated_by' => null, 'created_at' => now(), 'updated_at' => now(),
+                    ]);
+                }
+                app(AuditLogService::class)->record('ADMIN', (int) $request->user()->id,
+                    'ATTENDANCE_SHIFT_SAVED', 'ATTENDANCE_SHIFT', (string) $id,
+                    ['before' => $existing !== null ? (array) $existing : null,
+                     'after' => (array) DB::table('attendance_shift_schedules')->where('id', $id)->first()]);
+                // Schedules do not rewrite raw punches, imported values or approved/manual daily records.
+            });
+        } catch (ApiException $exception) {
+            return ApiResponse::error($exception->errorCode, $exception->getMessage(), $exception->status, $exception->details);
+        }
 
         return $this->shiftSchedules(new Request([
             'targetMonth' => substr((string) $payload['targetDate'], 0, 7),
@@ -557,6 +672,24 @@ final class AttendanceAdminController extends Controller
     public function bulkApprove(Request $request)
     {
         return $this->bulkDecide($request, 'APPROVED');
+    }
+
+    public function monthApprovalPreview(Request $request)
+    {
+        $payload = $request->validate(['targetMonth'=>['required', 'date_format:Y-m']]);
+        return ApiResponse::ok(app(\App\Services\Attendance\MonthApprovalService::class)->preview($payload['targetMonth']));
+    }
+
+    public function approveMonthCandidates(Request $request)
+    {
+        $payload = $request->validate([
+            'targetMonth'=>['required', 'date_format:Y-m'],
+            'candidates'=>['required', 'array', 'min:1', 'max:2000'],
+            'candidates.*.id'=>['required', 'integer', 'min:1', 'distinct'],
+            'candidates.*.fingerprint'=>['required', 'string', 'regex:/^[a-f0-9]{64}$/'],
+            'comment'=>['nullable', 'string', 'max:2000'],
+        ]);
+        return ApiResponse::ok(app(\App\Services\Attendance\MonthApprovalService::class)->approve($payload['targetMonth'], $payload['candidates'], $payload['comment'] ?? null, $request->user()));
     }
 
     public function return(Request $request, int $id)

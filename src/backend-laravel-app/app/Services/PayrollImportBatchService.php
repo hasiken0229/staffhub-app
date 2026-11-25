@@ -16,8 +16,7 @@ final class PayrollImportBatchService
         private readonly PayrollImportBatchImportService $importService,
         private readonly PayrollImportBatchDeletionService $deletionService,
         private readonly PayrollImportBatchArchiveService $archiveService,
-    ) {
-    }
+    ) {}
 
     public function listForAdmin(array $filters): array
     {
@@ -42,6 +41,11 @@ final class PayrollImportBatchService
     public function importFromCsv(array $payload, UploadedFile $file, GenericUser $actor): array
     {
         return $this->importService->importFromCsv($payload, $file, $actor);
+    }
+
+    public function previewFromCsv(array $payload, UploadedFile $file): array
+    {
+        return $this->importService->previewFromCsv($payload, $file);
     }
 
     public function deleteBatch(int $batchId, GenericUser $actor): array

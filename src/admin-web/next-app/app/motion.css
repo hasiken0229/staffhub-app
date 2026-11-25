@@ -23,8 +23,13 @@
 }
 
 .section-enter {
-  opacity: 0;
-  animation: rise-in 720ms cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .section-enter {
+    animation: rise-in 720ms cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  }
 }
 
 .delay-1 {

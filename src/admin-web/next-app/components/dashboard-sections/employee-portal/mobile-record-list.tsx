@@ -13,6 +13,7 @@ type MobileRecordListProps<T> = {
     value: ReactNode;
   }>;
   renderActions?: (row: T) => ReactNode;
+  renderExpandedRow?: (row: T) => ReactNode;
 };
 
 export function MobileRecordList<T>(props: MobileRecordListProps<T>) {
@@ -49,6 +50,7 @@ export function MobileRecordList<T>(props: MobileRecordListProps<T>) {
               </div>
 
               {props.renderActions ? <div className="button-row mobile-record-actions">{props.renderActions(row)}</div> : null}
+              {props.renderExpandedRow?.(row)}
             </article>
           ))}
         </div>

@@ -1,6 +1,7 @@
 import type { AttendanceSectionProps } from "@/components/dashboard-sections/attendance/attendance-section-types";
 
 type AttendanceFiltersPanelProps = {
+  isLoading: boolean;
   dashboard: AttendanceSectionProps["data"]["dashboard"];
   filters: AttendanceSectionProps["filters"];
   actions: Pick<
@@ -20,7 +21,7 @@ type AttendanceFiltersPanelProps = {
   >;
 };
 
-export function AttendanceFiltersPanel({ dashboard, filters, actions }: AttendanceFiltersPanelProps) {
+export function AttendanceFiltersPanel({ dashboard, filters, actions, isLoading }: AttendanceFiltersPanelProps) {
   return (
     <section id="attendance-filters" className="panel action-panel anchor-panel">
       <div className="panel-header">
@@ -29,14 +30,6 @@ export function AttendanceFiltersPanel({ dashboard, filters, actions }: Attendan
         </div>
       </div>
       <div className="filter-grid">
-        <label>
-          対象月
-          <input
-            type="month"
-            value={filters.attendanceFilterMonth}
-            onChange={(event) => actions.onAttendanceFilterMonthChange(event.target.value)}
-          />
-        </label>
         <label>
           職員番号
           <input
@@ -139,10 +132,10 @@ export function AttendanceFiltersPanel({ dashboard, filters, actions }: Attendan
         </label>
       </div>
       <div className="button-row">
-        <button type="button" onClick={() => void actions.onApplyAttendanceFilters()}>
-          条件で再表示
+        <button type="button" onClick={() => void actions.onApplyAttendanceFilters()} disabled={isLoading}>
+          {isLoading ? "取得中..." : "条件で再表示"}
         </button>
-        <button type="button" className="secondary" onClick={() => void actions.onResetAttendanceFilters()}>
+        <button type="button" className="secondary" onClick={() => void actions.onResetAttendanceFilters()} disabled={isLoading}>
           条件をクリア
         </button>
       </div>

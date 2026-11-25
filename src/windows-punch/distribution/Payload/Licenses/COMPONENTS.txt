@@ -1,0 +1,32 @@
+StaffHub 打刻端末用 第三者コンポーネント一覧
+2026年11月25日版 / Windows x64 / .NET 10.0.15
+
+1. アプリに含まれるもの
+.NET の依存関係一覧（StaffHub.PunchApp.deps.json）には Microsoft.NETCore.App.Runtime.win-x64 10.0.15 と Microsoft.WindowsDesktop.App.Runtime.win-x64 10.0.15 が記載されています。ランタイムの第三者告知と利用条件は次の原文で確認できます。
+
+NETCore-MIT.txt / Runtime-ThirdPartyNotices.txt
+  Microsoft.NETCore.App.Runtime.win-x64 10.0.15 の公式 NuGet パッケージに付属する LICENSE.TXT と THIRD-PARTY-NOTICES.TXT。
+  https://www.nuget.org/packages/Microsoft.NETCore.App.Runtime.win-x64/10.0.15
+
+WindowsDesktop-MIT.txt / wpf-ThirdPartyNotices.txt / winforms-ThirdPartyNotices.txt
+  WindowsDesktop ランタイムの公式 NuGet パッケージの LICENSE と、同パッケージが示すコミットでの WPF・Windows Forms の第三者告知。
+  https://www.nuget.org/packages/Microsoft.WindowsDesktop.App.Runtime.win-x64/10.0.15
+  https://github.com/dotnet/dotnet/blob/8e0f8ed2312954727f8919d7d1c2f78b483b4ee7/src/wpf/THIRD-PARTY-NOTICES.TXT
+  https://github.com/dotnet/dotnet/blob/8e0f8ed2312954727f8919d7d1c2f78b483b4ee7/src/winforms/THIRD-PARTY-NOTICES.TXT
+
+2. Windows 固有のバイナリ
+Microsoft-Windows-Binary-Licenses.md は、下記バイナリに個別に適用される条件を示す .NET プロジェクトの案内です。
+  https://github.com/dotnet/core/blob/6c25b9da384e8d8a16fd12c79da8a8aa6bdfc6a1/license-information-windows.md
+
+Microsoft-DotNet-Library.txt / Microsoft-DotNet-ThirdPartyNotices.txt
+  これらは発行に使用した Microsoft .NET Windows SDK 10.0.404 に含まれる LICENSE.txt と ThirdPartyNotices.txt の原文です。Microsoft の上記案内では、coreclr.dll、Microsoft.DiaSymReader.Native.amd64.dll、PresentationNative_cor3.dll、vcruntime140_cor3.dll、wpfgfx_cor3.dll には .NET Library License が適用されます。
+  https://dotnet.microsoft.com/dotnet_library_license.htm
+
+Microsoft-Windows-SDK.md
+  WPF の D3DCompiler_47_cor3.dll に適用される Microsoft Windows SDK 利用条件の、Microsoft Learn が提供する原文です。
+  https://learn.microsoft.com/en-us/legal/windows-sdk/license
+
+3. カードリーダーとの接続
+FelicaLibraryCardReaderService は端末に導入された felica.dll、RcS380CardReaderService は Windows の winscard.dll を呼び出します。ZIPの配布対象はアプリと上記ランタイムです。Sony のインストーラー、ドライバー、felica.dll、winscard.dll、独立した PC/SC パッケージは同梱していません。
+
+本一覧は同梱コンポーネントと適用条件を探すための案内です。各利用条件・著作権・商標の原文は同じフォルダーにあります。

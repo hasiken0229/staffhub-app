@@ -79,6 +79,16 @@ final class AuthController extends Controller
         return ApiResponse::ok(['success' => true]);
     }
 
+    public function initialPassword(Request $request)
+    {
+        $payload = $request->validate([
+            'passwordChangeToken' => ['required', 'string', 'max:255'],
+            'password' => ['required', 'string', 'min:8', 'max:255'],
+            'passwordConfirmation' => ['required', 'same:password'],
+        ]);
+        return ApiResponse::ok($this->authService->completeInitialPasswordChange($payload['passwordChangeToken'], $payload['password']));
+    }
+
     public function resetPassword(Request $request)
     {
         $payload = $request->validate([

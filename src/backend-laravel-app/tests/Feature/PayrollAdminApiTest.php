@@ -22,7 +22,7 @@ final class PayrollAdminApiTest extends TestCase
         ]);
 
         $employeeIds = [];
-        foreach ([['101', '職員A'], ['102', '職員B'], ['103', '職員C']] as [$employeeCode, $name]) {
+        foreach ([['970012', '職員A'], ['102', '職員B'], ['970021', '職員C']] as [$employeeCode, $name]) {
             $employeeIds[] = DB::table('employees')->insertGetId([
                 'employee_code' => $employeeCode,
                 'name' => $name,

@@ -1,4 +1,6 @@
 import { type FormEvent, useState } from "react";
+import { HarmosHistoryPanel } from "./harmos-history-panel";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { currentDateValue, fiscalYearStartValue } from "@/lib/date-defaults";
 import { importHarmosMigration, previewHarmosMigration } from "@/lib/api";
 import type { HarmosMigrationImportType, HarmosMigrationResult, ImportHistory } from "@/types";
@@ -10,17 +12,24 @@ type HarmosMigrationSectionProps = {
   };
   actions: {
     onRefresh: () => void;
+    onFileHistoryDownload: (id: number, fileName?: string) => Promise<unknown>;
   };
 };
 
 const importTypeOptions: Array<{ value: HarmosMigrationImportType; label: string; note: string }> = [
-  { value: "HARMOS_EMPLOYEE_CSV", label: "職員マスタ", note: "職員番号と氏名を基準に新規登録・更新します。" },
+  { value: "HARMOS_EMPLOYEE_CSV", label: "職員マスタ（拠点・雇用形態同期）", note: "職員番号と氏名を基準に新規登録・更新し、部門・拠点・雇用形態の設定マスタも同期します。" },
+  { value: "HARMOS_WORK_TYPE_CSV", label: "勤務区分", note: "HARMOSの勤務区分CSVから、勤務区分名・始終業時刻・休憩時間・所定時間を同期します。休日・休暇の区分は取り込みません。" },
   { value: "HARMOS_ATTENDANCE_DAILY_CSV", label: "日次勤怠", note: "過去勤怠を日次勤怠へHARMOS移行データとして登録します。" },
   { value: "HARMOS_ATTENDANCE_MONTHLY_CSV", label: "月次勤怠", note: "月次CSVを参照ファイルとして履歴保存します。" },
   { value: "HARMOS_PAID_LEAVE_BALANCE_CSV", label: "有給残数", note: "移行基準日時点の残数を移行付与として登録します。" },
 ];
 
 const importTypeLabels = Object.fromEntries(importTypeOptions.map((option) => [option.value, option.label])) as Record<HarmosMigrationImportType, string>;
+
+function formatImportType(importType: string) {
+  if (importType === "HARMOS_SOURCE_ARCHIVE") return "HRMOS移行原本";
+  return importTypeLabels[importType as HarmosMigrationImportType] ?? "その他の取込";
+}
 
 export function HarmosMigrationSection(props: HarmosMigrationSectionProps) {
   const activePanel = props.data.activePanel || "harmos-upload";
@@ -36,6 +45,7 @@ export function HarmosMigrationSection(props: HarmosMigrationSectionProps) {
   const [importResult, setImportResult] = useState<HarmosMigrationResult | null>(null);
   const [message, setMessage] = useState("");
   const [isWorking, setIsWorking] = useState(false);
+  const [isImportConfirmOpen, setIsImportConfirmOpen] = useState(false);
 
   function buildFormData(file: File) {
     const formData = new FormData();
@@ -76,23 +86,31 @@ export function HarmosMigrationSection(props: HarmosMigrationSectionProps) {
     }
   }
 
-  async function handleImport() {
+  function handleImportRequest() {
     if (!selectedFile || !previewResult) {
       setMessage("先にCSVをプレビューしてください。");
       return;
     }
-    if (!window.confirm(`${importTypeLabels[importType]}を確定取込します。\n取込可能: ${previewResult.successCount}件\nエラー: ${previewResult.errorCount}件`)) {
+
+    setIsImportConfirmOpen(true);
+  }
+
+  async function handleImport() {
+    if (!selectedFile || !previewResult) {
+      setMessage("先にCSVをプレビューしてください。");
       return;
     }
 
     setIsWorking(true);
     setMessage("");
     try {
-      const result = await importHarmosMigration(buildFormData(selectedFile));
+      const formData = buildFormData(selectedFile);
+      if (previewResult.previewFingerprint) formData.set("previewFingerprint", previewResult.previewFingerprint);
+      const result = await importHarmosMigration(formData);
       setImportResult(result);
-      setPreviewResult(result);
+      setPreviewResult(null);
       setMessage(`取込完了: ${result.successCount}件を処理しました。エラー${result.errorCount}件。`);
-      props.actions.onRefresh();
+      try { await props.actions.onRefresh(); } catch { setMessage(`取込は完了しています（${result.successCount}件）。履歴の更新に失敗しました。再取込せず、再読込してください。`); }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "HARMOS移行の確定取込に失敗しました。");
     } finally {
@@ -124,6 +142,7 @@ export function HarmosMigrationSection(props: HarmosMigrationSectionProps) {
                     setImportType(event.currentTarget.value as HarmosMigrationImportType);
                     setPreviewResult(null);
                     setImportResult(null);
+                    setIsImportConfirmOpen(false);
                   }}
                 >
                   {importTypeOptions.map((option) => (
@@ -150,6 +169,7 @@ export function HarmosMigrationSection(props: HarmosMigrationSectionProps) {
                     setSelectedFile(event.currentTarget.files?.[0] ?? null);
                     setPreviewResult(null);
                     setImportResult(null);
+                    setIsImportConfirmOpen(false);
                   }}
                 />
               </label>
@@ -186,11 +206,27 @@ export function HarmosMigrationSection(props: HarmosMigrationSectionProps) {
             ) : null}
 
             <p className="compact-empty">{selectedOption.note}</p>
+            <div className="operation-guide" role="note">
+              <strong>取込前の確認</strong>
+              <span>
+                まずCSVをプレビューし、取込可能件数とエラー内容を確認してください。確定取込はプレビュー完了後に実行できます。
+              </span>
+            </div>
             <div className="button-row">
-              <button type="submit" disabled={isWorking || !selectedFile}>
+              <button
+                type="submit"
+                disabled={isWorking || !selectedFile}
+                title={!selectedFile ? "CSVファイルを選択するとプレビューできます" : undefined}
+              >
                 {isWorking ? "確認中..." : "CSVをプレビュー"}
               </button>
-              <button type="button" className="secondary" disabled={isWorking || !previewResult} onClick={() => void handleImport()}>
+              <button
+                type="button"
+                className="secondary confirm-action"
+                disabled={isWorking || !previewResult}
+                title={!previewResult ? "CSVプレビュー完了後に確定取込できます" : "プレビュー結果を確定取込します"}
+                onClick={handleImportRequest}
+              >
                 確定取込
               </button>
             </div>
@@ -198,49 +234,23 @@ export function HarmosMigrationSection(props: HarmosMigrationSectionProps) {
 
           {message ? <p className="feedback">{message}</p> : null}
           {previewResult ? <MigrationResultPanel result={previewResult} committed={Boolean(importResult)} /> : null}
+          <ConfirmDialog
+            open={isImportConfirmOpen}
+            title="HARMOS CSVを確定取込しますか？"
+            message={`${importTypeLabels[importType]}: 取込可能 ${previewResult?.successCount ?? 0}件、エラー ${previewResult?.errorCount ?? 0}件。エラー行は取り込まれません。`}
+            confirmLabel="確定取込を実行"
+            onCancel={() => setIsImportConfirmOpen(false)}
+            onConfirm={() => {
+              setIsImportConfirmOpen(false);
+              void handleImport();
+            }}
+          />
         </section>
       ) : null}
 
-      {activePanel === "harmos-history" ? (
-        <section id="harmos-history" className="panel anchor-panel">
-          <div className="panel-header">
-            <div>
-              <h3>HARMOS取込履歴</h3>
-            </div>
-            <span className="panel-meta">{harmosHistory.length} 件</span>
-          </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>日時</th>
-                  <th>種別</th>
-                  <th>ファイル</th>
-                  <th>成功</th>
-                  <th>エラー</th>
-                </tr>
-              </thead>
-              <tbody>
-                {harmosHistory.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="table-empty-cell">HARMOS取込履歴はまだありません</td>
-                  </tr>
-                ) : (
-                  harmosHistory.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.createdAt?.slice(0, 16).replace("T", " ")}</td>
-                      <td>{item.importType}</td>
-                      <td>{item.downloadFileName ?? item.sourceFileName}</td>
-                      <td>{item.successCount}</td>
-                      <td>{item.errorCount}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      ) : null}
+      {activePanel === "harmos-history" && (
+        <HarmosHistoryPanel recent={harmosHistory} formatType={formatImportType} onDownload={props.actions.onFileHistoryDownload} />
+      )}
     </section>
   );
 }

@@ -13,12 +13,12 @@
   --accent: #c5a1e8;
   --accent-soft: rgba(197, 161, 232, 0.16);
   --danger: #d87790;
-  --primary-start: #6f8fe5;
-  --primary-end: #94abf7;
-  --secondary-start: #e9a6c7;
-  --secondary-end: #f4bfd9;
-  --danger-start: #dc8398;
-  --danger-end: #eda5b1;
+  --primary-start: #315ab5;
+  --primary-end: #4769bd;
+  --secondary-start: #94476b;
+  --secondary-end: #a45276;
+  --danger-start: #b0445f;
+  --danger-end: #b5495f;
   --poster-start: #7d97ec;
   --poster-mid: #9db2fb;
   --poster-end: #b8c8ff;
@@ -81,20 +81,13 @@ button {
     background-color 160ms ease;
 }
 
-button:hover {
+button:hover:not(:disabled) {
   transform: translateY(-1px);
-  filter: brightness(1.03);
+  filter: none;
 }
 
 button:active {
   transform: translateY(0);
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.48;
-  transform: none;
-  filter: grayscale(0.14);
 }
 
 button.secondary {
@@ -103,6 +96,18 @@ button.secondary {
 
 button.danger {
   background: linear-gradient(135deg, var(--danger-start) 0%, var(--danger-end) 100%);
+}
+
+button:disabled,
+button.secondary:disabled,
+button.danger:disabled {
+  cursor: not-allowed;
+  color: #53647f;
+  background: #e2e7ef;
+  box-shadow: inset 0 0 0 1px #bbc5d5;
+  opacity: 1;
+  transform: none;
+  filter: none;
 }
 
 label {
@@ -156,3 +161,34 @@ select:focus {
   border-color: rgba(111, 143, 229, 0.48);
   box-shadow: 0 0 0 4px rgba(111, 143, 229, 0.12);
 }
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid #315fce;
+  outline-offset: 3px;
+}
+ .confirm-dialog-backdrop {
+   position: fixed; inset: 0 auto auto 0; margin: 0;
+   width: 100%; height: 100%; height: 100dvh; max-width: none; max-height: none;
+   padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+   border: 0; color: var(--ink); background: transparent; overscroll-behavior: contain;
+ }
+ .confirm-dialog-backdrop[open] { display: grid; place-items: center; grid-template-rows: minmax(0, 1fr); }
+ .confirm-dialog-backdrop::backdrop { background: rgba(24, 32, 54, .42); }
+ .confirm-dialog {
+   display: flex; flex-direction: column; width: min(100%, 440px); min-width: 0; max-height: 100%; overflow: auto;
+   padding: clamp(12px, 3vh, 24px); border: 1px solid var(--line-strong); border-radius: var(--radius-lg);
+   background: #fff; box-shadow: 0 24px 60px rgba(28, 43, 83, .28); overscroll-behavior: contain;
+ }
+ .confirm-dialog-content { min-height: min(4rem, 25dvh); overflow: auto; overscroll-behavior: contain; overflow-wrap: anywhere; }
+ .confirm-dialog h2 { margin: 0; font-size: 1.1875rem; }
+ .confirm-dialog p { margin: 12px 0 0; color: var(--muted-strong); line-height: 1.7; white-space: pre-wrap; }
+ .confirm-dialog-actions { display: flex; flex: none; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding-top: 12px; }
+ .confirm-dialog-actions button { min-height: 44px; min-width: 44px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; font-size: 1rem; }
+
+.download-status { position: fixed; z-index: 1000; bottom: 1rem; left: 1rem; right: 1rem; margin-inline: auto; max-width: 44rem; padding: 1rem; background: var(--surface-strong); border: 1px solid var(--line-strong); border-radius: 12px; box-shadow: 0 6px 24px #27344d26; overflow-wrap: anywhere; }
+.download-status button { margin-left: .75rem; }

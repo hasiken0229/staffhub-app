@@ -1,6 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AnnualPaidLeaveRegister } from "./leave/annual-paid-leave-register";
+import { reportPeriod } from "@/lib/report-period";
+import { japaneseHolidayName } from "@/lib/japanese-holidays";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { AttendanceDailyEditor } from "@/components/dashboard-sections/attendance/attendance-daily-editor";
-import { isoToTime, normalizeBreaks } from "@/components/dashboard-sections/attendance/attendance-section-utils";
+import { recordBreakOvertime } from "@/components/dashboard-sections/attendance/record-break-overtime";
+import type { BreakOvertimeConfirmation } from "@/types";
+import { buildDailyUpdatePayload, isNextDay, normalizeBreaks } from "@/components/dashboard-sections/attendance/attendance-section-utils";
+import { ApiRequestError } from "@/lib/api/core";
+import type { FieldErrors } from "@/components/form-field-errors";
 import { DataTable } from "@/components/data-table";
 import { ApprovalStatusBadge } from "@/components/status-badge";
 import { createAttendanceDaily, loadAttendanceDailyDetail, loadAttendanceDailyGrid, loadAttendanceDailyHistories, resetAttendanceDailyManualEdit, updateAttendanceDaily } from "@/lib/api/attendance";
@@ -18,6 +26,7 @@ import type {
 } from "@/types";
 
 type ReportsSectionProps = {
+  menuResetKey?: number;
   data: {
     dashboard: DashboardData;
     employees: Employee[];
@@ -39,10 +48,11 @@ type ReportsSectionProps = {
     onReportFromChange: (value: string) => void;
     onReportToChange: (value: string) => void;
     onReportEmployeeIdChange: (value: string) => void;
-    onDownloadMonthlyAttendanceCsv: (month: string) => Promise<void>;
+    onOpenMonthClose: (month: string) => void;
+    onDownloadMonthlyAttendanceCsv: (month: string, filters?: { employeeCode?: string; departmentName?: string }) => Promise<void>;
     onDownloadMonthlyPayrollCsv: () => Promise<void>;
-    onDownloadDailyAttendanceCsv: (from: string, to: string) => Promise<void>;
-    onDownloadDailyAttendancePdf: (month: string) => Promise<void>;
+    onDownloadDailyAttendanceCsv: (from: string, to: string, filters?: { employeeCode?: string; departmentName?: string }) => Promise<void>;
+    onDownloadDailyAttendancePdf: (month: string, filters?: { employeeCode?: string; departmentName?: string }) => Promise<void>;
     onDownloadMonthlyWorksPdf: () => Promise<void>;
     onFileHistoryDownload: (historyId: number, fileName?: string) => Promise<void>;
   };
@@ -60,18 +70,35 @@ export function ReportsSection(props: ReportsSectionProps) {
   const activePanel = props.data.activePanel || "reports-export";
   const selectedEmployee = props.data.employees.find((employee) => String(employee.id) === props.filters.reportEmployeeId);
   const selectedEmployeeLabel = selectedEmployee ? `${selectedEmployee.employeeCode} / ${selectedEmployee.name}` : "未選択";
-  const [reportView, setReportView] = useState<"menu" | "monthly-list" | "monthly-calendar">("menu");
-  const [monthlyRows, setMonthlyRows] = useState<AttendanceDaily[]>([]);
+  const [reportView, setReportView] = useState<"menu" | "monthly-list" | "monthly-calendar" | "leave-register">("menu");
+  const [loadedRows, setMonthlyRows] = useState<AttendanceDaily[]>([]);
+  const [loadedMonth, setLoadedMonth] = useState("");
+  const monthlyRows = loadedMonth === props.filters.reportMonth ? loadedRows : [];
+  const monthlyRequestId = useRef(0);
   const [monthlyEmployeeId, setMonthlyEmployeeId] = useState<number | null>(null);
   const [monthlyMessage, setMonthlyMessage] = useState("");
   const [isMonthlyLoading, setIsMonthlyLoading] = useState(false);
   const [editingDaily, setEditingDaily] = useState<AttendanceDailyDetail | null>(null);
+  const [originalDaily, setOriginalDaily] = useState<AttendanceDailyDetail | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [dailyBusy, setDailyBusy] = useState(false);
+  const dailyMutationBusy = useRef(false);
   const [editingBreaks, setEditingBreaks] = useState<AttendanceDailyBreak[]>([]);
   const [historyRows, setHistoryRows] = useState<AttendanceDailyHistory[]>([]);
-  const [activeEditTab, setActiveEditTab] = useState<"edit" | "history">("edit");
+  const [activeEditTab, setActiveEditTab] = useState<"detail" | "edit" | "history">("detail");
   const [editMessage, setEditMessage] = useState("");
   const [editError, setEditError] = useState("");
   const [isDailyEditLoading, setIsDailyEditLoading] = useState(false);
+  const [pendingReportExport, setPendingReportExport] = useState<{ label: string; scope: string; description: string; action: () => Promise<void> } | null>(null);
+  useEffect(() => () => { monthlyRequestId.current += 1; }, []);
+
+  useEffect(() => {
+    setReportView("menu");
+    setMonthlyEmployeeId(null);
+    setEditingDaily(null);
+    setEditError("");
+    setEditMessage("");
+  }, [props.menuResetKey]);
 
   const monthlySummaryRows = useMemo(() => buildMonthlySummaryRows(monthlyRows), [monthlyRows]);
   const monthlyEmployeeOptions = useMemo(() => {
@@ -117,35 +144,34 @@ export function ReportsSection(props: ReportsSectionProps) {
     [monthlyEmployeeId, monthlySummaryRows, props.data.employees],
   );
   const selectedMonthlyCalendarRows = useMemo(
-    () => buildMonthlyCalendarRows(props.filters.reportMonth, monthlyRows.filter((row) => row.employeeId === monthlyEmployeeId)),
-    [monthlyEmployeeId, monthlyRows, props.filters.reportMonth],
+    () => buildMonthlyCalendarRows(props.filters.reportMonth, monthlyRows.filter((row) => row.employeeId === monthlyEmployeeId), props.data.employees.find((e) => e.id === monthlyEmployeeId)?.employmentType),
+    [monthlyEmployeeId, monthlyRows, props.filters.reportMonth, props.data.employees],
   );
 
-  function confirmReportExport(label: string, scope: string) {
-    return window.confirm(
-      `${label}を出力します。\n対象月: ${props.filters.reportMonth}\n対象期間: ${props.filters.reportFrom} - ${props.filters.reportTo}\n対象職員: ${
-        selectedEmployeeLabel
-      }\n形式: ${scope}`,
-    );
-  }
-
   function runReportExport(label: string, scope: string, action: () => Promise<void>) {
-    if (confirmReportExport(label, scope)) {
-      void action();
-    }
+    const employee = label === "職員別勤務PDF" ? selectedEmployeeLabel : "全職員";
+    const period = label === "日次勤怠CSV" ? `${props.filters.reportFrom} - ${props.filters.reportTo}`
+      : label === "日次勤怠PDF" ? `${props.filters.reportMonth}（暦月）`
+      : `${props.filters.reportMonth}（パート・扶養内: 前月21日～当月20日／その他: 暦月）`;
+    setPendingReportExport({ label, scope, description: `対象期間: ${period}／対象職員: ${employee}／形式: ${scope}`, action });
   }
 
   async function loadMonthlyRows(targetMonth: string) {
+    const requestId = ++monthlyRequestId.current;
+    setMonthlyRows([]);
     setMonthlyMessage("");
     setIsMonthlyLoading(true);
     try {
-      const rows = await loadAttendanceDailyGrid({ targetMonth });
+      const rows = await loadAttendanceDailyGrid({ targetMonth, periodBasis: "PAYROLL" });
+      if (requestId !== monthlyRequestId.current) return;
       setMonthlyRows(rows);
+      setLoadedMonth(targetMonth);
     } catch (error) {
+      if (requestId !== monthlyRequestId.current) return;
       setMonthlyRows([]);
       setMonthlyMessage(error instanceof Error ? error.message : "月次レポートを読み込めませんでした。");
     } finally {
-      setIsMonthlyLoading(false);
+      if (requestId === monthlyRequestId.current) setIsMonthlyLoading(false);
     }
   }
 
@@ -158,7 +184,6 @@ export function ReportsSection(props: ReportsSectionProps) {
   async function openSelectedEmployeeMonthlyCalendar() {
     if (!selectedEmployee) {
       setMonthlyMessage("個人別月次表示を開く職員を選択してください。");
-      window.alert("個人別月次表示を開く職員を選択してください。");
       return;
     }
 
@@ -190,25 +215,27 @@ export function ReportsSection(props: ReportsSectionProps) {
     void loadMonthlyRows(value);
   }
 
-  async function openDailyEditor(row?: AttendanceDaily) {
+  async function openDailyEditor(row?: AttendanceDaily, targetDate = row?.targetDate) {
+    if (dailyMutationBusy.current || isDailyEditLoading) return;
     setIsDailyEditLoading(true);
     setEditError("");
     setEditMessage("");
     try {
       let dailyId = row?.id ?? null;
       if (!dailyId) {
-        if (!monthlyEmployeeId || !row?.targetDate) {
+        if (!monthlyEmployeeId || !targetDate) {
           throw new Error("日次勤怠を作成する職員または日付を確認できませんでした。");
         }
-        const created = await createAttendanceDaily({ employeeId: monthlyEmployeeId, targetDate: row.targetDate });
+        const created = await createAttendanceDaily({ employeeId: monthlyEmployeeId, targetDate });
         dailyId = created.id;
         await loadMonthlyRows(props.filters.reportMonth);
       }
       const [detail, histories] = await Promise.all([loadAttendanceDailyDetail(dailyId), loadAttendanceDailyHistories(dailyId)]);
       setEditingDaily(detail);
+      setOriginalDaily(detail); setFieldErrors({});
       setEditingBreaks(normalizeBreaks(detail.breaks));
       setHistoryRows(histories);
-      setActiveEditTab("edit");
+      setActiveEditTab("detail");
       window.setTimeout(() => {
         document.querySelector(".daily-edit-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 0);
@@ -220,53 +247,71 @@ export function ReportsSection(props: ReportsSectionProps) {
   }
 
   async function saveDailyEditor() {
-    if (!editingDaily) {
+    if (!editingDaily || !originalDaily || dailyMutationBusy.current) {
       return;
     }
+    const payload=buildDailyUpdatePayload(originalDaily,editingDaily,editingBreaks);
+    if (!Object.keys(payload).length) {setEditMessage("変更はありません。");return;}
+    dailyMutationBusy.current=true;setDailyBusy(true);setFieldErrors({});
     try {
-      const detail = await updateAttendanceDaily(editingDaily.id, {
-        workTypeId: editingDaily.workTypeId ?? null,
-        clockInTime: isoToTime(editingDaily.clockInAt),
-        clockInNextDay: false,
-        clockOutTime: isoToTime(editingDaily.clockOutAt),
-        clockOutNextDay: false,
-        breaks: editingBreaks.map((breakRow) => ({ ...breakRow, startNextDay: false, endNextDay: false })),
-        remark: editingDaily.remark ?? null,
-        supervisorComment: editingDaily.supervisorComment ?? null,
-        approvalStatus: editingDaily.approvalStatus ?? "PENDING",
-        approvalComment: editingDaily.approvalComment ?? null,
-      });
-      const histories = await loadAttendanceDailyHistories(editingDaily.id);
+      const detail = await updateAttendanceDaily(editingDaily.id, payload);
       setEditingDaily(detail);
+      setOriginalDaily(detail);
       setEditingBreaks(normalizeBreaks(detail.breaks));
-      setHistoryRows(histories);
       setEditMessage("日次勤怠を更新しました。");
       setEditError("");
-      await loadMonthlyRows(props.filters.reportMonth);
+      const [historyResult, refreshResult] = await Promise.allSettled([loadAttendanceDailyHistories(editingDaily.id), loadMonthlyRows(props.filters.reportMonth)]);
+      if (historyResult.status === "fulfilled") setHistoryRows(historyResult.value);
+      else setHistoryRows([]);
+      if (historyResult.status === "rejected" || refreshResult.status === "rejected") setEditMessage("保存は完了しました。履歴または一覧の再取得に失敗したため、再読込して確認してください。");
     } catch (error) {
       setEditError(error instanceof Error ? error.message : "日次勤怠の更新に失敗しました。");
+      if(error instanceof ApiRequestError)setFieldErrors(error.fieldErrors);
+    } finally {dailyMutationBusy.current=false;setDailyBusy(false);}
+  }
+
+  async function confirmBreakOvertime(id: number, inputs: BreakOvertimeConfirmation) {
+    if (dailyMutationBusy.current || editingDaily?.id !== id) throw new Error("勤務日を選び直してください。");
+    dailyMutationBusy.current = true;
+    setDailyBusy(true);
+    setEditError("");
+    setEditMessage("");
+    try {
+      const result = await recordBreakOvertime(id, inputs, () => loadMonthlyRows(props.filters.reportMonth));
+      setEditingDaily(result.detail);
+      setOriginalDaily(result.detail);
+      setEditingBreaks(normalizeBreaks(result.detail?.breaks));
+      setHistoryRows(result.histories);
+      setEditMessage(result.message);
+      setEditError(result.refreshError);
+    } finally {
+      dailyMutationBusy.current = false;
+      setDailyBusy(false);
     }
   }
 
   async function resetManualEdit() {
-    if (!editingDaily) {
+    if (!editingDaily || dailyMutationBusy.current) {
       return;
     }
+    dailyMutationBusy.current=true;setDailyBusy(true);setFieldErrors({});
     try {
       const detail = await resetAttendanceDailyManualEdit(editingDaily.id);
-      const histories = await loadAttendanceDailyHistories(editingDaily.id);
       setEditingDaily(detail);
+      setOriginalDaily(detail);
       setEditingBreaks(normalizeBreaks(detail.breaks));
-      setHistoryRows(histories);
       setEditMessage("手動補正を解除しました。");
       setEditError("");
-      await loadMonthlyRows(props.filters.reportMonth);
+      const [historyResult, refreshResult] = await Promise.allSettled([loadAttendanceDailyHistories(editingDaily.id), loadMonthlyRows(props.filters.reportMonth)]);
+      if (historyResult.status === "fulfilled") setHistoryRows(historyResult.value);
+      else setHistoryRows([]);
+      if (historyResult.status === "rejected" || refreshResult.status === "rejected") setEditMessage("手動補正の解除は完了しました。履歴または一覧を再読込して確認してください。");
     } catch (error) {
       setEditError(error instanceof Error ? error.message : "手動補正の解除に失敗しました。");
-    }
+    } finally {dailyMutationBusy.current=false;setDailyBusy(false);}
   }
 
-  function setEditingClock(field: "clockInAt" | "clockOutAt", time: string) {
+  function setEditingClock(field: "clockInAt" | "clockOutAt", time: string, nextDay?: boolean) {
     setEditingDaily((current) => {
       if (!current) {
         return current;
@@ -275,6 +320,7 @@ export function ReportsSection(props: ReportsSectionProps) {
         return { ...current, [field]: null };
       }
       const base = new Date(`${current.targetDate}T00:00:00`);
+      if(nextDay??isNextDay(current[field],current.targetDate))base.setDate(base.getDate()+1);
       const date = `${base.getFullYear()}-${`${base.getMonth() + 1}`.padStart(2, "0")}-${`${base.getDate()}`.padStart(2, "0")}`;
       return { ...current, [field]: `${date}T${time}:00` };
     });
@@ -286,7 +332,7 @@ export function ReportsSection(props: ReportsSectionProps) {
       <section id="reports-export" className="panel action-panel anchor-panel">
         <div className="panel-header">
           <div>
-            <h3>{reportView === "menu" ? "レポート" : reportView === "monthly-list" ? "月次レポート" : "月次レポート 個人別"}</h3>
+            <h3>{reportView === "menu" || reportView === "leave-register" ? "レポート" : reportView === "monthly-list" ? "月次レポート" : "月次レポート 個人別"}</h3>
           </div>
           {reportView !== "menu" ? (
             <button
@@ -306,12 +352,13 @@ export function ReportsSection(props: ReportsSectionProps) {
           ) : null}
         </div>
 
+        {reportView === "leave-register" && <AnnualPaidLeaveRegister initialEmployeeId={props.filters.reportEmployeeId} />}
         {reportView === "menu" ? (
           <div className="report-output-layout">
             <div className="report-output-conditions">
               <label>
                 対象月
-                <input type="month" value={props.filters.reportMonth} onChange={(event) => props.actions.onReportMonthChange(event.target.value)} />
+                <input type="month" value={props.filters.reportMonth} onChange={(event) => handleMonthlyMonthChange(event.target.value)} />
               </label>
               <label>
                 日次CSV 開始日
@@ -333,10 +380,11 @@ export function ReportsSection(props: ReportsSectionProps) {
                 </select>
               </label>
               <div className="report-output-target" aria-live="polite">
-                <span>出力対象</span>
+                <span>集計対象月</span>
                 <strong>{props.filters.reportMonth}</strong>
-                <span>{props.filters.reportFrom} - {props.filters.reportTo}</span>
-                <span>{selectedEmployeeLabel}</span>
+                <span>月次: パート・扶養内は前月21日～当月20日、その他は暦月</span>
+                <span>日次CSV: {props.filters.reportFrom} - {props.filters.reportTo}</span>
+                <span>職員別PDF: {selectedEmployeeLabel}／その他の出力: 全職員</span>
               </div>
             </div>
             <div className="report-hub-grid">
@@ -345,10 +393,17 @@ export function ReportsSection(props: ReportsSectionProps) {
                   <span>レポート</span>
                   <small>画面表示・PDF作成</small>
                 </h4>
+                <button type="button" className="secondary" aria-label="年次有給休暇管理簿" onClick={() => setReportView("leave-register")}><span className="report-action-label">年次有給休暇管理簿</span></button>
                 <button type="button" className="secondary" onClick={() => void openMonthlyReportList()}>
                   <span className="report-action-copy">
                     <span className="report-action-label">月次レポート</span>
                     <span className="report-action-detail">月ごとの勤怠一覧を確認</span>
+                  </span>
+                </button>
+                <button type="button" className="secondary" disabled={!/^\d{4}-\d{2}$/.test(props.filters.reportMonth)} onClick={() => props.actions.onOpenMonthClose(props.filters.reportMonth)}>
+                  <span className="report-action-copy">
+                    <span className="report-action-label">月次締めへ</span>
+                    <span className="report-action-detail">選択月の全職員の承認・締め前チェック</span>
                   </span>
                 </button>
                 <button type="button" className="secondary" onClick={() => void openSelectedEmployeeMonthlyCalendar()}>
@@ -416,6 +471,7 @@ export function ReportsSection(props: ReportsSectionProps) {
                 </button>
               </div>
             </div>
+            {monthlyMessage ? <p className="feedback" role="alert">{monthlyMessage}</p> : null}
           </div>
         ) : null}
 
@@ -424,12 +480,14 @@ export function ReportsSection(props: ReportsSectionProps) {
             <div className="report-toolbar">
               <label>
                 対象月
-                <input type="month" value={props.filters.reportMonth} onChange={(event) => props.actions.onReportMonthChange(event.target.value)} />
+                <input type="month" value={props.filters.reportMonth} onChange={(event) => handleMonthlyMonthChange(event.target.value)} />
               </label>
               <button type="button" onClick={() => void reloadMonthlyReportList()} disabled={isMonthlyLoading}>
                 {isMonthlyLoading ? "読込中..." : "月次レポート更新"}
               </button>
+              <button type="button" className="secondary" disabled={!/^\d{4}-\d{2}$/.test(props.filters.reportMonth)} onClick={() => props.actions.onOpenMonthClose(props.filters.reportMonth)}>この月の月次締めへ</button>
             </div>
+            <p className="muted">月次締めは暦月の全職員が対象です。パート・扶養内のレポート集計期間（前月21日〜当月20日）とは異なります。</p>
             {monthlyMessage ? <p className="feedback">{monthlyMessage}</p> : null}
             <div className="table-wrap report-table-wrap">
               <table className="report-monthly-table">
@@ -439,9 +497,11 @@ export function ReportsSection(props: ReportsSectionProps) {
                     <th>氏名</th>
                     <th>部門</th>
                     <th>勤務日数</th>
-                    <th>総労働時間</th>
+                    <th>勤務時間</th>
                     <th>実働時間</th>
                     <th>残業時間</th>
+                    <th>子の看護等休暇</th>
+                    <th>介護休暇</th>
                     <th>遅刻日数</th>
                     <th>早退日数</th>
                     <th>休日日数</th>
@@ -450,7 +510,7 @@ export function ReportsSection(props: ReportsSectionProps) {
                 <tbody>
                   {monthlySummaryRows.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="table-empty-cell">
+                      <td colSpan={12} className="table-empty-cell">
                         {isMonthlyLoading ? "月次レポートを読み込んでいます" : "月次レポートはありません"}
                       </td>
                     </tr>
@@ -468,6 +528,8 @@ export function ReportsSection(props: ReportsSectionProps) {
                         <td>{formatMinutes(row.totalWorkMinutes)}</td>
                         <td>{formatMinutes(row.actualWorkMinutes)}</td>
                         <td>{formatMinutes(row.overtimeMinutes)}</td>
+                        <td>{row.childCareLeaveDays > 0 ? `${row.childCareLeaveDays}日 / ` : ""}{formatMinutes(row.childCareLeaveMinutes)}</td>
+                        <td>{row.nursingCareLeaveDays > 0 ? `${row.nursingCareLeaveDays}日 / ` : ""}{formatMinutes(row.nursingCareLeaveMinutes)}</td>
                         <td>{row.lateDays}日</td>
                         <td>{row.earlyLeaveDays}日</td>
                         <td>{row.holidayDays}日</td>
@@ -498,6 +560,7 @@ export function ReportsSection(props: ReportsSectionProps) {
               <div>
                 <span className="detail-label">対象月</span>
                 <strong>{props.filters.reportMonth}</strong>
+                <small style={{ display: "block" }}>{selectedMonthlyCalendarRows[0]?.targetDate} ～ {selectedMonthlyCalendarRows[selectedMonthlyCalendarRows.length - 1]?.targetDate}</small>
               </div>
             </div>
             <div className="report-toolbar">
@@ -529,16 +592,20 @@ export function ReportsSection(props: ReportsSectionProps) {
             </div>
             <div className="table-wrap report-table-wrap">
               <table className="report-calendar-table">
+                <caption style={{ textAlign: "left", padding: "8px 0" }}>上段は計算に使う時刻、下段の薄字は元の打刻です。実働時間には有給休暇を含みます。</caption>
                 <thead>
                   <tr>
                     <th>日付</th>
                     <th>勤務区分</th>
-                    <th>出勤時刻</th>
-                    <th>退勤時刻</th>
-                    <th>総労働時間</th>
+                    <th>出勤時間/元の打刻</th>
+                    <th>退勤時間/元の打刻</th>
+                    <th>時刻の採用元</th>
+                    <th>勤務時間</th>
                     <th>休憩時間</th>
                     <th>実働時間</th>
                     <th>時間有給</th>
+                    <th>子の看護等休暇</th>
+                    <th>介護休暇</th>
                     <th>残業時間</th>
                     <th>承認</th>
                     <th>備考</th>
@@ -547,7 +614,7 @@ export function ReportsSection(props: ReportsSectionProps) {
                 <tbody>
                   {selectedMonthlyCalendarRows.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="table-empty-cell">
+                      <td colSpan={14} className="table-empty-cell">
                         個人別の月次データはありません
                       </td>
                     </tr>
@@ -562,7 +629,7 @@ export function ReportsSection(props: ReportsSectionProps) {
                               className="icon-table-action"
                               title="この日付を修正"
                               aria-label={`${formatDateLabel(row.targetDate)}を修正`}
-                              onClick={() => void openDailyEditor(row.daily)}
+                              onClick={() => void openDailyEditor(row.daily, row.targetDate)}
                               disabled={isDailyEditLoading}
                             >
                               <img src={withBasePath("/icons/attendance-edit-pencil.png")} alt="" aria-hidden="true" />
@@ -570,12 +637,15 @@ export function ReportsSection(props: ReportsSectionProps) {
                           </div>
                         </td>
                         <td>{row.daily?.scheduleName || row.holidayName || (row.daily?.absenceFlag ? "公休" : "-")}</td>
-                        <td>{props.formatters.formatTimeOnly(row.daily?.clockInAt)}</td>
-                        <td>{props.formatters.formatTimeOnly(row.daily?.clockOutAt)}</td>
+                        <td><strong>{props.formatters.formatTimeOnly(row.daily?.clockInAt)}</strong><small style={{ display: "block", color: "#58677b" }}>{props.formatters.formatTimeOnly(row.daily?.rawClockInAt)}</small></td>
+                        <td><strong>{props.formatters.formatTimeOnly(row.daily?.clockOutAt)}</strong><small style={{ display: "block", color: "#58677b" }}>{props.formatters.formatTimeOnly(row.daily?.rawClockOutAt)}</small></td>
+                        <td>{attendanceTimeSource(row.daily)}</td>
                         <td>{formatDailyMinutes(row.daily, getDailyTotalMinutes(row.daily))}</td>
-                        <td>{formatDailyMinutes(row.daily, row.daily?.breakMinutes ?? 0)}</td>
-                        <td>{formatDailyMinutes(row.daily, row.daily?.workMinutes)}</td>
+                        <td>{formatDailyMinutes(row.daily, !row.daily?.breakMinutes && (row.daily?.hourPaidLeaveMinutes || row.daily?.paidLeaveUnit) ? null : row.daily?.breakMinutes ?? 0)}</td>
+                        <td>{formatDailyMinutes(row.daily, row.daily?.reportWorkMinutes === undefined ? row.daily?.workMinutes : row.daily.reportWorkMinutes)}</td>
                         <td>{formatDailyMinutes(row.daily, row.daily?.hourPaidLeaveMinutes ?? 0)}</td>
+                        <td>{formatCareLeave(row.daily, row.daily?.childCareLeaveDays, row.daily?.childCareLeaveMinutes)}</td>
+                        <td>{formatCareLeave(row.daily, row.daily?.nursingCareLeaveDays, row.daily?.nursingCareLeaveMinutes)}</td>
                         <td>{formatDailyMinutes(row.daily, getDailyOvertimeMinutes(row.daily))}</td>
                         <td className={getApprovalCellClassName(row.daily?.approvalStatus)}>
                           {row.daily ? props.formatters.formatApprovalStatus(row.daily.approvalStatus) : "-"}
@@ -587,12 +657,14 @@ export function ReportsSection(props: ReportsSectionProps) {
                 </tbody>
               </table>
             </div>
-            {editingDaily ? (
+            {editingDaily && editingDaily.employeeId === monthlyEmployeeId && selectedMonthlyCalendarRows.some(row => row.daily?.id === editingDaily.id) ? (
               <AttendanceDailyEditor
                 editingDaily={editingDaily}
                 editingBreaks={editingBreaks}
                 historyRows={historyRows}
                 activeEditTab={activeEditTab}
+                fieldErrors={fieldErrors}
+                busy={dailyBusy}
                 editError={editError}
                 editMessage={editMessage}
                 dashboard={props.data.dashboard}
@@ -600,6 +672,7 @@ export function ReportsSection(props: ReportsSectionProps) {
                 onClose={() => setEditingDaily(null)}
                 onSave={saveDailyEditor}
                 onResetManualEdit={resetManualEdit}
+                onApplyBreakOvertime={confirmBreakOvertime}
                 onActiveEditTabChange={setActiveEditTab}
                 setEditingDaily={setEditingDaily}
                 setEditingBreaks={setEditingBreaks}
@@ -631,7 +704,7 @@ export function ReportsSection(props: ReportsSectionProps) {
       {activePanel === "reports-approvals" ? (
         <DataTable
           id="reports-approvals"
-          title="勤怠承認履歴"
+          title="勤怠承認履歴（直近100件）"
           rows={props.data.reportAttendanceApprovals}
           emptyMessage="承認履歴はまだありません"
           columns={[
@@ -695,6 +768,20 @@ export function ReportsSection(props: ReportsSectionProps) {
           ]}
         />
       ) : null}
+      <ConfirmDialog
+        open={pendingReportExport !== null}
+        title={`${pendingReportExport?.label ?? "帳票"}を出力しますか？`}
+        message={pendingReportExport?.description ?? ""}
+        confirmLabel="出力する"
+        onCancel={() => setPendingReportExport(null)}
+        onConfirm={() => {
+          const exportAction = pendingReportExport;
+          setPendingReportExport(null);
+          if (exportAction) {
+            void exportAction.action();
+          }
+        }}
+      />
     </section>
   );
 }
@@ -708,6 +795,10 @@ type MonthlySummaryRow = {
   totalWorkMinutes: number;
   actualWorkMinutes: number;
   overtimeMinutes: number;
+  childCareLeaveMinutes: number;
+  nursingCareLeaveMinutes: number;
+  childCareLeaveDays: number;
+  nursingCareLeaveDays: number;
   lateDays: number;
   earlyLeaveDays: number;
   holidayDays: number;
@@ -734,19 +825,28 @@ function buildMonthlySummaryRows(rows: AttendanceDaily[]): MonthlySummaryRow[] {
       totalWorkMinutes: 0,
       actualWorkMinutes: 0,
       overtimeMinutes: 0,
+      childCareLeaveMinutes: 0,
+      nursingCareLeaveMinutes: 0,
+      childCareLeaveDays: 0,
+      nursingCareLeaveDays: 0,
       lateDays: 0,
       earlyLeaveDays: 0,
       holidayDays: 0,
     };
 
-    const worked = Boolean(row.clockInAt || row.clockOutAt || (row.workMinutes ?? 0) > 0);
+    const worked = (row.workMinutes ?? 0) > 0;
+    current.childCareLeaveMinutes += row.childCareLeaveMinutes ?? 0;
+    current.nursingCareLeaveMinutes += row.nursingCareLeaveMinutes ?? 0;
+    current.childCareLeaveDays += row.childCareLeaveDays ?? 0;
+    current.nursingCareLeaveDays += row.nursingCareLeaveDays ?? 0;
     if (row.absenceFlag) {
       current.holidayDays += 1;
     }
+    current.actualWorkMinutes += (row.reportWorkMinutes === undefined ? row.workMinutes : row.reportWorkMinutes) ?? 0;
     if (worked) {
       current.workDays += 1;
       current.totalWorkMinutes += getDailyTotalMinutes(row) ?? 0;
-      current.actualWorkMinutes += row.workMinutes ?? 0;
+
       current.overtimeMinutes += getDailyOvertimeMinutes(row) ?? 0;
     }
     if (row.alerts?.some((alert) => alert.code === "LATE")) {
@@ -762,19 +862,21 @@ function buildMonthlySummaryRows(rows: AttendanceDaily[]): MonthlySummaryRow[] {
   return Array.from(summaries.values()).sort((a, b) => a.employeeCode.localeCompare(b.employeeCode, "ja"));
 }
 
-function buildMonthlyCalendarRows(targetMonth: string, rows: AttendanceDaily[]): MonthlyCalendarRow[] {
+function buildMonthlyCalendarRows(targetMonth: string, rows: AttendanceDaily[], employmentType?: string | null): MonthlyCalendarRow[] {
   const [year, month] = targetMonth.split("-").map((value) => Number(value));
   if (!year || !month) {
     return [];
   }
 
   const rowByDate = new Map(rows.map((row) => [row.targetDate, row]));
-  const datesInMonth = new Date(year, month, 0).getDate();
+  const defaults = reportPeriod(targetMonth, employmentType);
+  const from = rows[0]?.periodStart ? new Date(`${rows[0].periodStart}T00:00:00`) : defaults.from;
+  const to = rows[0]?.periodEnd ? new Date(`${rows[0].periodEnd}T00:00:00`) : defaults.to;
+  const datesInMonth = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
 
   return Array.from({ length: datesInMonth }, (_, index) => {
-    const day = index + 1;
-    const targetDate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    const date = new Date(year, month - 1, day);
+    const date = new Date(from.getFullYear(), from.getMonth(), from.getDate() + index);
+    const targetDate = formatDateKey(date);
     const weekday = date.getDay();
 
     return {
@@ -782,7 +884,7 @@ function buildMonthlyCalendarRows(targetMonth: string, rows: AttendanceDaily[]):
       daily: rowByDate.get(targetDate),
       isSaturday: weekday === 6,
       isSunday: weekday === 0,
-      holidayName: getJapaneseHolidayName(date),
+      holidayName: japaneseHolidayName(targetDate),
     };
   });
 }
@@ -816,16 +918,31 @@ function formatMinutes(value?: number | null) {
   return `${hours}:${String(remain).padStart(2, "0")}`;
 }
 
+function attendanceTimeSource(row?: AttendanceDaily) {
+  if (!row || (!row.clockInAt && !row.clockOutAt)) return "-";
+  if (row.timeSource === "RULE") return "勤務ルール適用";
+  if (row.isManuallyEdited || row.timeSource === "MANUAL") return "手動修正";
+  if (row.scheduleInferredSide || row.timeSource === "SCHEDULE") return "予定補完";
+  if (row.sourceSystem || row.timeSource === "IMPORTED") return `${row.sourceSystem || "外部"}取込`;
+  return "打刻";
+}
+
 function formatDailyMinutes(row: AttendanceDaily | undefined, value?: number | null) {
-  return row ? formatMinutes(value) : "-";
+  return row && value != null ? formatMinutes(value) : "-";
+}
+
+function formatCareLeave(row: AttendanceDaily | undefined, days = 0, minutes = 0) {
+  if (!row) return "-";
+  return [days > 0 ? `${days}日` : "", minutes > 0 || days <= 0 ? formatMinutes(minutes) : ""].filter(Boolean).join(" / ");
 }
 
 function getDailyTotalMinutes(row?: AttendanceDaily) {
-  if (!row || row.workMinutes === null || row.workMinutes === undefined) {
+  if (!row?.clockInAt || !row.clockOutAt) {
     return null;
   }
 
-  return (row.workMinutes ?? 0) + (row.breakMinutes ?? 0);
+  const elapsed = new Date(row.clockOutAt).getTime() - new Date(row.clockInAt).getTime();
+  return Number.isFinite(elapsed) && elapsed >= 0 ? Math.floor(elapsed / 60000) : null;
 }
 
 function getDailyOvertimeMinutes(row?: AttendanceDaily) {
@@ -833,6 +950,8 @@ function getDailyOvertimeMinutes(row?: AttendanceDaily) {
     return null;
   }
 
+  if (row.overtimeMinutesOverride != null) return row.overtimeMinutesOverride;
+  if (row.overtimeMinutes !== undefined) return row.overtimeMinutes;
   return Math.max(0, row.workMinutes - 8 * 60);
 }
 
@@ -842,80 +961,6 @@ function formatDateLabel(value: string) {
   return `${String(date.getDate()).padStart(2, "0")} ${weekdays[date.getDay()]}`;
 }
 
-function getJapaneseHolidayName(date: Date) {
-  const holidays = buildJapaneseHolidayMap(date.getFullYear());
-  return holidays.get(formatDateKey(date));
-}
-
-function buildJapaneseHolidayMap(year: number) {
-  const holidays = new Map<string, string>();
-
-  const add = (month: number, day: number, name: string) => {
-    holidays.set(formatDateKey(new Date(year, month - 1, day)), name);
-  };
-  const addHappyMonday = (month: number, week: number, name: string) => {
-    add(month, nthWeekdayOfMonth(year, month, week, 1), name);
-  };
-
-  add(1, 1, "元日");
-  addHappyMonday(1, 2, "成人の日");
-  add(2, 11, "建国記念の日");
-  add(2, 23, "天皇誕生日");
-  add(3, getVernalEquinoxDay(year), "春分の日");
-  add(4, 29, "昭和の日");
-  add(5, 3, "憲法記念日");
-  add(5, 4, "みどりの日");
-  add(5, 5, "こどもの日");
-  addHappyMonday(7, 3, "海の日");
-  add(8, 11, "山の日");
-  addHappyMonday(9, 3, "敬老の日");
-  add(9, getAutumnalEquinoxDay(year), "秋分の日");
-  addHappyMonday(10, 2, "スポーツの日");
-  add(11, 3, "文化の日");
-  add(11, 23, "勤労感謝の日");
-
-  addSubstituteHolidays(year, holidays);
-  return holidays;
-}
-
-function addSubstituteHolidays(year: number, holidays: Map<string, string>) {
-  const holidayEntries = Array.from(holidays.entries()).sort(([a], [b]) => a.localeCompare(b));
-  for (const [dateKey] of holidayEntries) {
-    const date = parseDateKey(dateKey);
-    if (date.getDay() !== 0) {
-      continue;
-    }
-
-    const substitute = new Date(date);
-    do {
-      substitute.setDate(substitute.getDate() + 1);
-    } while (holidays.has(formatDateKey(substitute)));
-
-    if (substitute.getFullYear() === year) {
-      holidays.set(formatDateKey(substitute), "振替休日");
-    }
-  }
-}
-
-function nthWeekdayOfMonth(year: number, month: number, week: number, weekday: number) {
-  const firstDay = new Date(year, month - 1, 1);
-  const offset = (weekday - firstDay.getDay() + 7) % 7;
-  return 1 + offset + (week - 1) * 7;
-}
-
-function getVernalEquinoxDay(year: number) {
-  return Math.floor(20.8431 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
-}
-
-function getAutumnalEquinoxDay(year: number) {
-  return Math.floor(23.2488 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
-}
-
 function formatDateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-function parseDateKey(value: string) {
-  const [year, month, day] = value.split("-").map((part) => Number(part));
-  return new Date(year, month - 1, day);
 }

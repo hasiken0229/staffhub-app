@@ -93,7 +93,7 @@
       "id": 1,
       "role": "EMPLOYEE",
       "employeeCode": "E0001",
-      "name": "山田 太郎"
+      "name": "見本姓K 職員J"
     }
   }
 }
@@ -162,7 +162,7 @@
   "deviceSecret": "secret-value",
   "cardUid": "0123456789ABCDEF",
   "occurredAt": "2026-03-21T08:31:45+09:00",
-  "dedupeKey": "PC-ENTRANCE-01-20260321083145-0001",
+  "dedupeKey": "example-key-01",
   "appVersion": "1.0.0"
 }
 ```
@@ -176,7 +176,7 @@
     "employee": {
       "id": 1,
       "employeeCode": "E0001",
-      "name": "山田 太郎"
+      "name": "見本姓K 職員J"
     },
     "eventType": "CLOCK_IN",
     "resultType": "SUCCESS",
@@ -189,6 +189,8 @@
 
 ### 警告レスポンス例
 
+出勤から180秒以内の新しい読取は従来どおり連続打刻として拒否する。181〜600秒の再提示は原本を保存し、日次の退勤を空欄に保つ。601秒以降は通常の退勤判定を使う。
+
 ```json
 {
   "data": {
@@ -196,16 +198,21 @@
     "employee": {
       "id": 1,
       "employeeCode": "E0001",
-      "name": "山田 太郎"
+      "name": "見本姓K 職員J"
     },
-    "eventType": "CLOCK_OUT",
+    "eventType": null,
     "resultType": "WARNING",
-    "resultMessage": "短時間の連続打刻です。内容を確認してください。",
-    "occurredAt": "2026-03-21T08:33:10+09:00",
+    "reasonCode": "SHORT_SHIFT_CONFIRMATION_REQUIRED",
+    "resultMessage": "出勤から10分以内のため、このタッチは退勤にせず、時刻を保存しました。勤務を続ける方は操作不要です。退勤する方は短時間退勤を確定するか、管理者にこの時刻をお伝えください。",
+    "occurredAt": "2026-03-21T08:35:10+09:00",
     "offlineAccepted": false
   }
 }
 ```
+
+本人が「退勤する」を選び、同じカードを再提示すると、端末は元の端末・カード・発生時刻・送信キーを保ち、`confirmShortShift: true` を付けて送信する。確定に成功すると同じイベントIDの `CLOCK_OUT` が返る。保存後に応答が途切れた場合も同じ確認を再送する。別の退勤や締め処理等で候補が失効した場合は `SHORT_SHIFT_REVIEW_ONLY` が返る。
+
+時計ずれなどで日付・時刻を採用できない原本は `DEVICE_CLOCK_REVIEW_REQUIRED`、`eventType: null` で返る。新しい端末は利用可能な同期時刻や取得時からの経過時間を送る。サーバーは発生時刻と受信時刻を区別し、既に保存した打刻の再送には、元のイベントの結果を返す。
 
 ### エラーレスポンス例
 
@@ -217,6 +224,10 @@
   }
 }
 ```
+
+### 共有端末での照会
+
+`POST /api/attendance/devices/today-receipts` に `deviceCode` と `deviceSecret` を送ると、サーバーの確認時刻 `checkedAt` と、その端末で受け付けた日本時間の当日分の `receipts` が返る。最大10件を新しい順に並べ、氏名 `employeeName`、種別 `eventType`、実打刻 `occurredAt` を表示する。カード再提示は不要で、照会によって出退勤は変化しない。
 
 ## 4.2 端末接続確認
 
@@ -252,7 +263,15 @@
 
 - `GET /api/mobile/home`
 
-### レスポンス
+対象は認証中の職員本人。職員ポータルは画面に応じて `view` を指定する。
+
+| クエリ | 返す情報 |
+| --- | --- |
+| `view=today` | 本人情報 `employee`、サーバーでの確認時刻 `checkedAt`、当日の勤怠 `todayAttendance`。実打刻は `rawClockInAt`・`rawClockOutAt`、勤務計算に使う時刻は `clockInAt`・`clockOutAt`。 |
+| `view=attention` | 差戻しの申請件数 `returnedRequestCount`、未読通知件数 `unreadNotificationCount`。 |
+| `view=leave` | 承認待ち休暇件数、日数・時間の有給残高、利用できる休暇区分。 |
+
+### クエリ省略時のレスポンス例（抜粋）
 
 ```json
 {
@@ -260,7 +279,7 @@
     "employee": {
       "id": 1,
       "employeeCode": "E0001",
-      "name": "山田 太郎"
+      "name": "見本姓K 職員J"
     },
     "pendingLeaveCount": 1,
     "paidLeaveBalance": 8.5,
@@ -379,7 +398,7 @@
     "id": 51,
     "employee": {
       "id": 1,
-      "name": "山田 太郎"
+      "name": "見本姓K 職員J"
     },
     "leaveTypeCode": "PAID",
     "leaveTypeName": "有給休暇",
@@ -394,7 +413,7 @@
     "actions": [
       {
         "actionType": "APPLIED",
-        "actionByName": "山田 太郎",
+        "actionByName": "見本姓K 職員J",
         "actedAt": "2026-03-21T10:00:00+09:00",
         "comment": null
       }
@@ -537,7 +556,7 @@
     {
       "id": 1,
       "employeeCode": "E0001",
-      "name": "山田 太郎",
+      "name": "見本姓K 職員J",
       "departmentName": "総務部",
       "employmentType": "FULL_TIME",
       "status": "ACTIVE"
@@ -560,7 +579,7 @@
 ```json
 {
   "employeeCode": "E0001",
-  "name": "山田 太郎",
+  "name": "見本姓K 職員J",
   "kana": "ヤマダ タロウ",
   "departmentName": "総務部",
   "employmentType": "FULL_TIME",
@@ -589,7 +608,7 @@
 
 ```json
 {
-  "name": "山田 太郎",
+  "name": "見本姓K 職員J",
   "departmentName": "総務部",
   "employmentType": "FULL_TIME",
   "status": "ACTIVE",
@@ -617,7 +636,7 @@
       "cardUid": "0123456789ABCDEF",
       "employeeId": 1,
       "employeeCode": "E0001",
-      "employeeName": "山田 太郎",
+      "employeeName": "見本姓K 職員J",
       "isActive": true,
       "assignedAt": "2026-03-01T09:00:00+09:00"
     }
@@ -694,7 +713,7 @@
       "id": 10001,
       "occurredAt": "2026-03-21T08:31:45+09:00",
       "employeeCode": "E0001",
-      "employeeName": "山田 太郎",
+      "employeeName": "見本姓K 職員J",
       "cardUid": "0123456789ABCDEF",
       "eventType": "CLOCK_IN",
       "receiveStatus": "ACCEPTED",
@@ -726,7 +745,7 @@
     {
       "employeeId": 1,
       "employeeCode": "E0001",
-      "employeeName": "山田 太郎",
+      "employeeName": "見本姓K 職員J",
       "targetDate": "2026-03-21",
       "clockInAt": "2026-03-21T08:31:45+09:00",
       "clockOutAt": "2026-03-21T17:30:00+09:00",

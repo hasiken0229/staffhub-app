@@ -17,7 +17,14 @@ public sealed record PunchRequest(
     string CardUid,
     DateTimeOffset OccurredAt,
     string DedupeKey,
-    string? AppVersion);
+    string? AppVersion,
+    DateTimeOffset? ClockReferenceAt = null,
+    DateTimeOffset? ClientSentAt = null)
+{
+    public long? CaptureAgeSeconds { get; init; }
+    public bool CaptureClockUnknown { get; init; }
+    public bool ConfirmShortShift { get; init; }
+}
 
 public sealed record EmployeeBrief(
     long Id,
@@ -51,9 +58,27 @@ public sealed record PunchResult(
     string ResultType,
     string ResultMessage,
     DateTimeOffset OccurredAt,
-    bool OfflineAccepted);
+    bool OfflineAccepted)
+{
+    public string? ReasonCode { get; init; }
+    internal bool IsShortShiftTap => ResultType == "WARNING" && ReasonCode == "SHORT_SHIFT_CONFIRMATION_REQUIRED";
+}
+
+public sealed record DevicePunchReceipt(string EmployeeName, string EventType, DateTimeOffset OccurredAt);
+public sealed record TodayDeviceReceipts(DateTimeOffset CheckedAt, IReadOnlyList<DevicePunchReceipt> Receipts);
+
+public sealed record HeartbeatResult(
+    bool Success,
+    DateTimeOffset ServerTime,
+    bool DeviceActive,
+    int ClockDriftSeconds);
 
 public sealed record PendingPunch(
     string CardUid,
     DateTimeOffset OccurredAt,
-    string DedupeKey);
+    string DedupeKey,
+    DateTimeOffset? ClockReferenceAt = null)
+{
+    public bool AwaitingClockReference { get; init; }
+    public bool ConfirmShortShift { get; init; }
+}

@@ -34,10 +34,13 @@ final class PayrollStatementEmployeeService
         $rows = (clone $baseQuery)
             ->leftJoin('payroll_statement_views as psv', function ($join) use ($employeeId) {
                 $join->on('psv.payroll_statement_id', '=', 'ps.id')
+                    ->on('psv.revision', '=', 'ps.revision')
                     ->where('psv.employee_id', '=', $employeeId);
             })
             ->select([
                 'ps.id',
+                'ps.revision',
+                'ps.replaced_at',
                 'ps.statement_type',
                 'ps.target_year_month',
                 'ps.pay_date',
@@ -50,6 +53,8 @@ final class PayrollStatementEmployeeService
             ])
             ->groupBy(
                 'ps.id',
+                'ps.revision',
+                'ps.replaced_at',
                 'ps.statement_type',
                 'ps.target_year_month',
                 'ps.pay_date',
@@ -67,6 +72,8 @@ final class PayrollStatementEmployeeService
         return [
             'items' => $rows->map(fn (object $row) => [
                 'id' => (int) $row->id,
+                'revision' => (int) $row->revision,
+                'replacedAt' => $row->replaced_at ? CarbonImmutable::parse($row->replaced_at)->toIso8601String() : null,
                 'statementType' => $row->statement_type,
                 'statementTypeLabel' => $this->statementTypeLabel((string) $row->statement_type),
                 'targetYearMonth' => $row->target_year_month,
@@ -106,23 +113,31 @@ final class PayrollStatementEmployeeService
         return $this->streamStatement($statement, false);
     }
 
-    public function markViewed(int $employeeId, int $statementId, string $viewedAt): array
+    public function markViewed(int $employeeId, int $statementId, string $viewedAt, ?int $revision = null): array
     {
+        return DB::transaction(function () use ($employeeId, $statementId, $viewedAt, $revision) {
+        // A replacement uses the same statement ID. Lock before recording exactly the version the employee opened.
+        DB::table('payroll_statements')->where('id', $statementId)->lockForUpdate()->first();
         $statement = $this->loadVisibleStatement($employeeId, $statementId);
         if ($statement === null) {
             throw new ApiException('NOT_FOUND', '給与明細が見つかりません。', 404);
+        }
+        if ((int) $statement->revision !== ($revision ?? 1)) {
+            throw new ApiException('PAYROLL_REVISION_CHANGED', '給与明細が差し替えられました。最新版を開き直してください。', 409);
         }
 
         DB::table('payroll_statement_views')->insert([
             'payroll_statement_id' => $statementId,
             'employee_id' => $employeeId,
-            'viewed_at' => CarbonImmutable::parse($viewedAt)->format('Y-m-d H:i:s'),
+            'revision' => (int) $statement->revision,
+            'viewed_at' => CarbonImmutable::parse($viewedAt)->setTimezone(config('app.timezone'))->format('Y-m-d H:i:s'),
             'ip_address' => request()?->ip(),
             'user_agent' => Str::limit((string) request()?->userAgent(), 255, ''),
         ]);
 
-        $this->addAudit('EMPLOYEE', $employeeId, 'PAYROLL_VIEWED', 'PAYROLL_STATEMENT', (string) $statementId, []);
+        $this->addAudit('EMPLOYEE', $employeeId, 'PAYROLL_VIEWED', 'PAYROLL_STATEMENT', (string) $statementId, ['revision' => (int) $statement->revision]);
 
-        return ['success' => true];
+        return ['success' => true, 'revision' => (int) $statement->revision];
+        });
     }
 }

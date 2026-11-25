@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DataTable } from "@/components/data-table";
 import { formatDurationMinutes } from "@/lib/api/formatters";
 import {
@@ -236,8 +237,6 @@ export function SystemSectionPanels(props: SystemSectionProps) {
                 <select name="code" defaultValue={editingEmploymentType?.code ?? "FULL_TIME"} disabled={Boolean(editingEmploymentType)}>
                   <option value="FULL_TIME">常勤</option>
                   <option value="PART_TIME">非常勤</option>
-                  <option value="CONTRACT">契約</option>
-                  <option value="TEMPORARY">臨時</option>
                 </select>
               </label>
               <label>
@@ -424,7 +423,8 @@ export function SystemSectionPanels(props: SystemSectionProps) {
             columns={[
               { key: "code", header: "管理用名", render: (row) => formatDisplayCode(row.code) },
               { key: "name", header: "名称", render: (row) => row.name },
-              { key: "requiresBalance", header: "残数管理", render: (row) => (row.requiresBalance ? "あり" : "なし") },
+              { key: "requiresBalance", header: "消化先", render: (row) => (row.requiresBalance ? "年次有給休暇" : "消化なし") },
+              { key: "attendanceEffect", header: "勤怠反映", render: (row) => (row.attendanceEffect ? { PAID: "有給", SPECIAL: "特休", ABSENCE: "欠勤" }[row.attendanceEffect] : "要設定") },
               { key: "allowsHalfDay", header: "半日", render: (row) => (row.allowsHalfDay ? "可" : "不可") },
               { key: "sortOrder", header: "表示順", render: (row) => row.sortOrder },
               { key: "isActive", header: "状態", render: (row) => (row.isActive ? "有効" : "無効") },
@@ -439,7 +439,8 @@ export function SystemSectionPanels(props: SystemSectionProps) {
                     hiddenFields={{
                       code: row.code,
                       name: row.name,
-                      requiresBalance: row.requiresBalance ? "on" : "",
+                      balanceSource: row.requiresBalance ? "PAID" : "NONE",
+                      attendanceEffect: row.attendanceEffect ?? "",
                       allowsHalfDay: row.allowsHalfDay ? "on" : "",
                       sortOrder: row.sortOrder,
                     }}
@@ -467,24 +468,32 @@ export function SystemSectionPanels(props: SystemSectionProps) {
             >
               {editingLeaveType ? <input type="hidden" name="code" value={editingLeaveType.code} /> : null}
               <label>
-                管理用名
-                <select name="code" defaultValue={editingLeaveType?.code ?? "SPECIAL"} disabled={Boolean(editingLeaveType)}>
-                  <option value="SPECIAL">特別休暇</option>
-                  <option value="PAID">有給</option>
-                  <option value="ABSENCE">欠勤</option>
-                </select>
+                休暇区分コード
+                <input name={editingLeaveType ? undefined : "code"} defaultValue={editingLeaveType?.code ?? ""} readOnly={Boolean(editingLeaveType)} maxLength={20} required placeholder="例 BIRTHDAY" />
               </label>
               <label>
                 名称
-                <input name="name" defaultValue={editingLeaveType?.name ?? "特別休暇"} />
+                <input name="name" defaultValue={editingLeaveType?.name ?? ""} maxLength={50} required />
               </label>
               <label>
                 表示順
                 <input name="sortOrder" type="number" defaultValue={editingLeaveType?.sortOrder ?? ""} />
               </label>
-              <label className="checkbox-row">
-                <input name="requiresBalance" type="checkbox" defaultChecked={editingLeaveType?.requiresBalance ?? false} />
-                残数管理あり
+              <label>
+                勤怠への反映
+                <select name="attendanceEffect" defaultValue={editingLeaveType?.attendanceEffect ?? ""} required
+                  disabled={Boolean(editingLeaveType && ["PAID", "SPECIAL", "ABSENCE"].includes(editingLeaveType.code))}>
+                  <option value="" disabled>選択してください</option>
+                  <option value="SPECIAL">特休</option><option value="ABSENCE">欠勤</option>
+                  {editingLeaveType?.code === "PAID" ? <option value="PAID">有給</option> : null}
+                </select>
+              </label>
+              <label>
+                残数の消化先
+                <select name="balanceSource" defaultValue={editingLeaveType?.requiresBalance ? "PAID" : "NONE"}>
+                  {editingLeaveType?.code !== "PAID" ? <option value="NONE">消化なし</option> : null}
+                  <option value="PAID">年次有給休暇</option>
+                </select>
               </label>
               <label className="checkbox-row">
                 <input name="allowsHalfDay" type="checkbox" defaultChecked={editingLeaveType?.allowsHalfDay ?? true} />
@@ -880,28 +889,41 @@ function MasterRowActions(props: {
   onSystemForm: (target: SystemFormTarget, formData: FormData) => Promise<void>;
   afterSubmit: () => void;
 }) {
+  const [isDisableConfirmOpen, setIsDisableConfirmOpen] = useState(false);
+
+  async function disableMaster() {
+    const formData = new FormData();
+    Object.entries(props.hiddenFields).forEach(([key, value]) => {
+      if (value !== null && value !== undefined) {
+        formData.set(key, String(value));
+      }
+    });
+    await props.onSystemForm(props.target, formData);
+    props.afterSubmit();
+  }
+
   return (
     <div className="table-action-row">
       <button type="button" className="secondary compact-button" onClick={props.onEdit}>
         編集
       </button>
       {props.disabled ? null : (
-        <form
-          action={async (formData) => {
-            await props.onSystemForm(props.target, formData);
-            props.afterSubmit();
-          }}
-          onSubmit={(event) => {
-            if (!window.confirm(`${props.label}を無効にします。よろしいですか？`)) {
-              event.preventDefault();
-            }
-          }}
-        >
-          <HiddenFields values={props.hiddenFields} />
-          <button type="submit" className="secondary compact-button">
+        <>
+          <button type="button" className="secondary compact-button danger-action" onClick={() => setIsDisableConfirmOpen(true)}>
             削除
           </button>
-        </form>
+          <ConfirmDialog
+            open={isDisableConfirmOpen}
+            title={`${props.label}を無効にしますか？`}
+            message="既存データの表示や選択肢に影響する場合があります。"
+            confirmLabel="無効にする"
+            onCancel={() => setIsDisableConfirmOpen(false)}
+            onConfirm={() => {
+              setIsDisableConfirmOpen(false);
+              void disableMaster();
+            }}
+          />
+        </>
       )}
     </div>
   );

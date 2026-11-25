@@ -18,7 +18,7 @@ final class AuthController extends Controller
                 'id' => 1,
                 'role' => 'EMPLOYEE',
                 'employeeCode' => 'E0001',
-                'name' => '山田 太郎',
+                'name' => '見本姓K 職員J',
             ],
         ]);
     }

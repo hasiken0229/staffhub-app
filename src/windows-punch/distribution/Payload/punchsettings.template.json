@@ -1,0 +1,11 @@
+{
+  "apiBaseUrl": "https://example.invalid",
+  "deviceCode": "CHANGE_ME_DEVICE_CODE",
+  "deviceSecret": "CHANGE_ME_DEVICE_SECRET",
+  "deviceName": "打刻端末",
+  "autoStartEnabled": true,
+  "startMinimized": true,
+  "readerMode": "RC_S380",
+  "preferredReaderName": "RC-S380",
+  "pollIntervalMilliseconds": 700
+}

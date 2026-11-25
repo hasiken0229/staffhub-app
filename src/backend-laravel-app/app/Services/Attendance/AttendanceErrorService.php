@@ -37,13 +37,23 @@ final class AttendanceErrorService extends AttendanceServiceSupport
                 'e.location_name',
                 'e.employment_type',
                 'ad.target_date',
+                'ad.schedule_name',
+                'ad.harmos_total_work_minutes', 'ad.source_system', 'ad.source_import_type','ad.approval_comment','ad.approved_by','ad.approved_at',
+                'ad.raw_clock_in_at',
+                'ad.raw_clock_out_at',
+                'ad.is_manually_edited',
+                'ad.break_overtime_review',
+                'ad.close_status',
                 'ad.clock_in_at',
                 'ad.clock_out_at',
                 'ad.break_minutes',
                 'ad.work_minutes',
                 'ad.absence_flag',
-                'ad.special_leave_flag',
+                'ad.special_leave_flag', 'ad.request_leave_name', 'ad.request_leave_days',
                 'ad.paid_leave_unit',
+                'ad.hour_paid_leave_minutes',
+                'ad.child_care_leave_minutes',
+                'ad.nursing_care_leave_minutes',
                 'ad.approval_status',
             ])
             ->whereBetween('ad.target_date', [$fromDate, $toDate]);
@@ -60,14 +70,12 @@ final class AttendanceErrorService extends AttendanceServiceSupport
             }
         }
 
-        if (!empty($filters['approvalStatus'])) {
-            $query->where('ad.approval_status', strtoupper((string) $filters['approvalStatus']));
-        }
-
         $rows = $query
             ->orderByDesc('ad.target_date')
             ->orderBy('e.employee_code')
             ->get();
+        app(DailyApprovalReview::class)->annotate($rows);
+        if (!empty($filters['approvalStatus'])) { $rows = $rows->where('review_status', strtoupper($filters['approvalStatus'])); }
         $resolutionRows = DB::table('attendance_error_resolutions')
             ->whereBetween('target_date', [$fromDate, $toDate])
             ->get(['id', 'employee_id', 'target_date', 'error_code', 'status', 'comment', 'handled_by', 'handled_at']);
@@ -107,8 +115,10 @@ final class AttendanceErrorService extends AttendanceServiceSupport
         $errorCodeFilter = !empty($filters['errorCode']) ? strtoupper((string) $filters['errorCode']) : null;
         $handlingStatusFilter = !empty($filters['handlingStatus']) ? strtoupper((string) $filters['handlingStatus']) : null;
         $items = [];
+        $countsByStatus = [];
+        $rules = $this->attendanceErrorRules();
         foreach ($rows as $row) {
-            foreach ($this->detectDailyErrors($row) as $error) {
+            foreach ($this->detectDailyErrors($row, $rules) as $error) {
                 if ($errorCodeFilter !== null && $error['errorCode'] !== $errorCodeFilter) {
                     continue;
                 }
@@ -120,6 +130,7 @@ final class AttendanceErrorService extends AttendanceServiceSupport
                     continue;
                 }
 
+                $countsByStatus[$handlingStatus] = ($countsByStatus[$handlingStatus] ?? 0) + 1;
                 $items[] = [
                     'dailyId' => (int) $row->id,
                     'employeeId' => (int) $row->employee_id,
@@ -131,7 +142,7 @@ final class AttendanceErrorService extends AttendanceServiceSupport
                     'departmentName' => $row->department_name,
                     'locationName' => $row->location_name,
                     'employmentType' => $row->employment_type,
-                    'approvalStatus' => $row->approval_status,
+                    'approvalStatus' => $row->review_status,
                     'handlingStatus' => $handlingStatus,
                     'comment' => $resolution?->comment,
                     'handledAt' => $resolution?->handled_at ? CarbonImmutable::parse((string) $resolution->handled_at)->toIso8601String() : null,
@@ -149,11 +160,20 @@ final class AttendanceErrorService extends AttendanceServiceSupport
                 'page' => $page,
                 'perPage' => $perPage,
                 'total' => $total,
+                'countsByStatus' => $countsByStatus,
             ],
         ];
     }
 
     public function resolveError(array $payload, GenericUser $actor): array
+    {
+        return DB::transaction(function () use ($payload, $actor) {
+            MonthMutationLock::acquire(MonthMutationLock::months((string) $payload['targetDate']));
+            return $this->resolveErrorLocked($payload, $actor);
+        });
+    }
+
+    private function resolveErrorLocked(array $payload, GenericUser $actor): array
     {
         $employeeId = (int) $payload['employeeId'];
         $targetDate = CarbonImmutable::parse((string) $payload['targetDate'])->toDateString();

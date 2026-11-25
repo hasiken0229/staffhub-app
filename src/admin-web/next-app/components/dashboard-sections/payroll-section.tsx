@@ -8,7 +8,11 @@ import { PayrollStatementListPanel } from "@/components/dashboard-sections/payro
 import { PayrollTypeSwitchPanel } from "@/components/dashboard-sections/payroll/payroll-type-switch-panel";
 import type { PayrollSectionProps } from "@/components/dashboard-sections/payroll/payroll-section-types";
 
-export function PayrollSection(props: PayrollSectionProps) {
+type PayrollSectionComponentProps = PayrollSectionProps & {
+  onPanelChange?: (targetId: string) => void;
+};
+
+export function PayrollSection(props: PayrollSectionComponentProps) {
   const activePanel = props.data.activePanel || "payroll-type";
   const isWorkspacePanel = activePanel === "payroll-definitions" || activePanel === "payroll-register";
 
@@ -16,7 +20,7 @@ export function PayrollSection(props: PayrollSectionProps) {
     <section className="stack-section section-enter delay-3">
       <PayrollTypeSwitchPanel form={props.form} actions={props.actions} />
 
-      {activePanel === "payroll-type" ? <PayrollStartPanel data={props.data} /> : null}
+      {activePanel === "payroll-type" ? <PayrollStartPanel data={props.data} onPanelChange={props.onPanelChange} /> : null}
 
       {isWorkspacePanel ? (
         <section className="payroll-workspace">
@@ -48,7 +52,6 @@ export function PayrollSection(props: PayrollSectionProps) {
                 onPayrollDownload={props.actions.onPayrollDownload}
                 onDeletePayrollStatement={props.actions.onDeletePayrollStatement}
                 formatDateOnly={props.formatters.formatDateOnly}
-                formatMonthDay={props.formatters.formatMonthDay}
               />
             ) : null}
 
@@ -65,7 +68,13 @@ export function PayrollSection(props: PayrollSectionProps) {
   );
 }
 
-function PayrollStartPanel({ data }: Pick<PayrollSectionProps, "data">) {
+function PayrollStartPanel({ data, onPanelChange }: Pick<PayrollSectionComponentProps, "data" | "onPanelChange">) {
+  const actionCards = [
+    { targetId: "payroll-history", label: "取込履歴を見る", detail: `${data.filteredPayrollHistory.length} 件の取込履歴` },
+    { targetId: "payroll-statements", label: "公開済みを確認", detail: `${data.filteredPayrollStatements.length} 件の明細` },
+    { targetId: "payroll-register", label: "CSVを登録", detail: `${data.payrollTypeLabel}CSVを追加` },
+  ];
+
   return (
     <section className="panel action-panel payroll-start-panel">
       <div className="panel-header">
@@ -89,8 +98,22 @@ function PayrollStartPanel({ data }: Pick<PayrollSectionProps, "data">) {
         </div>
       </div>
       <p className="compact-empty">
-        上部のページ内メニューから「取込履歴」「公開済み」「CSV登録」などを選ぶと、対象の一覧や登録フォームを表示できます。
+        よく使う操作を下から選ぶか、上部のページ内メニューで詳細画面へ移動できます。
       </p>
+      <div className="quick-action-grid">
+        {actionCards.map((item) => (
+          <button
+            key={item.targetId}
+            type="button"
+            className="quick-action-card"
+            onClick={() => onPanelChange?.(item.targetId)}
+            disabled={!onPanelChange}
+          >
+            <span>{item.label}</span>
+            <small>{item.detail}</small>
+          </button>
+        ))}
+      </div>
     </section>
   );
 }

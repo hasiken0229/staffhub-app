@@ -9,344 +9,245 @@ use Illuminate\Support\Facades\DB;
 
 final class LeaveLedgerService extends LeaveRequestSupport
 {
-    public function balance(int $employeeId): array
+    public static function paidRequests(int $employeeId): \Illuminate\Database\Query\Builder
     {
-        $this->assertEmployeeExists($employeeId);
-        $this->recalculatePaidLeaveUsage($employeeId);
-        $this->syncPaidLeaveLedger($employeeId);
-
-        $grants = DB::table('paid_leave_grants')
-            ->where('employee_id', $employeeId)
-            ->orderBy('granted_on')
-            ->get();
-
-        $items = $grants->map(fn (object $row) => [
-            'id' => (int) $row->id,
-            'grantedOn' => $row->granted_on,
-            'grantedDays' => (float) $row->granted_days,
-            'usedDays' => (float) $row->used_days,
-            'expiresOn' => $row->expires_on,
-            'note' => $row->note,
-        ])->all();
-
-        $adjustments = DB::table('paid_leave_adjustments')
-            ->where('employee_id', $employeeId)
-            ->orderBy('effective_on')
-            ->orderBy('id')
-            ->get()
-            ->map(fn (object $row) => [
-                'id' => (int) $row->id,
-                'adjustmentType' => $row->adjustment_type,
-                'days' => (float) $row->days,
-                'effectiveOn' => $row->effective_on,
-                'note' => $row->note,
-            ])
-            ->all();
-
-        $currentBalance = array_reduce($items, function (float $carry, array $item): float {
-            if ($item['expiresOn'] !== null && $item['expiresOn'] < now()->toDateString()) {
-                return $carry;
-            }
-
-            return $carry + max(0, (float) $item['grantedDays'] - (float) $item['usedDays']);
-        }, 0.0);
-
-        $adjustmentBalance = array_reduce($adjustments, fn (float $carry, array $item): float => $carry + (float) $item['days'], 0.0);
-
-        return [
-            'employeeId' => $employeeId,
-            'currentBalance' => round($currentBalance + $adjustmentBalance, 2),
-            'grants' => $items,
-            'adjustments' => $adjustments,
-        ];
+        return DB::table('leave_requests')->where('employee_id', $employeeId)
+            ->where(fn ($query) => $query->where('balance_source', 'PAID')
+                ->orWhere(fn ($legacy) => $legacy->whereNull('balance_source')->where('leave_type_code', 'PAID')));
     }
 
+    private function projection(int $employeeId, ?string $asOf = null, bool $currentRead = false): array
+    {
+        $asOf ??= now()->toDateString();
+        return app(PaidLeaveProjection::class)->calculate(
+            DB::table('paid_leave_grants')->where('employee_id', $employeeId)->whereNull('superseded_at')->orderBy('granted_on')->orderBy('id')
+                ->when($currentRead, fn ($query) => $query->lockForUpdate())->get()->all(),
+            DB::table('paid_leave_adjustments')->where('employee_id', $employeeId)
+                ->when($currentRead, fn ($query) => $query->lockForUpdate())->get()->all(),
+            self::paidRequests($employeeId)->where('status', 'APPROVED')
+                ->when($currentRead, fn ($query) => $query->lockForUpdate())->get()->all(),
+            $asOf,
+        );
+    }
+
+    public function balance(int $employeeId, ?string $asOf = null): array
+    {
+        $this->assertEmployeeExists($employeeId);
+        $state = $this->projection($employeeId, $asOf);
+        $grants = DB::table('paid_leave_grants')->where('employee_id', $employeeId)->whereNull('superseded_at')->orderBy('granted_on')->orderBy('id')->get()
+            ->map(fn (object $row) => [
+                'id' => (int) $row->id, 'grantedOn' => $row->granted_on, 'grantedDays' => (float) $row->granted_days,
+                'usedDays' => $state['usedByGrant'][$row->id], 'adjustedDays' => $state['adjustedByGrant'][$row->id], 'remainingDays' => $state['remainingByGrant'][$row->id],
+                'expiresOn' => $row->expires_on, 'note' => $row->note,
+                'sourceSystem' => $row->source_system, 'originalGrantedOn' => $row->original_granted_on,
+                'evidenceReference' => $row->evidence_reference, 'expiryReviewedAt' => $row->expiry_reviewed_at,
+                'expiryNeedsReview' => $row->expires_on === null && ($row->source_system ?? null) === 'HARMOS',
+            ])->all();
+        $adjustments = DB::table('paid_leave_adjustments')->where('employee_id', $employeeId)->orderBy('effective_on')->orderBy('id')->get()
+            ->map(fn (object $row) => [
+                'id' => (int) $row->id, 'adjustmentType' => $row->adjustment_type, 'days' => (float) $row->days,
+                'effectiveOn' => $row->effective_on, 'note' => $row->note,
+            ])->all();
+        return [
+            'employeeId' => $employeeId, 'asOf' => $state['asOf'], 'currentBalance' => $state['currentBalance'],
+            'futureApprovedDays' => $state['futureApprovedDays'],
+            'availableDays' => $this->availableFromState($employeeId, $state),
+            'latestEntry' => $state['items'] === [] ? null : $state['items'][array_key_last($state['items'])],
+            'hourlyBalance' => app(HourlyPaidLeaveService::class)->balance($employeeId, $state['asOf']),
+            'hourlyManagementConfigured' => DB::table('paid_leave_hourly_balances')->where('employee_id', $employeeId)->exists(),
+            'grants' => $grants, 'adjustments' => $adjustments,
+        ];
+    }
 
     public function ledger(int $employeeId): array
     {
         $this->assertEmployeeExists($employeeId);
-        $this->recalculatePaidLeaveUsage($employeeId);
-        $this->syncPaidLeaveLedger($employeeId);
-
-        $items = DB::table('paid_leave_ledger')
-            ->where('employee_id', $employeeId)
-            ->orderBy('occurred_on')
-            ->orderBy('id')
-            ->get()
-            ->map(fn (object $row) => [
-                'id' => (int) $row->id,
-                'entryType' => $row->entry_type,
-                'sourceType' => $row->source_type,
-                'sourceId' => $row->source_id !== null ? (int) $row->source_id : null,
-                'occurredOn' => $row->occurred_on,
-                'daysDelta' => (float) $row->days_delta,
-                'balanceAfter' => $row->balance_after !== null ? (float) $row->balance_after : null,
-                'note' => $row->note,
-                'createdAt' => CarbonImmutable::parse($row->created_at)->toIso8601String(),
-            ])
-            ->all();
-
-        return [
-            'employeeId' => $employeeId,
-            'currentBalance' => $this->balance($employeeId)['currentBalance'],
-            'items' => $items,
-        ];
+        $state = $this->projection($employeeId);
+        return ['employeeId' => $employeeId, 'asOf' => $state['asOf'], 'currentBalance' => $state['currentBalance'], 'items' => $state['items']];
     }
-
 
     public function grantForAdmin(array $payload, GenericUser $actor): array
     {
-        $employeeId = (int) $payload['employeeId'];
-        $this->assertEmployeeExists($employeeId);
+        return DB::transaction(function () use ($payload, $actor) {
+            $employeeId = (int) $payload['employeeId'];
+            if (!DB::table('employees')->where('id', $employeeId)->lockForUpdate()->first()) {
+                throw new ApiException('NOT_FOUND', '職員が見つかりません。', 404);
+            }
 
-        $days = round((float) $payload['days'], 2);
-        if ($days <= 0) {
-            throw new ApiException('VALIDATION_ERROR', '付与日数は 0 より大きい値を指定してください。', 422, [
-                ['field' => 'days', 'message' => '0 より大きい値を指定してください。'],
+            $days = round((float) $payload['days'], 2);
+            if ($days <= 0) {
+                throw new ApiException('VALIDATION_ERROR', '付与日数は 0 より大きい値を指定してください。', 422, [
+                    ['field' => 'days', 'message' => '0 より大きい値を指定してください。'],
+                ]);
+            }
+
+            $id = (int) DB::table('paid_leave_grants')->insertGetId([
+                'employee_id' => $employeeId,
+                'granted_on' => $payload['grantedOn'],
+                'granted_days' => $days,
+                'used_days' => 0,
+                'expires_on' => $payload['expiresOn'] ?? null,
+                'note' => $payload['note'] ?? null,
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
-        }
 
-        $id = (int) DB::table('paid_leave_grants')->insertGetId([
-            'employee_id' => $employeeId,
-            'granted_on' => $payload['grantedOn'],
-            'granted_days' => $days,
-            'used_days' => 0,
-            'expires_on' => $payload['expiresOn'] ?? null,
-            'note' => $payload['note'] ?? null,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+            $this->syncPaidLeaveLedger($employeeId);
 
-        $this->syncPaidLeaveLedger($employeeId);
+            $this->addAudit(
+                strtoupper((string) $actor->role) === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE',
+                (int) $actor->id,
+                'PAID_LEAVE_GRANTED',
+                'PAID_LEAVE_GRANT',
+                (string) $id,
+                [
+                    'employeeId' => $employeeId,
+                    'days' => $days,
+                    'grantedOn' => $payload['grantedOn'],
+                ]
+            );
 
-        $this->addAudit(
-            strtoupper((string) $actor->role) === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE',
-            (int) $actor->id,
-            'PAID_LEAVE_GRANTED',
-            'PAID_LEAVE_GRANT',
-            (string) $id,
-            [
+            return [
+                'id' => $id,
                 'employeeId' => $employeeId,
                 'days' => $days,
                 'grantedOn' => $payload['grantedOn'],
-            ]
-        );
-
-        return [
-            'id' => $id,
-            'employeeId' => $employeeId,
-            'days' => $days,
-            'grantedOn' => $payload['grantedOn'],
-            'expiresOn' => $payload['expiresOn'] ?? null,
-            'note' => $payload['note'] ?? null,
-        ];
+                'expiresOn' => $payload['expiresOn'] ?? null,
+                'note' => $payload['note'] ?? null,
+            ];
+        });
     }
 
     public function adjustForAdmin(array $payload, GenericUser $actor): array
     {
-        $employeeId = (int) $payload['employeeId'];
-        $this->assertEmployeeExists($employeeId);
+        return DB::transaction(function () use ($payload, $actor) {
+            $employeeId = (int) $payload['employeeId'];
+            if (!DB::table('employees')->where('id', $employeeId)->lockForUpdate()->first()) {
+                throw new ApiException('NOT_FOUND', '職員が見つかりません。', 404);
+            }
 
-        $adjustmentType = strtoupper((string) $payload['adjustmentType']);
-        if (!in_array($adjustmentType, ['ADJUST_PLUS', 'ADJUST_MINUS'], true)) {
-            throw new ApiException('VALIDATION_ERROR', '調整種別が不正です。', 422, [
-                ['field' => 'adjustmentType', 'message' => 'ADJUST_PLUS または ADJUST_MINUS を指定してください。'],
+            $adjustmentType = strtoupper((string) $payload['adjustmentType']);
+            if (!in_array($adjustmentType, ['ADJUST_PLUS', 'ADJUST_MINUS'], true)) {
+                throw new ApiException('VALIDATION_ERROR', '調整種別が不正です。', 422, [
+                    ['field' => 'adjustmentType', 'message' => 'ADJUST_PLUS または ADJUST_MINUS を指定してください。'],
+                ]);
+            }
+
+            $rawDays = round((float) $payload['days'], 2);
+            if ($rawDays <= 0) {
+                throw new ApiException('VALIDATION_ERROR', '調整日数は 0 より大きい値を指定してください。', 422, [
+                    ['field' => 'days', 'message' => '0 より大きい値を指定してください。'],
+                ]);
+            }
+
+            $days = $adjustmentType === 'ADJUST_MINUS' ? -1 * abs($rawDays) : abs($rawDays);
+
+            $id = (int) DB::table('paid_leave_adjustments')->insertGetId([
+                'employee_id' => $employeeId,
+                'adjustment_type' => $adjustmentType,
+                'days' => $days,
+                'effective_on' => $payload['effectiveOn'],
+                'note' => $payload['note'] ?? null,
+                'created_by' => $this->resolveOperatorEmployeeId($actor, $employeeId),
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
-        }
 
-        $rawDays = round((float) $payload['days'], 2);
-        if ($rawDays <= 0) {
-            throw new ApiException('VALIDATION_ERROR', '調整日数は 0 より大きい値を指定してください。', 422, [
-                ['field' => 'days', 'message' => '0 より大きい値を指定してください。'],
-            ]);
-        }
+            $this->syncPaidLeaveLedger($employeeId);
 
-        $days = $adjustmentType === 'ADJUST_MINUS' ? -1 * abs($rawDays) : abs($rawDays);
+            $this->addAudit(
+                strtoupper((string) $actor->role) === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE',
+                (int) $actor->id,
+                'PAID_LEAVE_ADJUSTED',
+                'PAID_LEAVE_ADJUSTMENT',
+                (string) $id,
+                [
+                    'employeeId' => $employeeId,
+                    'adjustmentType' => $adjustmentType,
+                    'days' => $days,
+                    'effectiveOn' => $payload['effectiveOn'],
+                ]
+            );
 
-        $id = (int) DB::table('paid_leave_adjustments')->insertGetId([
-            'employee_id' => $employeeId,
-            'adjustment_type' => $adjustmentType,
-            'days' => $days,
-            'effective_on' => $payload['effectiveOn'],
-            'note' => $payload['note'] ?? null,
-            'created_by' => $this->resolveOperatorEmployeeId($actor, $employeeId),
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        $this->syncPaidLeaveLedger($employeeId);
-
-        $this->addAudit(
-            strtoupper((string) $actor->role) === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE',
-            (int) $actor->id,
-            'PAID_LEAVE_ADJUSTED',
-            'PAID_LEAVE_ADJUSTMENT',
-            (string) $id,
-            [
+            return [
+                'id' => $id,
                 'employeeId' => $employeeId,
                 'adjustmentType' => $adjustmentType,
                 'days' => $days,
                 'effectiveOn' => $payload['effectiveOn'],
-            ]
-        );
-
-        return [
-            'id' => $id,
-            'employeeId' => $employeeId,
-            'adjustmentType' => $adjustmentType,
-            'days' => $days,
-            'effectiveOn' => $payload['effectiveOn'],
-            'note' => $payload['note'] ?? null,
-        ];
+                'note' => $payload['note'] ?? null,
+            ];
+        });
     }
-
 
     public function calculateAvailablePaidLeave(int $employeeId): float
     {
-        $currentBalance = $this->balance($employeeId)['currentBalance'];
+        return $this->availableFromState($employeeId, $this->projection($employeeId));
+    }
 
-        $pendingDays = (float) DB::table('leave_requests')
-            ->where('employee_id', $employeeId)
-            ->where('leave_type_code', 'PAID')
-            ->whereIn('status', ['PENDING', 'RETURNED'])
-            ->sum('quantity_days');
+    private function availableFromState(int $employeeId, array $state): float
+    {
+        return app(PaidLeaveReservationProjection::class)->availableAtDate(...[
+            ...$this->reservationInputs($employeeId), $state['asOf'],
+        ]);
+    }
 
-        return round($currentBalance - $pendingDays, 2);
+    public function assertPaidLeaveAvailable(int $employeeId, string $start, string $end, float $days, ?int $excludeRequestId = null, ?array $dates = null, ?int $hourlyBasis = null, ?int $minutes = null): void
+    {
+        $insufficientOn = app(PaidLeaveReservationProjection::class)->insufficientOn(...[
+            ...$this->reservationInputs($employeeId, $excludeRequestId), $start, $end, $days, $dates, $hourlyBasis, $minutes,
+        ]);
+        if ($insufficientOn !== null) {
+            throw new ApiException('INSUFFICIENT_PAID_LEAVE', '有給残数が不足しています。申請日・失効日・承認待ちを含む予約分を確認してください。', 422, [
+                ['field'=>'leaveTypeCode', 'message'=>$insufficientOn.' 時点で有給残数が不足します。'],
+            ]);
+        }
+    }
+
+    private function reservationInputs(int $employeeId, ?int $excludeRequestId = null): array
+    {
+        $locked = DB::transactionLevel() > 0;
+        return [
+            DB::table('paid_leave_grants')->where('employee_id', $employeeId)->whereNull('superseded_at')->orderBy('id')
+                ->when($locked, fn ($q)=>$q->lockForUpdate())->get()->all(),
+            DB::table('paid_leave_adjustments')->where('employee_id', $employeeId)->orderBy('id')
+                ->when($locked, fn ($q)=>$q->lockForUpdate())->get()->all(),
+            self::paidRequests($employeeId)
+                ->whereIn('status', ['APPROVED', 'PENDING', 'RETURNED'])->orderBy('id')
+                ->when($excludeRequestId !== null, fn ($q)=>$q->where('id', '<>', $excludeRequestId))
+                ->when($locked, fn ($q)=>$q->lockForUpdate())->get()->all(),
+        ];
     }
 
 
     public function recalculatePaidLeaveUsage(int $employeeId): void
     {
-        $usedDays = (float) DB::table('leave_requests')
-            ->where('employee_id', $employeeId)
-            ->where('leave_type_code', 'PAID')
-            ->where('status', 'APPROVED')
-            ->sum('quantity_days');
-
-        $remaining = $usedDays;
-        $grants = DB::table('paid_leave_grants')
-            ->where('employee_id', $employeeId)
-            ->orderBy('granted_on')
-            ->get();
-
-        foreach ($grants as $grant) {
-            $consumed = min($remaining, (float) $grant->granted_days);
-
-            DB::table('paid_leave_grants')
-                ->where('id', $grant->id)
-                ->update([
-                    'used_days' => $consumed,
-                    'updated_at' => now(),
-                ]);
-
-            $remaining = max(0, $remaining - (float) $grant->granted_days);
+        $state = $this->projection($employeeId, null, DB::transactionLevel() > 0);
+        foreach ($state['usedByGrant'] as $id => $used) {
+            DB::table('paid_leave_grants')->where('id', $id)->where('employee_id', $employeeId)
+                ->update(['used_days' => $used, 'updated_at' => now()]);
         }
     }
 
     public function syncPaidLeaveLedger(int $employeeId): void
     {
-        $entries = [];
-
-        $grants = DB::table('paid_leave_grants')
-            ->where('employee_id', $employeeId)
-            ->orderBy('granted_on')
-            ->orderBy('id')
-            ->get();
-
-        foreach ($grants as $grant) {
-            $entries[] = [
-                'entryType' => 'GRANT',
-                'sourceType' => 'PAID_LEAVE_GRANT',
-                'sourceId' => (int) $grant->id,
-                'occurredOn' => $grant->granted_on,
-                'daysDelta' => (float) $grant->granted_days,
-                'note' => $grant->note ?: '有給付与',
-                'createdBy' => null,
-            ];
-        }
-
-        $adjustments = DB::table('paid_leave_adjustments')
-            ->where('employee_id', $employeeId)
-            ->orderBy('effective_on')
-            ->orderBy('id')
-            ->get();
-
-        foreach ($adjustments as $adjustment) {
-            $entries[] = [
-                'entryType' => $adjustment->adjustment_type,
-                'sourceType' => 'PAID_LEAVE_ADJUSTMENT',
-                'sourceId' => (int) $adjustment->id,
-                'occurredOn' => $adjustment->effective_on,
-                'daysDelta' => (float) $adjustment->days,
-                'note' => $adjustment->note ?: '有給調整',
-                'createdBy' => $adjustment->created_by ? (int) $adjustment->created_by : null,
-            ];
-        }
-
-        $approvedRequests = DB::table('leave_requests')
-            ->where('employee_id', $employeeId)
-            ->where('leave_type_code', 'PAID')
-            ->where('status', 'APPROVED')
-            ->orderBy('start_date')
-            ->orderBy('id')
-            ->get();
-
-        foreach ($approvedRequests as $request) {
-            $entries[] = [
-                'entryType' => 'USE',
-                'sourceType' => 'LEAVE_REQUEST',
-                'sourceId' => (int) $request->id,
-                'occurredOn' => $request->start_date,
-                'daysDelta' => -1 * (float) $request->quantity_days,
-                'note' => '有給申請 ' . $request->start_date . ' - ' . $request->end_date,
-                'createdBy' => $request->approved_by ? (int) $request->approved_by : null,
-            ];
-        }
-
-        usort($entries, function (array $left, array $right): int {
-            $dateOrder = strcmp($left['occurredOn'], $right['occurredOn']);
-            if ($dateOrder !== 0) {
-                return $dateOrder;
-            }
-
-            $weight = [
-                'GRANT' => 1,
-                'ADJUST_PLUS' => 2,
-                'ADJUST_MINUS' => 3,
-                'USE' => 4,
-            ];
-
-            $leftWeight = $weight[$left['entryType']] ?? 99;
-            $rightWeight = $weight[$right['entryType']] ?? 99;
-            if ($leftWeight !== $rightWeight) {
-                return $leftWeight <=> $rightWeight;
-            }
-
-            return ($left['sourceId'] ?? 0) <=> ($right['sourceId'] ?? 0);
-        });
-
-        $balance = 0.0;
+        $state = $this->projection($employeeId, null, DB::transactionLevel() > 0);
         $rows = [];
-        foreach ($entries as $entry) {
-            $balance = round($balance + (float) $entry['daysDelta'], 2);
+        $previousBalance = 0.0;
+        foreach ($state['items'] as $entry) {
+            // The persisted historical ledger uses hundredths; allocate the rounding
+            // remainder across entries from the exact cumulative balance.
+            $storedBalance = round($entry['balanceAfter'], 2);
             $rows[] = [
-                'employee_id' => $employeeId,
-                'entry_type' => $entry['entryType'],
-                'source_type' => $entry['sourceType'],
-                'source_id' => $entry['sourceId'],
-                'occurred_on' => $entry['occurredOn'],
-                'days_delta' => $entry['daysDelta'],
-                'balance_after' => $balance,
-                'note' => $entry['note'],
-                'created_by' => $entry['createdBy'],
-                'created_at' => now(),
+            'employee_id' => $employeeId, 'entry_type' => $entry['entryType'], 'source_type' => $entry['sourceType'],
+            'source_id' => $entry['sourceId'], 'occurred_on' => $entry['occurredOn'], 'days_delta' => round($storedBalance - $previousBalance, 2),
+            'balance_after' => $storedBalance, 'note' => $entry['note'], 'created_by' => $entry['createdBy'], 'created_at' => now(),
             ];
+            $previousBalance = $storedBalance;
         }
-
-        DB::table('paid_leave_ledger')->where('employee_id', $employeeId)->delete();
-        if ($rows !== []) {
-            DB::table('paid_leave_ledger')->insert($rows);
-        }
+        DB::transaction(function () use ($employeeId, $rows): void {
+            DB::table('paid_leave_ledger')->where('employee_id', $employeeId)->delete();
+            if ($rows !== []) { DB::table('paid_leave_ledger')->insert($rows); }
+        });
     }
-
 }

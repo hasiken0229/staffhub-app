@@ -1,5 +1,7 @@
-import { Fragment, type FormEvent, useState } from "react";
+import { Fragment, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { fiscalYearStartValue } from "@/lib/date-defaults";
+import { previewEmployeesCsv } from "@/lib/api/employees";
 import type { Employee, EmployeeUpdatePayload } from "@/types";
 
 type EmployeesSectionProps = {
@@ -14,6 +16,7 @@ type EmployeesSectionProps = {
     onEmployeeImport: (formData: FormData) => Promise<void>;
     onTemplateDownload: (kind: "employees") => Promise<void>;
     onEmployeeUpdate: (id: number, payload: EmployeeUpdatePayload) => Promise<void>;
+    onUnsavedEditChange: (hasUnsavedEdit: boolean) => void;
   };
   formatters: {
     formatEmploymentType: (value?: string | null) => string;
@@ -59,26 +62,101 @@ export function EmployeesSection(props: EmployeesSectionProps) {
   const activeEmployees = props.data.employees.filter((employee) => employee.status === "ACTIVE").length;
   const retiredEmployees = props.data.employees.filter((employee) => employee.status === "RETIRED").length;
   const chatLinkedEmployees = props.data.employees.filter((employee) => Boolean(employee.googleChatUserId)).length;
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [employeeDepartmentFilter, setEmployeeDepartmentFilter] = useState("");
+  const [employeeEmploymentFilter, setEmployeeEmploymentFilter] = useState("");
+  const [employeeStatusFilter, setEmployeeStatusFilter] = useState("ACTIVE");
   const [editingEmployeeId, setEditingEmployeeId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<EmployeeUpdatePayload | null>(null);
+  const [editOriginal, setEditOriginal] = useState<EmployeeUpdatePayload | null>(null);
   const [editMessage, setEditMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [employeeImportPreview, setEmployeeImportPreview] = useState<{
+    previewFingerprint?: string;
     fileName: string;
     rowCount: number;
     hasLoginEmail: boolean;
-    missingRequiredHeaders: string[];
+    createdCount: number;
+    updatedCount: number;
+    skippedCount: number;
+    errors: Array<{ line: number; employeeCode?: string | null; message: string }>;
   } | null>(null);
+  const [isPreviewingEmployeeImport, setIsPreviewingEmployeeImport] = useState(false);
+  const employeePreviewRequest = useRef(0);
+  const employeePreviewFormData = useRef<FormData | null>(null);
+  const [pendingEmployeeAction, setPendingEmployeeAction] = useState<
+    { type: "discard"; nextEmployee: Employee | null } | { type: "import"; formData: FormData }
+  | null>(null);
+
+  const hasUnsavedEdit = useMemo(
+    () => editDraft !== null && editOriginal !== null && JSON.stringify(editDraft) !== JSON.stringify(editOriginal),
+    [editDraft, editOriginal],
+  );
+  const departments = useMemo(
+    () => Array.from(new Set(props.data.employees.map((employee) => employee.departmentName?.trim()).filter((value): value is string => Boolean(value))))
+      .sort((left, right) => left.localeCompare(right, "ja")),
+    [props.data.employees],
+  );
+  const visibleEmployees = useMemo(() => {
+    const query = employeeSearch.trim().toLocaleLowerCase("ja");
+    return props.data.employees.filter((employee) => {
+      const matchesSearch = !query || [employee.employeeCode, employee.name, employee.kana ?? ""]
+        .some((value) => value.toLocaleLowerCase("ja").includes(query));
+      const matchesDepartment = !employeeDepartmentFilter || employee.departmentName === employeeDepartmentFilter;
+      const matchesEmployment = !employeeEmploymentFilter || employee.employmentType === employeeEmploymentFilter;
+      const matchesStatus = !employeeStatusFilter || employee.status === employeeStatusFilter;
+      return (matchesSearch && matchesDepartment && matchesEmployment && matchesStatus) || employee.id === editingEmployeeId;
+    });
+  }, [props.data.employees, employeeSearch, employeeDepartmentFilter, employeeEmploymentFilter, employeeStatusFilter, editingEmployeeId]);
+
+  useEffect(() => {
+    props.actions.onUnsavedEditChange(hasUnsavedEdit);
+
+    return () => props.actions.onUnsavedEditChange(false);
+  }, [hasUnsavedEdit, props.actions]);
+
+  useEffect(() => {
+    if (!hasUnsavedEdit) {
+      return;
+    }
+
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [hasUnsavedEdit]);
 
   function startEditing(employee: Employee) {
+    if (editingEmployeeId !== null && editingEmployeeId !== employee.id && hasUnsavedEdit) {
+      setPendingEmployeeAction({ type: "discard", nextEmployee: employee });
+      return;
+    }
+
+    applyStartEditing(employee);
+  }
+
+  function applyStartEditing(employee: Employee) {
+    const initialDraft = toEditPayload(employee);
     setEditingEmployeeId(employee.id);
-    setEditDraft(toEditPayload(employee));
+    setEditDraft(initialDraft);
+    setEditOriginal(initialDraft);
     setEditMessage("");
   }
 
   function cancelEditing() {
+    if (hasUnsavedEdit) {
+      setPendingEmployeeAction({ type: "discard", nextEmployee: null });
+      return;
+    }
+    clearEditing();
+  }
+
+  function clearEditing() {
     setEditingEmployeeId(null);
     setEditDraft(null);
+    setEditOriginal(null);
     setEditMessage("");
   }
 
@@ -106,6 +184,7 @@ export function EmployeesSection(props: EmployeesSectionProps) {
       setEditMessage("職員情報を更新しました。");
       setEditingEmployeeId(null);
       setEditDraft(null);
+      setEditOriginal(null);
     } catch (error) {
       setEditMessage(error instanceof Error ? error.message : "職員情報の更新に失敗しました。");
     } finally {
@@ -113,38 +192,70 @@ export function EmployeesSection(props: EmployeesSectionProps) {
     }
   }
 
-  async function previewEmployeeCsv(file?: File) {
-    if (!file) {
-      setEmployeeImportPreview(null);
+  async function previewEmployeeCsv(input: HTMLInputElement) {
+    const requestId = ++employeePreviewRequest.current;
+    employeePreviewFormData.current = null;
+    setEmployeeImportPreview(null);
+    setPendingEmployeeAction((current) => current?.type === "import" ? null : current);
+    const file = input.files?.[0];
+    if (!file || !input.form) {
+      setIsPreviewingEmployeeImport(false);
       return;
     }
 
-    const text = await file.text();
-    const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
-    const headers = (lines[0] ?? "").replace(/^\uFEFF/, "").split(",").map((item) => item.trim());
-    const missingRequiredHeaders = ["社員番号", "姓", "名"].filter((header) => !headers.includes(header));
-    setEmployeeImportPreview({
+    const formData = new FormData(input.form);
+    formData.set("file", file, file.name);
+    const emptyPreview = {
       fileName: file.name,
-      rowCount: Math.max(0, lines.length - 1),
-      hasLoginEmail: headers.includes("メールアドレス"),
-      missingRequiredHeaders,
-    });
+      rowCount: 0,
+      hasLoginEmail: false,
+      createdCount: 0,
+      updatedCount: 0,
+      skippedCount: 0,
+      errors: [] as Array<{ line: number; employeeCode?: string | null; message: string }>,
+    };
+    setIsPreviewingEmployeeImport(true);
+    try {
+      const preview = await previewEmployeesCsv(formData);
+      if (requestId !== employeePreviewRequest.current) return;
+      if (preview.previewFingerprint && !preview.errors?.length) {
+        formData.set("previewFingerprint", preview.previewFingerprint);
+        employeePreviewFormData.current = formData;
+      }
+      setEmployeeImportPreview({
+        ...emptyPreview,
+        rowCount: preview.rowCount ?? preview.processedCount,
+        hasLoginEmail: preview.hasLoginEmail ?? false,
+        previewFingerprint: preview.previewFingerprint,
+        createdCount: preview.createdCount,
+        updatedCount: preview.updatedCount,
+        skippedCount: preview.skippedCount,
+        errors: preview.errors ?? [],
+      });
+    } catch (error) {
+      if (requestId !== employeePreviewRequest.current) return;
+      setEmployeeImportPreview({
+        ...emptyPreview,
+        errors: [{ line: 0, message: error instanceof Error ? error.message : "CSVプレビューに失敗しました。" }],
+      });
+    } finally {
+      if (requestId === employeePreviewRequest.current) setIsPreviewingEmployeeImport(false);
+    }
   }
 
-  async function submitEmployeeImport(event: FormEvent<HTMLFormElement>) {
+  function previewEmployeeImportForm(form: HTMLFormElement) {
+    const input = form.elements.namedItem("file");
+    if (input instanceof HTMLInputElement) void previewEmployeeCsv(input);
+  }
+
+  function submitEmployeeImport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!employeeImportPreview || employeeImportPreview.missingRequiredHeaders.length > 0) {
+    if (isPreviewingEmployeeImport || !employeeImportPreview?.previewFingerprint || employeeImportPreview.errors.length > 0 || !employeePreviewFormData.current) {
       return;
     }
 
-    const shouldImport = window.confirm(
-      `職員CSVを取り込みます。\nファイル: ${employeeImportPreview.fileName}\n想定件数: ${employeeImportPreview.rowCount} 件\nメールアドレス列: ${employeeImportPreview.hasLoginEmail ? "あり" : "なし"}`,
-    );
-    if (!shouldImport) {
-      return;
-    }
-
-    await props.actions.onEmployeeImport(new FormData(event.currentTarget));
+    const formData = employeePreviewFormData.current;
+    setPendingEmployeeAction({ type: "import", formData });
   }
 
   return (
@@ -155,7 +266,7 @@ export function EmployeesSection(props: EmployeesSectionProps) {
           <div>
             <h3>職員一覧</h3>
           </div>
-          <span className="panel-meta">{props.data.employees.length} 件</span>
+          <span className="panel-meta">{visibleEmployees.length} / {props.data.employees.length} 件</span>
         </div>
         <div className="summary-strip employee-summary-strip">
           <div>
@@ -171,8 +282,37 @@ export function EmployeesSection(props: EmployeesSectionProps) {
             <strong>{chatLinkedEmployees} 件</strong>
           </div>
         </div>
+        <div className="filter-grid employee-filter-grid" aria-label="職員検索条件">
+          <label>
+            氏名・職員番号
+            <input type="search" value={employeeSearch} onChange={(event) => setEmployeeSearch(event.target.value)} placeholder="名前・かな・番号" />
+          </label>
+          <label>
+            所属
+            <select value={employeeDepartmentFilter} onChange={(event) => setEmployeeDepartmentFilter(event.target.value)}>
+              <option value="">すべて</option>
+              {departments.map((department) => <option key={department} value={department}>{department}</option>)}
+            </select>
+          </label>
+          <label>
+            雇用区分
+            <select value={employeeEmploymentFilter} onChange={(event) => setEmployeeEmploymentFilter(event.target.value)}>
+              <option value="">すべて</option>
+              {employmentTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <label>
+            在職状態
+            <select value={employeeStatusFilter} onChange={(event) => setEmployeeStatusFilter(event.target.value)}>
+              <option value="">すべて</option>
+              {statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+        </div>
+        <p className="compact-empty">{visibleEmployees.length} 件を表示しています。在職状態の初期値は「在職」です。</p>
         {editMessage && editingEmployeeId === null ? <p className="feedback">{editMessage}</p> : null}
-        <div className="table-wrap inline-edit-table employee-table-wrap">
+        <p className="table-scroll-hint">表を横にスクロールすると雇用区分・状態を確認できます。氏名から編集できます。</p>
+        <div className="table-wrap inline-edit-table employee-table-wrap" role="region" aria-label="職員一覧（横スクロール）" tabIndex={0}>
           <table>
             <thead>
               <tr>
@@ -183,12 +323,12 @@ export function EmployeesSection(props: EmployeesSectionProps) {
               </tr>
             </thead>
             <tbody>
-              {props.data.employees.length === 0 ? (
+              {visibleEmployees.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="table-empty-cell">データがありません</td>
+                  <td colSpan={4} className="table-empty-cell">{props.data.employees.length === 0 ? "職員データがありません" : "条件に一致する職員はいません"}</td>
                 </tr>
               ) : (
-                props.data.employees.map((employee) => {
+                visibleEmployees.map((employee) => {
                   const isEditing = editingEmployeeId === employee.id && editDraft !== null;
 
                   return (
@@ -332,7 +472,7 @@ export function EmployeesSection(props: EmployeesSectionProps) {
             雛形 CSV
           </button>
         </div>
-        <form className="stack-form" onSubmit={(event) => void submitEmployeeImport(event)}>
+        <form className="stack-form" onSubmit={(event) => void submitEmployeeImport(event)} onChange={(event) => previewEmployeeImportForm(event.currentTarget)}>
           <div className="form-grid">
             <label>
               初期所属
@@ -365,29 +505,58 @@ export function EmployeesSection(props: EmployeesSectionProps) {
           </div>
           <label>
             CSVファイル
-            <input name="file" type="file" accept=".csv,text/csv" onChange={(event) => void previewEmployeeCsv(event.currentTarget.files?.[0])} />
+            <input name="file" type="file" accept=".csv,text/csv" />
           </label>
           <p className="compact-empty">
             未入力の所属・雇用区分・状態・入職日は、この初期値で補完されます。メールアドレス列がある場合は職員ログインに同期します。
           </p>
+          {isPreviewingEmployeeImport ? <p className="compact-empty" role="status">CSVを確認中です...</p> : null}
           {employeeImportPreview ? (
-            <div className={employeeImportPreview.missingRequiredHeaders.length > 0 ? "import-preview import-preview-error" : "import-preview"}>
+            <div className={employeeImportPreview.errors.length > 0 ? "import-preview import-preview-error" : "import-preview"}>
               <strong>取込プレビュー</strong>
               <span>ファイル: {employeeImportPreview.fileName}</span>
               <span>想定件数: {employeeImportPreview.rowCount} 件</span>
               <span>メールアドレス列: {employeeImportPreview.hasLoginEmail ? "あり" : "なし"}</span>
-              {employeeImportPreview.missingRequiredHeaders.length > 0 ? (
-                <span>不足ヘッダー: {employeeImportPreview.missingRequiredHeaders.join(" / ")}</span>
+              <span>新規: {employeeImportPreview.createdCount} 件 / 更新: {employeeImportPreview.updatedCount} 件 / スキップ: {employeeImportPreview.skippedCount} 件</span>
+              {employeeImportPreview.errors.length > 0 ? (
+                <ul>
+                  {employeeImportPreview.errors.slice(0, 10).map((error) => (
+                    <li key={`${error.line}-${error.employeeCode ?? ""}`}>行 {error.line || "-"}{error.employeeCode ? `（${error.employeeCode}）` : ""}: {error.message}</li>
+                  ))}
+                </ul>
               ) : null}
             </div>
           ) : null}
-          <button type="submit" disabled={!employeeImportPreview || employeeImportPreview.missingRequiredHeaders.length > 0}>
+          <button type="submit" disabled={isPreviewingEmployeeImport || !employeeImportPreview?.previewFingerprint || employeeImportPreview.errors.length > 0}>
             プレビュー内容で取り込む
           </button>
         </form>
         {props.form.employeeImportResult ? <p className="feedback">{props.form.employeeImportResult}</p> : null}
       </section>
       ) : null}
+      <ConfirmDialog
+        open={pendingEmployeeAction !== null}
+        title={pendingEmployeeAction?.type === "import" ? "職員CSVを取り込みますか？" : "保存していない変更を破棄しますか？"}
+        message={pendingEmployeeAction?.type === "import"
+          ? `ファイル: ${employeeImportPreview?.fileName ?? "-"}／新規: ${employeeImportPreview?.createdCount ?? 0}件／更新: ${employeeImportPreview?.updatedCount ?? 0}件／スキップ: ${employeeImportPreview?.skippedCount ?? 0}件`
+          : pendingEmployeeAction?.nextEmployee
+            ? `別の職員を編集すると、現在の保存していない変更は破棄されます。次に編集する職員: ${pendingEmployeeAction.nextEmployee.employeeCode} / ${pendingEmployeeAction.nextEmployee.name}`
+            : "編集をやめると、保存していない変更は破棄されます。"}
+        confirmLabel={pendingEmployeeAction?.type === "import" ? "CSVを取り込む" : "変更を破棄"}
+        onCancel={() => setPendingEmployeeAction(null)}
+        onConfirm={() => {
+          const action = pendingEmployeeAction;
+          setPendingEmployeeAction(null);
+          if (!action) return;
+          if (action.type === "import") {
+            void props.actions.onEmployeeImport(action.formData);
+          } else if (action.nextEmployee) {
+            applyStartEditing(action.nextEmployee);
+          } else {
+            clearEditing();
+          }
+        }}
+      />
     </section>
   );
 }

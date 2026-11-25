@@ -68,7 +68,7 @@ final class AttendanceDailyEditRequestController extends Controller
             'breaks.*.startNextDay' => ['nullable', 'boolean'],
             'breaks.*.endTime' => ['nullable', 'string', 'max:5'],
             'breaks.*.endNextDay' => ['nullable', 'boolean'],
-            'remark' => ['nullable', 'string'],
+            'remark' => ['nullable', 'string', 'max:255'],
             'employeeComment' => ['nullable', 'string'],
         ]);
 
@@ -81,6 +81,15 @@ final class AttendanceDailyEditRequestController extends Controller
                 $exception->status,
                 $exception->details,
             );
+        }
+    }
+
+    public function cancel(Request $request, int $id)
+    {
+        try {
+            return ApiResponse::ok($this->attendanceService->cancelDailyEditRequest($id, (int) $request->user()->id));
+        } catch (ApiException $exception) {
+            return ApiResponse::error($exception->errorCode, $exception->getMessage(), $exception->status, $exception->details);
         }
     }
 }

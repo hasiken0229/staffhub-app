@@ -10,6 +10,7 @@ abstract class AttendanceServiceSupport
     use AttendanceDailyMapping;
     use AttendanceErrorDetection;
     use AttendancePunchRebuilder;
+    use AttendanceDayProjection;
     use AttendanceSharedUtilities;
     protected const MONTH_CLOSE_OPEN = 'OPEN';
     protected const MONTH_CLOSE_CLOSED = 'CLOSED';

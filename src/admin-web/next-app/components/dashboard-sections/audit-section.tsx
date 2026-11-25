@@ -1,10 +1,11 @@
 import { DataTable } from "@/components/data-table";
-import { formatAuditActor, formatAuditDetail, formatDisplayCode } from "@/lib/display-labels";
-import type { AuditLog } from "@/types";
+import { formatAuditActor, formatAuditDetail, formatAuditTarget, formatDisplayCode } from "@/lib/display-labels";
+import type { AuditLog, PaginationMeta } from "@/types";
 
 type AuditSectionProps = {
   data: {
     auditLogs: AuditLog[];
+    pagination: PaginationMeta;
     activePanel: string;
   };
   filters: {
@@ -20,6 +21,7 @@ type AuditSectionProps = {
     onAuditToChange: (value: string) => void;
     onApplyAuditFilters: () => Promise<void>;
     onResetAuditFilters: () => Promise<void>;
+    onAuditPageChange: (page: number) => Promise<void>;
   };
   formatters: {
     formatDateTime: (value?: string | null) => string;
@@ -28,6 +30,10 @@ type AuditSectionProps = {
 
 export function AuditSection(props: AuditSectionProps) {
   const activePanel = props.data.activePanel || "audit-filters";
+  const { page, perPage, total } = props.data.pagination;
+  const lastPage = Math.max(1, Math.ceil(total / perPage));
+  const firstItemNumber = total === 0 ? 0 : (page - 1) * perPage + 1;
+  const lastItemNumber = Math.min(page * perPage, total);
 
   return (
     <section className="stack-section section-enter delay-3">
@@ -80,6 +86,20 @@ export function AuditSection(props: AuditSectionProps) {
           id="audit-logs"
           title="監査ログ"
           rows={props.data.auditLogs}
+          metaLabel={`全 ${total} 件中 ${firstItemNumber}〜${lastItemNumber} 件`}
+          footer={
+            lastPage > 1 ? (
+              <div className="table-pagination" aria-label="監査ログのページ移動">
+                <button type="button" className="secondary table-action" disabled={page <= 1} onClick={() => void props.actions.onAuditPageChange(page - 1)}>
+                  前へ
+                </button>
+                <span>{page} / {lastPage} ページ</span>
+                <button type="button" className="secondary table-action" disabled={page >= lastPage} onClick={() => void props.actions.onAuditPageChange(page + 1)}>
+                  次へ
+                </button>
+              </div>
+            ) : null
+          }
           columns={[
             { key: "occurredAt", header: "時刻", render: (row) => props.formatters.formatDateTime(row.occurredAt) },
             {
@@ -88,7 +108,7 @@ export function AuditSection(props: AuditSectionProps) {
               render: (row) => row.actorLabel ?? formatAuditActor(row.actorType, row.actorId),
             },
             { key: "action", header: "操作", render: (row) => formatDisplayCode(row.action) },
-            { key: "target", header: "対象", render: (row) => `${formatDisplayCode(row.targetType)} / ${row.targetId ?? "-"}` },
+            { key: "target", header: "対象", render: (row) => formatAuditTarget(row.targetType, row.targetId, row.detailJson) },
             { key: "detail", header: "詳細", render: (row) => formatAuditDetail(row.detailJson, row.detail) },
             { key: "ipAddress", header: "IP", render: (row) => row.ipAddress ?? "-" },
           ]}

@@ -48,12 +48,13 @@ export type LeaveSectionProps = {
     onAdjustDateChange: (value: string) => void;
     onAdjustNoteChange: (value: string) => void;
     onDecisionCommentChange: (value: string) => void;
+    onHourlyBalanceSaved: () => Promise<void>;
     onApplyWorkProcedureFilters: () => Promise<void>;
     onResetWorkProcedureFilters: () => Promise<void>;
     onWorkProcedureDecision: (id: number, decision: "approve" | "return") => Promise<void>;
     onBulkWorkProcedureDecision: (decision: "approve" | "return", selectedIds?: number[]) => Promise<void>;
-    onGrantPaidLeave: () => Promise<void>;
-    onAdjustPaidLeave: () => Promise<void>;
+    onGrantPaidLeave: (onValidationErrors?: (errors: Record<string, string[]>) => void) => Promise<void>;
+    onAdjustPaidLeave: (onValidationErrors?: (errors: Record<string, string[]>) => void) => Promise<void>;
   };
   formatters: {
     formatDateOnly: (value?: string | null) => string;

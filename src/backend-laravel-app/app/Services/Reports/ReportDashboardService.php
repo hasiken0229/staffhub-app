@@ -3,6 +3,7 @@
 namespace App\Services\Reports;
 
 use App\Services\AttendanceService;
+use App\Services\Attendance\DailyApprovalReview;
 use App\Services\LeaveRequestService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -20,16 +21,17 @@ final class ReportDashboardService
         $today = now()->toDateString();
 
         return [
+            'checkedAt' => now()->toIso8601String(),
             'todayAttendanceCount' => (int) DB::table('attendance_daily')
                 ->where('target_date', $today)
                 ->count(),
-            'pendingAttendanceApprovalCount' => (int) DB::table('attendance_daily')
-                ->where('approval_status', 'PENDING')
-                ->count(),
+            'pendingAttendanceApprovalCount' => app(DailyApprovalReview::class)->pending([], false)->count(),
             'pendingLeaveCount' => (int) DB::table('leave_requests')
                 ->whereIn('status', ['PENDING', 'RETURNED'])
                 ->count(),
+            'pendingDailyEditRequestCount' => (int) DB::table('attendance_daily_edit_requests')->where('status', 'PENDING')->count(),
             'publishedPayrollCount' => (int) DB::table('payroll_statements')
+                ->whereNull('deleted_at')
                 ->whereNotNull('published_at')
                 ->where('published_at', '<=', now())
                 ->count(),
@@ -123,11 +125,7 @@ final class ReportDashboardService
         $items = [];
         foreach ($employees as $employee) {
             $balance = $this->leaveRequestService->balance((int) $employee->id);
-            $latestLedger = DB::table('paid_leave_ledger')
-                ->where('employee_id', $employee->id)
-                ->orderByDesc('occurred_on')
-                ->orderByDesc('id')
-                ->first();
+            $latestLedger = $balance['latestEntry'];
 
             $items[] = [
                 'employeeId' => (int) $employee->id,
@@ -135,9 +133,12 @@ final class ReportDashboardService
                 'employeeName' => $employee->name,
                 'departmentName' => $employee->department_name,
                 'currentBalance' => $balance['currentBalance'],
-                'latestEntryType' => $latestLedger?->entry_type,
-                'latestOccurredOn' => $latestLedger?->occurred_on,
-                'latestDaysDelta' => $latestLedger !== null ? (float) $latestLedger->days_delta : null,
+                'futureApprovedDays' => $balance['futureApprovedDays'],
+                'expiryNeedsReview' => count(array_filter($balance['grants'], fn (array $grant): bool => $grant['expiryNeedsReview'])) > 0,
+                'hourlyBalance' => $balance['hourlyBalance'] ?? null,
+                'latestEntryType' => $latestLedger['entryType'] ?? null,
+                'latestOccurredOn' => $latestLedger['occurredOn'] ?? null,
+                'latestDaysDelta' => $latestLedger['daysDelta'] ?? null,
             ];
         }
 

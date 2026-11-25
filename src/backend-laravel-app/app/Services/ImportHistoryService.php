@@ -57,6 +57,8 @@ final class ImportHistoryService
         ?GenericUser $actor = null,
         ?string $expiresAt = null,
     ): int {
+        return DB::transaction(function () use ($importType, $sourceFileName, $targetPeriod, $statementType,
+            $processedCount, $successCount, $errorCount, $summary, $binaryContent, $downloadFileName, $contentType, $actor, $expiresAt): int {
         $safeFileName = trim(basename($downloadFileName)) ?: 'history_file';
         $storagePath = sprintf(
             'file-history/%s/%s_%s',
@@ -66,13 +68,17 @@ final class ImportHistoryService
         );
 
         $absolutePath = $this->localStorageAbsolutePath($storagePath);
+        app(TransactionFileGuard::class)->trackHistory($storagePath, $absolutePath);
         $directory = dirname($absolutePath);
         if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
             throw new ApiException('FILE_EXPORT_ERROR', '履歴ファイルの保存先を作成できません。', 500);
         }
 
-        if (file_put_contents($absolutePath, $binaryContent) === false) {
+        if (file_put_contents($absolutePath, $binaryContent) !== strlen($binaryContent)) {
             throw new ApiException('FILE_EXPORT_ERROR', '履歴ファイルを保存できません。', 500);
+        }
+        if (!TransactionFileGuard::streamMatches(fopen($absolutePath, 'rb'), $binaryContent)) {
+            throw new ApiException('FILE_EXPORT_ERROR', '履歴ファイルの保存内容を確認できませんでした。', 500);
         }
 
         return $this->record(
@@ -92,6 +98,7 @@ final class ImportHistoryService
                 'expiresAt' => $expiresAt,
             ],
         );
+        });
     }
 
     public function list(array $filters): array
@@ -125,7 +132,15 @@ final class ImportHistoryService
         }
 
         if (!empty($filters['targetPeriod'])) {
-            $query->where('ih.target_period', $filters['targetPeriod']);
+            $period = (string) $filters['targetPeriod'];
+            $query->where(function ($match) use ($period) {
+                $match->where('ih.target_period', $period);
+                if (preg_match('/^(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})$/D', $period, $range)) {
+                    $match->orWhere(fn ($legacy) => $legacy->where('ih.import_type', 'DAILY_ATTENDANCE_CSV')
+                        ->where('ih.target_period', substr($range[1], 0, 7))
+                        ->where('ih.summary_json->from', $range[1])->where('ih.summary_json->to', $range[2]));
+                }
+            });
         }
 
         $total = (clone $query)->count();
@@ -141,12 +156,21 @@ final class ImportHistoryService
                     $summary = json_decode((string) $row->summary_json, true) ?: [];
                 }
 
+                $period = $row->target_period;
+                // Older permissive SQL servers could store only the first seven characters.
+                // Recover the display range only when the archived metadata identifies both dates.
+                if ($row->import_type === 'DAILY_ATTENDANCE_CSV' && preg_match('/^\d{4}-\d{2}$/D', (string) $period)
+                    && preg_match('/^\d{4}-\d{2}-\d{2}$/D', (string) ($summary['from'] ?? ''))
+                    && preg_match('/^\d{4}-\d{2}-\d{2}$/D', (string) ($summary['to'] ?? ''))
+                    && substr($summary['from'], 0, 7) === $period) {
+                    $period = $summary['from'].'_'.$summary['to'];
+                }
                 return [
                     'id' => (int) $row->id,
                     'importType' => $row->import_type,
                     'sourceFileName' => $row->source_file_name,
                     'downloadFileName' => $row->download_file_name ?: $row->source_file_name,
-                    'targetPeriod' => $row->target_period,
+                    'targetPeriod' => $period,
                     'statementType' => $row->statement_type,
                     'processedCount' => (int) $row->processed_count,
                     'successCount' => (int) $row->success_count,

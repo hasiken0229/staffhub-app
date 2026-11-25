@@ -9,13 +9,14 @@ type EmployeePortalShellProps = {
   actions: Pick<EmployeePortalSectionProps["actions"], "onLogout" | "onModeChange" | "onRefresh">;
   activeTab: EmployeePortalTab;
   onTabChange: (tab: EmployeePortalTab) => void;
+  homeLead?: ReactNode;
   children: ReactNode;
 };
 
 const employeePortalTabs: Array<{ key: EmployeePortalTab; label: string }> = [
   { key: "home", label: "ホーム" },
   { key: "leave", label: "休暇申請" },
-  { key: "daily-edit", label: "勤怠修正" },
+  { key: "daily-edit", label: "勤怠確認" },
   { key: "requests", label: "申請状況" },
   { key: "payroll", label: "給与明細" },
   { key: "notices", label: "通知" },
@@ -52,6 +53,7 @@ export function EmployeePortalShell(props: EmployeePortalShellProps) {
       </header>
 
       <div className="main-column">
+        {props.homeLead}
         <header className="workspace-hero section-enter">
           <div>
             <h2>職員画面</h2>
@@ -61,22 +63,18 @@ export function EmployeePortalShell(props: EmployeePortalShellProps) {
               <button
                 key={tab.key}
                 type="button"
-                className={props.activeTab === tab.key ? "active" : ""}
-                aria-current={props.activeTab === tab.key ? "page" : undefined}
+                className={(props.activeTab === "today" ? "daily-edit" : props.activeTab) === tab.key ? "active" : ""}
+                aria-current={(props.activeTab === "today" ? "daily-edit" : props.activeTab) === tab.key ? "page" : undefined}
                 onClick={() => props.onTabChange(tab.key)}
               >
                 {tab.label}
               </button>
             ))}
           </nav>
-          <div className="workspace-actions employee-portal-actions">
-            <button onClick={props.actions.onRefresh} type="button">
-              {props.data.isPending ? "読み込み中..." : "最新情報を再読込"}
-            </button>
-          </div>
+
         </header>
 
-        {props.data.errorMessage ? <p className="banner">{props.data.errorMessage}</p> : null}
+        {props.data.errorMessage ? <p className="banner" role="alert">{props.data.errorMessage}</p> : null}
         {props.data.isPending ? <EmployeeLoadingSkeleton /> : null}
 
         {props.children}

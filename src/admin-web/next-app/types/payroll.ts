@@ -1,5 +1,7 @@
 export type PayrollStatement = {
   id: number;
+  revision?: number;
+  replacedAt?: string | null;
   employeeId: number;
   employeeCode?: string;
   employeeName?: string;
@@ -35,6 +37,7 @@ export type PayrollStatementLine = {
 };
 
 export type PayrollStatementDetail = PayrollStatement & {
+  notificationStatus?: "SCHEDULED" | "QUEUED" | "SENT" | "INCOMPLETE" | "UNKNOWN";
   statementType: string;
   statementTypeLabel: string;
   employeeCode: string;
@@ -104,6 +107,56 @@ export type PayrollImportError = {
   message: string;
 };
 
+export type PayrollImportPreviewItem = {
+  line: number;
+  employeeId?: number;
+  employeeCode: string;
+  employeeName: string;
+  grossAmount: number;
+  deductionAmount: number;
+  netAmount: number;
+  action?: "CREATE" | "REPLACE";
+  existingStatementId?: number | null;
+  revision?: number;
+};
+
+export type PayrollImportPreview = {
+  previewFingerprint?: string;
+  dryRun: boolean;
+  statementType: string;
+  statementTypeLabel: string;
+  definitionId?: number;
+  definitionName?: string;
+  targetYearMonth: string;
+  periodStartOn?: string;
+  periodEndOn?: string;
+  payDate?: string;
+  publishDate?: string;
+  processedCount: number;
+  importedCount: number;
+  errorCount: number;
+  canImport?: boolean;
+  newCount?: number;
+  replacementCount?: number;
+  totals?: { grossAmount: number; deductionAmount: number; netAmount: number };
+  items: PayrollImportPreviewItem[];
+  errors: PayrollImportError[];
+  preview: {
+    sourceFormat?: string | null;
+    sourceRowCount?: number | null;
+    candidateRowCount?: number | null;
+    skippedRowCount: number;
+    skippedRows: Array<{
+      line: number;
+      employeeCode?: string | null;
+      reason: string;
+    }>;
+    normalizedRowCount: number;
+    headers: string[];
+    rows: string[][];
+  };
+};
+
 export type PayrollImportBatchDetail = PayrollImportBatch & {
   templateVersion: number;
   fieldCount: number;
@@ -125,6 +178,10 @@ export type PayrollImportResult = {
   processedCount: number;
   importedCount: number;
   errorCount: number;
+  sourceFormat?: string | null;
+  sourceRowCount?: number | null;
+  candidateRowCount?: number | null;
+  skippedRowCount?: number;
   items?: Array<{
     line: number;
     employeeId: number;

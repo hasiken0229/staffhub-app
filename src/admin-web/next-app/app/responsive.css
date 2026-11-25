@@ -5,7 +5,7 @@
   }
 
   .admin-shell-with-sidebar {
-    grid-template-columns: 92px minmax(0, 1fr);
+    grid-template-columns: 174px minmax(0, 1fr);
   }
 
   .admin-content-column {
@@ -22,28 +22,12 @@
     justify-items: center;
   }
 
-  .sidebar-account-heading,
-  .sidebar-account-panel .portal-mode-tabs,
-  .sidebar-logout-button,
-  .nav-label,
-  .nav-group-toggle {
+  .admin-sidebar .sidebar-account-panel {
     display: none;
   }
 
-  .section-nav {
-    align-items: center;
-  }
-
-  .nav-item {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    padding: 7px;
-  }
-
-  .nav-badge {
-    position: absolute;
-    top: 2px;
-    right: 2px;
+  .nav-label {
+    white-space: normal;
   }
 
   .login-shell.is-simple {
@@ -76,6 +60,89 @@
 }
 
 @media (max-width: 720px) {
+  .attendance-edit-table-wrap {
+    display: none;
+  }
+
+  .attendance-mobile-cards {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .attendance-mobile-empty {
+    margin: 0;
+    padding: 16px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    text-align: center;
+  }
+
+  .attendance-day-card {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.76);
+  }
+
+  .attendance-day-card.is-missing-row {
+    border-color: var(--line-strong);
+  }
+
+  .attendance-day-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .attendance-day-card-times {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .attendance-day-card-times span {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .attendance-day-card-times small {
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .attendance-row-details dl {
+    min-width: 0;
+  }
+
+  .attendance-row-details dl > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .attendance-row-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .attendance-row-actions button,
+  .attendance-missing-action {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .payroll-preview-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .login-shell,
   .admin-shell {
     padding: 12px;
@@ -153,7 +220,7 @@
     position: static;
     order: 2;
     height: auto;
-    max-height: 260px;
+    max-height: none;
   }
 
   .admin-shell-with-sidebar .main-column {
@@ -161,20 +228,65 @@
   }
 
   .sidebar-account-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: stretch;
+    width: 100%;
+    padding-bottom: 12px;
+  }
+
+  .sidebar-account-heading,
+  .sidebar-account-panel .portal-mode-tabs,
+  .sidebar-logout-button {
+    display: flex;
+  }
+
+  .sidebar-account-heading {
+    display: block;
+  }
+
+  .sidebar-account-panel .portal-mode-tabs {
+    overflow-x: hidden;
+  }
+
+  .sidebar-account-panel .portal-mode-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-inline: 8px;
+  }
+
+  .sidebar-logout-button {
+    justify-content: center;
+    min-height: 40px;
+  }
+
+  .mobile-admin-nav-toggle {
+    display: inline-flex;
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .admin-primary-navigation {
     display: none;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .admin-primary-navigation.is-open {
+    display: block;
   }
 
   .section-nav {
-    flex-direction: row;
+    flex-direction: column;
     align-items: stretch;
-    overflow-x: auto;
+    overflow-x: hidden;
+    overflow-y: visible;
     padding-bottom: 4px;
-    scroll-snap-type: x proximity;
   }
 
   .nav-group {
-    min-width: 168px;
-    scroll-snap-align: start;
+    min-width: 0;
   }
 
   .nav-group-toggle {
@@ -193,13 +305,35 @@
   }
 
   .nav-item {
-    grid-template-columns: 30px minmax(0, 1fr) auto;
-    justify-items: stretch;
     min-height: 42px;
+  }
+
+  .admin-shell,
+  .admin-shell-with-sidebar,
+  .admin-content-column,
+  .main-column,
+  .workspace-hero,
+  .panel,
+  .admin-sidebar {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .admin-shell-with-sidebar {
+    overflow-x: clip;
   }
 
   .page-subnav {
     width: 100%;
+  }
+
+  .page-subnav-shell {
+    width: 100%;
+  }
+
+  .quick-action-grid {
+    grid-template-columns: 1fr;
   }
 
   .app-topbar {
@@ -231,6 +365,15 @@
     align-items: stretch;
   }
 
+  .button-row {
+    align-items: stretch;
+  }
+
+  .button-row > button,
+  .workspace-actions > button {
+    min-height: 44px;
+  }
+
   .panel-toolbar {
     align-items: stretch;
   }
@@ -251,6 +394,51 @@
     display: none;
   }
 
+  /*
+   * The employee portal overrides the generic hero with a desktop flex row.
+   * Restore a single-column layout explicitly here: the more specific desktop
+   * selector would otherwise win over `.workspace-hero` at this breakpoint.
+   */
+  .employee-portal-shell .workspace-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .employee-portal-shell .workspace-hero > :first-child,
+  .employee-portal-shell .workspace-hero .employee-portal-actions {
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .employee-portal-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+    max-width: 100%;
+    align-items: stretch;
+    overflow: visible;
+    gap: 2px;
+  }
+
+  .employee-portal-tabs button {
+    width: 100%;
+    min-height: 44px;
+    padding: 6px 4px;
+    font-size: 11px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .employee-portal-shell .workspace-hero .employee-portal-actions {
+    width: 100%;
+  }
+
+  .employee-portal-shell .employee-portal-actions > button {
+    width: 100%;
+  }
+
   .portal-bottom-nav {
     display: flex;
   }
@@ -269,6 +457,15 @@
 
   table {
     min-width: 480px;
+  }
+
+  .table-wrap {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  .table-scroll-hint {
+    display: inline;
   }
 }
 
@@ -294,3 +491,172 @@
     transition: none !important;
   }
 }
+
+@media (max-width: 1080px) {
+  .workspace-account-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .workspace-user-label {
+    color: var(--muted-strong);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .workspace-account-actions .portal-mode-tabs {
+    display: flex;
+    flex-direction: row;
+    width: auto;
+    gap: 4px;
+  }
+
+  .workspace-account-actions .portal-mode-tab {
+    flex: 0 1 auto;
+    min-width: 0;
+    padding: 8px 10px;
+    white-space: nowrap;
+  }
+
+  .workspace-logout-button {
+    min-height: 38px;
+    padding: 8px 12px;
+    white-space: nowrap;
+  }
+
+  .admin-shell-with-sidebar .workspace-hero {
+    flex-wrap: wrap;
+  }
+
+  .admin-shell-with-sidebar .workspace-hero > .page-subnav-shell {
+    flex: 1 1 100%;
+    order: 3;
+  }
+
+  .admin-shell-with-sidebar .workspace-hero .workspace-actions {
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .admin-sidebar .sidebar-account-panel {
+    display: none;
+  }
+
+  .admin-shell-with-sidebar .workspace-hero .workspace-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .workspace-account-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .workspace-account-actions .portal-mode-tabs {
+    flex: 1 1 auto;
+  }
+
+  .workspace-account-actions .portal-mode-tab {
+    flex: 1 1 0;
+    padding-inline: 6px;
+    font-size: 11px;
+  }
+
+  .admin-shell-with-sidebar .workspace-actions > button {
+    width: 100%;
+  }
+
+  .payroll-detail-card,
+  .payroll-detail-card > *,
+  .payroll-detail-card .split > *,
+  .payroll-detail-card .detail-grid {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .payroll-detail-card .panel-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .payroll-detail-card .panel-header h3 {
+    overflow-wrap: anywhere;
+  }
+
+  .payroll-detail-card .table-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+.notice-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .report-output-layout,
+  .report-output-conditions,
+  .report-hub-grid {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .report-output-target > * {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .report-menu-column {
+    min-width: 0;
+    min-height: 0;
+    padding: 16px;
+  }
+}
+
+@media (max-width: 720px) {
+  .employee-portal-shell .app-topbar { padding-block: 10px; gap: 10px; }
+  .employee-portal-shell .workspace-hero { padding: 12px; gap: 10px; }
+  .employee-portal-shell .employee-portal-tabs { gap: 4px; grid-template-columns: repeat(auto-fit, minmax(min(5rem, 100%), 1fr)); }
+  .employee-portal-shell .employee-portal-tabs button { padding: 6px 4px; }
+  .employee-portal-shell .workspace-hero h2 { margin: 0; font-size: 1.1rem; }
+  .employee-portal-shell .portal-home-list { gap: 10px; }
+  .employee-portal-shell #leave-request-form .panel-header { flex-wrap: wrap; }
+  .employee-portal-shell #leave-request-form .panel-meta { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+}
+
+.employee-portal-shell {
+  --muted: #4d607a;
+}
+
+.employee-portal-shell button,
+.employee-portal-shell .attendance-row-details summary {
+  min-height: 44px;
+}
+
+.employee-portal-shell button,
+.employee-portal-shell .employee-portal-tabs button,
+.employee-portal-shell .table-action,
+.employee-portal-shell .attendance-row-details summary {
+  font-size: .875rem;
+}
+
+.employee-portal-shell .attendance-row-details summary {
+  padding: .65rem .4rem;
+  color: #254e93;
+}
+
+.employee-portal-shell :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  font-size: max(1rem, 16px);
+  min-height: 44px;
+}
+
+.employee-portal-shell :is(button, summary, h3, input, select, textarea):focus-visible {
+  outline: 3px solid #21498e;
+  outline-offset: 2px;
+}
+
+.employee-portal-shell .payroll-detail-card h3 { scroll-margin-block: 1rem; }

@@ -12,12 +12,13 @@ trait AttendanceAlertRules
 {
     protected function buildAlertsForRow(object $row, array $shortIntervalAlertMap, array $settings): array
     {
+        $row = $this->attendanceDayProjection($row);
         $targetDate = (string) ($row->target_date ?? '');
         $employeeId = (int) ($row->employee_id ?? 0);
         $pairKey = $this->alertPairKey($employeeId, $targetDate);
         $alerts = [];
 
-        if (!empty($row->clock_in_at) && empty($row->clock_out_at)) {
+        if (!AttendanceDayState::notDue($row) && !empty($row->clock_in_at) && empty($row->clock_out_at)) {
             if ($config = $this->resolveEnabledAlert($settings, ['UNCLOCKED_OUT', 'MISSING_CLOCK_OUT'], 'UNCLOCKED_OUT', '未退勤アラート', null)) {
                 $alerts[] = [
                     'code' => $config['code'],
@@ -28,7 +29,7 @@ trait AttendanceAlertRules
             }
         }
 
-        if ((empty($row->clock_in_at) xor empty($row->clock_out_at))) {
+        if (!AttendanceDayState::notDue($row) && (empty($row->clock_in_at) xor empty($row->clock_out_at))) {
             if ($config = $this->resolveEnabledAlert($settings, ['MISSING_PUNCH'], 'MISSING_PUNCH', '打刻漏れ', null)) {
                 $alerts[] = [
                     'code' => $config['code'],

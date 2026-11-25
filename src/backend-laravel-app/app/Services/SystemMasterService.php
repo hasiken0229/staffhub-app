@@ -22,7 +22,9 @@ class SystemMasterService
             ->map(fn ($row) => [
                 'code' => $row->code,
                 'name' => $row->name,
-                'requiresBalance' => (bool) $row->requires_balance,
+                'requiresBalance' => $row->code === 'PAID' || (bool) $row->requires_balance,
+                'balanceSource' => ($row->code === 'PAID' || $row->requires_balance) ? 'PAID' : 'NONE',
+                'attendanceEffect' => $row->attendance_effect ?? (in_array($row->code, ['PAID', 'SPECIAL', 'ABSENCE'], true) ? $row->code : null),
                 'allowsHalfDay' => (bool) $row->allows_half_day,
                 'sortOrder' => (int) $row->sort_order,
                 'isActive' => (bool) ($row->is_active ?? true),
@@ -56,6 +58,7 @@ class SystemMasterService
                 ])
                 ->all(),
             'employmentTypes' => DB::table('employment_type_settings')
+                ->whereIn('code', ['FULL_TIME', 'PART_TIME'])
                 ->orderBy('sort_order')
                 ->orderBy('code')
                 ->get()
@@ -209,6 +212,10 @@ class SystemMasterService
         $code = $this->requiredString($payload, 'code', '雇用形態コード');
         $label = $this->requiredString($payload, 'label', '雇用形態名');
 
+        if (!in_array($code, ['FULL_TIME', 'PART_TIME'], true)) {
+            throw new ApiException('VALIDATION_ERROR', '雇用区分は常勤または非常勤を選択してください。', 422);
+        }
+
         DB::table('employment_type_settings')->updateOrInsert(
             ['code' => $code],
             [
@@ -281,12 +288,25 @@ class SystemMasterService
 
     public function storeLeaveType(array $payload): array
     {
-        $code = $this->requiredString($payload, 'code', '休暇区分コード');
+        $code = strtoupper($this->requiredString($payload, 'code', '休暇区分コード'));
         $name = $this->requiredString($payload, 'name', '休暇区分名');
 
+        if (mb_strlen($code) > 20 || mb_strlen($name) > 50) {
+            throw new ApiException('VALIDATION_ERROR', '区分コードは20文字以内、名称は50文字以内で入力してください。', 422);
+        }
+        $builtin = in_array($code, ['PAID', 'SPECIAL', 'ABSENCE'], true);
+        $current = DB::table('leave_types')->where('code', $code)->first();
+        $effect = $builtin ? $code : ($payload['attendanceEffect'] ?? $current?->attendance_effect);
+        $source = $payload['balanceSource'] ?? ($this->boolValue($payload, 'requiresBalance', (bool) $current?->requires_balance) ? 'PAID' : 'NONE');
+        $disablingUnconfigured = $current && !$effect && !$this->boolValue($payload, 'isActive', true);
+        if ((!$disablingUnconfigured && !in_array($effect, ['PAID', 'SPECIAL', 'ABSENCE'], true)) || (!$builtin && $effect === 'PAID')
+            || !in_array($source, ['PAID', 'NONE'], true)) {
+            throw new ApiException('VALIDATION_ERROR', '勤怠への反映方法と残数の消化先を選択してください。', 422);
+        }
         $values = [
             'name' => $name,
-            'requires_balance' => $this->boolValue($payload, 'requiresBalance', false),
+            'attendance_effect' => $effect,
+            'requires_balance' => $code === 'PAID' || $source === 'PAID',
             'allows_half_day' => $this->boolValue($payload, 'allowsHalfDay', false),
             'sort_order' => $this->intValue($payload, 'sortOrder', $this->nextSortOrder('leave_types')),
         ];

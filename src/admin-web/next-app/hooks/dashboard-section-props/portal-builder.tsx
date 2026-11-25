@@ -17,7 +17,6 @@ export function buildEmployeePortalSectionProps(params: UseDashboardSectionProps
       onPayrollDownload={params.handlePayrollDownload}
       onDeletePayrollStatement={params.handleDeletePayrollStatement}
       formatDateOnly={formatDateOnly}
-      formatMonthDay={formatMonthDay}
     />
   ) : null;
 
@@ -28,14 +27,20 @@ export function buildEmployeePortalSectionProps(params: UseDashboardSectionProps
       isPending: params.isPending,
       errorMessage: params.errorMessage,
       selectedPayrollDetailCard,
+      selectedPayrollDetailId: params.selectedEmployeePayrollDetail?.id,
       currentMode: params.currentAudience || "EMPLOYEE",
       canUseEmployeePortal: params.canUseEmployeePortal,
     },
     actions: {
       onRefresh: params.handleRefresh,
+      onPortalUpdate: params.setEmployeePortal,
+      onRequestStatusReload: params.handleEmployeeRequestStatusReload,
+      onAttendanceMonthChange: params.handleEmployeeAttendanceMonthChange,
       onLogout: params.handleLogout,
       onModeChange: params.canUseEmployeePortal ? params.handlePortalModeChange : undefined,
+      onLeaveRequestCancel: params.handleEmployeeLeaveRequestCancel,
       onLeaveRequestCreate: params.handleEmployeeLeaveRequestCreate,
+      onAttendanceDailyEditRequestCancel: params.handleEmployeeAttendanceDailyEditRequestCancel,
       onAttendanceDailyEditRequestCreate: params.handleEmployeeAttendanceDailyEditRequestCreate,
       onLoadEmployeePayrollDetail: params.handleLoadEmployeePayrollDetail,
       onPayrollDownload: params.handlePayrollDownload,

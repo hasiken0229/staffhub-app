@@ -1,15 +1,16 @@
-import { downloadBlob } from "@/lib/api/core";
+import { buildQuery, downloadBlob } from "@/lib/api/core";
+export type AttendanceExportFilters = { employeeCode?: string; departmentName?: string };
 
-export async function downloadMonthlyAttendanceCsv(targetMonth: string) {
-  return downloadBlob(`/api/admin/reports/monthly-csv?targetMonth=${encodeURIComponent(targetMonth)}`, `attendance_monthly_${targetMonth}.csv`);
+export async function downloadMonthlyAttendanceCsv(targetMonth: string, filters: AttendanceExportFilters = {}) {
+  return downloadBlob(`/api/admin/reports/monthly-csv${buildQuery({targetMonth,...filters})}`, `attendance_monthly_${targetMonth}.csv`);
 }
 
-export async function downloadDailyAttendanceCsv(from: string, to: string) {
-  return downloadBlob(`/api/admin/reports/daily-csv?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, `attendance_daily_${from}_${to}.csv`);
+export async function downloadDailyAttendanceCsv(from: string, to: string, filters: AttendanceExportFilters = {}) {
+  return downloadBlob(`/api/admin/reports/daily-csv${buildQuery({from,to,...filters})}`, `attendance_daily_${from}_${to}.csv`);
 }
 
-export async function downloadDailyAttendancePdf(targetMonth: string) {
-  return downloadBlob(`/api/admin/reports/daily-pdf?targetMonth=${encodeURIComponent(targetMonth)}`, `attendance_daily_${targetMonth}.pdf`);
+export async function downloadDailyAttendancePdf(targetMonth: string, filters: AttendanceExportFilters = {}) {
+  return downloadBlob(`/api/admin/reports/daily-pdf${buildQuery({targetMonth,...filters})}`, `attendance_daily_${targetMonth}.pdf`);
 }
 
 export async function downloadMonthlyPayrollCsv(targetMonth: string) {
@@ -35,7 +36,7 @@ export async function downloadAdminCsvTemplate(kind: "employees" | "payroll" | "
     kind === "employees"
       ? "/api/admin/employees/template-csv"
       : `/api/admin/payroll/definitions/template-csv?statementType=${kind === "bonus" ? "BONUS" : "PAYROLL"}`;
-  const fileName = kind === "employees" ? "employees_template.csv" : kind === "bonus" ? "r8.3syoyo.csv" : "r8.3kyuyo.csv";
+  const fileName = kind === "employees" ? "employees_template.csv" : kind === "bonus" ? "sample-bonus.csv" : "sample-payroll.csv";
   return downloadBlob(path, fileName);
 }
 

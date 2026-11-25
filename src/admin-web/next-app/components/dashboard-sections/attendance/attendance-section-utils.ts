@@ -1,4 +1,22 @@
-import type { AttendanceDailyBreak, AttendanceMonthCloseCheckItem } from "@/types";
+import type { AttendanceDailyBreak, AttendanceDailyDetail, AttendanceDailyUpdatePayload, AttendanceMonthCloseCheckItem } from "@/types";
+
+export function buildDailyUpdatePayload(original: AttendanceDailyDetail, current: AttendanceDailyDetail, breaks: AttendanceDailyBreak[]): AttendanceDailyUpdatePayload {
+  const payload: AttendanceDailyUpdatePayload = {};
+  for (const field of ["workTypeId", "remark", "supervisorComment", "approvalComment"] as const) {
+    if ((current[field] ?? null) !== (original[field] ?? null)) Object.assign(payload, {[field]: current[field] ?? null});
+  }
+  if (current.approvalStatus !== original.approvalStatus && ["PENDING", "APPROVED", "RETURNED"].includes(current.approvalStatus ?? "")) {
+    payload.approvalStatus = current.approvalStatus;
+  }
+  for (const [field, timeKey, dayKey] of [["clockInAt", "clockInTime", "clockInNextDay"], ["clockOutAt", "clockOutTime", "clockOutNextDay"]] as const) {
+    if (isoToTime(current[field]) !== isoToTime(original[field]) || isNextDay(current[field],current.targetDate) !== isNextDay(original[field],original.targetDate)) {
+      Object.assign(payload, {[timeKey]:isoToTime(current[field]) || null,[dayKey]:isNextDay(current[field],current.targetDate)});
+    }
+  }
+  const clean = (items: AttendanceDailyBreak[]) => normalizeBreaks(items).filter(item=>item.startTime||item.endTime).map(item=>({startTime:item.startTime??"",endTime:item.endTime??"",startNextDay:Boolean(item.startNextDay),endNextDay:Boolean(item.endNextDay)}));
+  if (JSON.stringify(clean(breaks)) !== JSON.stringify(clean(original.breaks??[]))) payload.breaks = clean(breaks);
+  return payload;
+}
 
 export function isoToTime(value?: string | null) {
   if (!value) {
@@ -31,12 +49,18 @@ export function formatHandlingStatus(value?: string | null) {
   }[value ?? "OPEN"] ?? value ?? "-";
 }
 
-export function formatCheckItems(items?: AttendanceMonthCloseCheckItem[]) {
+export function formatCheckItem(item: AttendanceMonthCloseCheckItem) {
+  const unit = item.code === "PERIOD_NOT_FINISHED" ? "暦日"
+    : ["UNSUBMITTED_DAILY", "PENDING_APPROVAL", "RETURNED_APPROVAL"].includes(item.code) ? "人日" : "件";
+  return `${item.label} ${item.count}${unit}`;
+}
+
+export function formatCheckItems(items?: AttendanceMonthCloseCheckItem[], emptyMessage = "未処理項目はありません。") {
   if (!items || items.length === 0) {
-    return "未処理項目はありません。";
+    return emptyMessage;
   }
 
-  return items.map((item) => `${item.label} ${item.count}件`).join(" / ");
+  return items.map(formatCheckItem).join(" / ");
 }
 
 export function formatErrorHistory(row: {

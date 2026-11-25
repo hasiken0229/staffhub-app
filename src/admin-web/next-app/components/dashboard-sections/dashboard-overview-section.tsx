@@ -13,6 +13,9 @@ type DashboardOverviewSectionProps = {
     formatWorkMinutes: (value?: number | null) => string;
     formatApprovalStatus: (value?: string | null) => string;
   };
+  actions: {
+    onOpenQueue: (section: "attendance" | "leave", targetId: string) => void;
+  };
 };
 
 export function DashboardOverviewSection(props: DashboardOverviewSectionProps) {
@@ -54,11 +57,11 @@ export function DashboardOverviewSection(props: DashboardOverviewSectionProps) {
                   <div className="department-chart-header">
                     <div>
                       <strong>{summary.departmentName}</strong>
-                      <span>{summary.presentCount}/{summary.employeeCount} 名 出勤</span>
+                      <span>{summary.presentCount}/{summary.employeeCount} 名 打刻済み／在職</span>
                     </div>
                     <b>{summary.attendanceRate}%</b>
                   </div>
-                  <div className="bar-track" aria-label={`${summary.departmentName}の本日出勤率 ${summary.attendanceRate}%`}>
+                  <div className="bar-track" aria-label={`${summary.departmentName}の在職者の本日打刻割合 ${summary.attendanceRate}%`}>
                     <span className="bar-fill" style={{ "--bar-value": `${summary.attendanceRate}%` } as React.CSSProperties} />
                   </div>
                   <div className="department-chart-meta">
@@ -72,22 +75,40 @@ export function DashboardOverviewSection(props: DashboardOverviewSectionProps) {
         </section>
       ) : null}
       {activePanel === "dashboard-pending-requests" ? (
-        <DataTable
-          id="dashboard-pending-requests"
-          title="承認待ちの届出"
-          rows={props.data.dashboard.workProcedures}
-          emptyMessage="承認待ちの届出はありません"
-          columns={[
-            { key: "employeeName", header: "申請者", render: (row) => row.employee?.name ?? "-" },
-            { key: "leaveTypeName", header: "区分", render: (row) => row.leaveTypeName },
-            {
-              key: "period",
-              header: "期間",
-              render: (row) => `${props.formatters.formatDateOnly(row.startDate)} - ${props.formatters.formatDateOnly(row.endDate)}`,
-            },
-            { key: "status", header: "状態", render: (row) => <ApprovalStatusBadge value={row.status} format={props.formatters.formatApprovalStatus} /> },
-          ]}
-        />
+        <>
+          <section className="panel action-panel anchor-panel">
+            <div className="panel-header">
+              <div><p className="panel-kicker">処理へのショートカット</p><h3>勤怠と届出を確認</h3></div>
+            </div>
+            <div className="button-row">
+              <button type="button" onClick={() => props.actions.onOpenQueue("attendance", "attendance-attention")}>
+                日次勤怠の要確認{props.data.dashboard.reportsHub.checkedAt ? (props.data.dashboard.reportsHub.pendingAttendanceApprovalCount > 0 ? " あり" : " なし") : " 未取得"}
+              </button>
+              <button type="button" className="secondary" onClick={() => props.actions.onOpenQueue("attendance", "attendance-edit-requests")}>
+                日次修正申請 {(props.data.dashboard.reportsHub.pendingDailyEditRequestCount ?? "未取得")} 件
+              </button>
+              <button type="button" className="secondary" onClick={() => props.actions.onOpenQueue("leave", "leave-requests")}>
+                届出承認 {(props.data.dashboard.reportsHub.checkedAt ? props.data.dashboard.reportsHub.pendingLeaveCount : "未取得")} 件
+              </button>
+            </div>
+          </section>
+          <DataTable
+            id="dashboard-pending-requests"
+            title="承認待ちの届出"
+            rows={props.data.dashboard.workProcedures}
+            emptyMessage="承認待ちの届出はありません"
+            columns={[
+              { key: "employeeName", header: "申請者", render: (row) => row.employee?.name ?? "-" },
+              { key: "leaveTypeName", header: "区分", render: (row) => row.leaveTypeName },
+              {
+                key: "period",
+                header: "期間",
+                render: (row) => `${props.formatters.formatDateOnly(row.startDate)} - ${props.formatters.formatDateOnly(row.endDate)}`,
+              },
+              { key: "status", header: "状態", render: (row) => <ApprovalStatusBadge value={row.status} format={props.formatters.formatApprovalStatus} /> },
+            ]}
+          />
+        </>
       ) : null}
     </section>
   );
@@ -104,8 +125,11 @@ type DepartmentSummary = {
 
 function buildDepartmentSummaries(dashboard: DashboardData): DepartmentSummary[] {
   const departments = new Map<string, { employees: Employee[]; presentCount: number; pendingLeaveCount: number; paidLeaveTotal: number; paidLeaveCount: number }>();
+  const activeEmployees = dashboard.employees.filter((employee) => employee.status === "ACTIVE");
+  const activeEmployeeIds = new Set(activeEmployees.map((employee) => employee.id));
+  const activeEmployeeCodes = new Set(activeEmployees.map((employee) => employee.employeeCode));
 
-  for (const employee of dashboard.employees) {
+  for (const employee of activeEmployees) {
     const departmentName = employee.departmentName || "未設定";
     const current = departments.get(departmentName) ?? {
       employees: [],
@@ -119,7 +143,7 @@ function buildDepartmentSummaries(dashboard: DashboardData): DepartmentSummary[]
   }
 
   for (const row of dashboard.reportTodayAttendance) {
-    if (!row.clockInAt) {
+    if (!row.clockInAt || !activeEmployeeCodes.has(row.employeeCode)) {
       continue;
     }
 
@@ -131,6 +155,9 @@ function buildDepartmentSummaries(dashboard: DashboardData): DepartmentSummary[]
   }
 
   for (const request of dashboard.workProcedures) {
+    if (request.employee?.id != null && !activeEmployeeIds.has(request.employee.id)) {
+      continue;
+    }
     const departmentName = request.employee?.departmentName || "未設定";
     const current = departments.get(departmentName);
     if (current) {
@@ -139,6 +166,9 @@ function buildDepartmentSummaries(dashboard: DashboardData): DepartmentSummary[]
   }
 
   for (const row of dashboard.paidLeaveReport) {
+    if (!activeEmployeeIds.has(row.employeeId)) {
+      continue;
+    }
     const departmentName = row.departmentName || "未設定";
     const current = departments.get(departmentName);
     if (current) {

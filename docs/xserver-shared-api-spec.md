@@ -111,9 +111,9 @@
 {
   "deviceCode": "PC-ENTRANCE-01",
   "deviceSecret": "secret-value",
-  "cardUid": "012E4CE15C908F48",
+  "cardUid": "D0D0D0D0D0D0D0D0",
   "occurredAt": "2026-03-21T08:31:45+09:00",
-  "dedupeKey": "PC-ENTRANCE-01-20260321083145-0001",
+  "dedupeKey": "example-key-01",
   "appVersion": "1.0.0"
 }
 ```
@@ -127,7 +127,7 @@
     "employee": {
       "id": 1,
       "employeeCode": "E0001",
-      "name": "山田 太郎"
+      "name": "見本姓K 職員J"
     },
     "eventType": "CLOCK_IN",
     "resultType": "SUCCESS",
@@ -206,8 +206,8 @@
       "id": 11,
       "employeeId": 1,
       "employeeCode": "E0001",
-      "employeeName": "山田 太郎",
-      "cardUid": "012E4CE15C908F48",
+      "employeeName": "見本姓K 職員J",
+      "cardUid": "D0D0D0D0D0D0D0D0",
       "isActive": true,
       "assignedAt": "2026-03-21T15:52:11+09:00",
       "revokedAt": null
@@ -230,7 +230,7 @@
 ```json
 {
   "employeeId": 1,
-  "cardUid": "012E4CE15C908F48"
+  "cardUid": "D0D0D0D0D0D0D0D0"
 }
 ```
 
@@ -242,8 +242,8 @@
     "id": 11,
     "employeeId": 1,
     "employeeCode": "E0001",
-    "employeeName": "山田 太郎",
-    "cardUid": "012E4CE15C908F48",
+    "employeeName": "見本姓K 職員J",
+    "cardUid": "D0D0D0D0D0D0D0D0",
     "isActive": true,
     "assignedAt": "2026-03-21T15:52:11+09:00",
     "revokedAt": null
@@ -303,11 +303,11 @@
       "id": 10002,
       "employeeId": 1,
       "employeeCode": "E0001",
-      "employeeName": "山田 太郎",
+      "employeeName": "見本姓K 職員J",
       "deviceId": 1,
       "deviceCode": "PC-ENTRANCE-01",
       "deviceName": "玄関端末",
-      "cardUid": "012E4CE15C908F48",
+      "cardUid": "D0D0D0D0D0D0D0D0",
       "occurredAt": "2026-03-21T16:02:33+09:00",
       "eventType": "CLOCK_OUT",
       "receiveStatus": "ACCEPTED",
@@ -338,7 +338,7 @@
     {
       "employeeId": 1,
       "employeeCode": "E0001",
-      "employeeName": "山田 太郎",
+      "employeeName": "見本姓K 職員J",
       "targetDate": "2026-03-21",
       "clockInAt": "2026-03-21T15:58:23+09:00",
       "clockOutAt": "2026-03-21T16:02:33+09:00",
@@ -365,7 +365,7 @@
     "employee": {
       "id": 1,
       "employeeCode": "E0001",
-      "name": "山田 太郎"
+      "name": "見本姓K 職員J"
     },
     "pendingLeaveCount": 1,
     "paidLeaveBalance": 8.5,

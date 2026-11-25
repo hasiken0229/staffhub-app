@@ -83,11 +83,11 @@ class SystemMasterAdminController extends Controller
         } catch (ApiException $exception) {
             return response()->json([
                 'error' => [
-                    'code' => $exception->getErrorCode(),
+                    'code' => $exception->errorCode,
                     'message' => $exception->getMessage(),
-                    'details' => $exception->getDetails(),
+                    'details' => $exception->details,
                 ],
-            ], $exception->getStatusCode());
+            ], $exception->status);
         }
     }
 }

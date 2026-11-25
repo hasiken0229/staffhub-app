@@ -9,6 +9,7 @@ import {
   returnWorkProcedure,
 } from "@/lib/api";
 import { currentMonthEndValue, currentMonthStartValue } from "@/lib/date-defaults";
+import { ApiRequestError } from "@/lib/api/core";
 import type { DashboardData } from "@/types";
 
 type UseLeaveActionsParams = {
@@ -54,7 +55,7 @@ export function useLeaveActions(params: UseLeaveActionsParams) {
           ? await approveWorkProcedure(id, params.decisionComment)
           : await returnWorkProcedure(id, params.decisionComment);
       params.setDecisionResult(`届出 ${result.id} を ${result.status} に更新しました。`);
-      await params.onRefresh();
+      await params.onRefresh().catch(() => { params.setErrorMessage("処理は完了していますが一覧の更新に失敗しました。再処理せず、最新情報を再読込してください。"); });
     } catch (error) {
       params.setDecisionResult(error instanceof Error ? error.message : "届出の更新に失敗しました。");
     }
@@ -75,14 +76,15 @@ export function useLeaveActions(params: UseLeaveActionsParams) {
         decision === "approve"
           ? await bulkApproveWorkProcedures(ids, params.decisionComment)
           : await bulkReturnWorkProcedures(ids, params.decisionComment);
-      params.setDecisionResult(`${result.updatedCount} 件の届出を更新しました。`);
-      await params.onRefresh();
+      params.setDecisionResult(`${result.updatedCount} 件の届出を更新しました。${result.errorCount ? ` 未完了 ${result.errorCount}件：${result.errors?.map((item) => `ID ${item.id}：${item.message}`).join(" ／ ")}` : ""}`);
+      await params.onRefresh().catch(() => { params.setErrorMessage("処理は完了していますが一覧の更新に失敗しました。再処理せず、最新情報を再読込してください。"); });
     } catch (error) {
       params.setDecisionResult(error instanceof Error ? error.message : "一括承認に失敗しました。");
     }
   }
 
-  async function handleGrantPaidLeave() {
+  async function handleGrantPaidLeave(onValidationErrors?: (errors: Record<string, string[]>) => void) {
+    onValidationErrors?.({});
     try {
       await grantPaidLeave({
         employeeId: Number(params.grantEmployeeId),
@@ -92,13 +94,15 @@ export function useLeaveActions(params: UseLeaveActionsParams) {
         note: params.grantNote || undefined,
       });
       params.setLeaveAdminResult("有給付与を登録しました。");
-      await params.onRefresh();
+      await params.onRefresh().catch(() => { params.setErrorMessage("処理は完了していますが一覧の更新に失敗しました。再処理せず、最新情報を再読込してください。"); });
     } catch (error) {
+      onValidationErrors?.(error instanceof ApiRequestError ? error.fieldErrors : {});
       params.setLeaveAdminResult(error instanceof Error ? error.message : "有給付与に失敗しました。");
     }
   }
 
-  async function handleAdjustPaidLeave() {
+  async function handleAdjustPaidLeave(onValidationErrors?: (errors: Record<string, string[]>) => void) {
+    onValidationErrors?.({});
     try {
       await adjustPaidLeave({
         employeeId: Number(params.grantEmployeeId),
@@ -108,8 +112,9 @@ export function useLeaveActions(params: UseLeaveActionsParams) {
         note: params.adjustNote || undefined,
       });
       params.setLeaveAdminResult("有給調整を登録しました。");
-      await params.onRefresh();
+      await params.onRefresh().catch(() => { params.setErrorMessage("処理は完了していますが一覧の更新に失敗しました。再処理せず、最新情報を再読込してください。"); });
     } catch (error) {
+      onValidationErrors?.(error instanceof ApiRequestError ? error.fieldErrors : {});
       params.setLeaveAdminResult(error instanceof Error ? error.message : "有給調整に失敗しました。");
     }
   }
@@ -160,6 +165,7 @@ export function useLeaveActions(params: UseLeaveActionsParams) {
   }
 
   return {
+    refreshHourlyPaidLeave: params.onRefresh,
     applyWorkProcedureFilters,
     handleAdjustPaidLeave,
     handleBulkWorkProcedureDecision,

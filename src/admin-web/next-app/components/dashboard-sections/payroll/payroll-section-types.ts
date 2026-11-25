@@ -53,6 +53,7 @@ export type PayrollSectionProps = {
     onPayrollDefinitionSelect: (definition: PayrollDataDefinition) => void;
     onPayrollDefinitionSave: () => Promise<void>;
     onTemplateDownload: (kind: "payroll" | "bonus") => Promise<void>;
+    onPayrollBatchPreview: (formData: FormData) => Promise<import("@/types").PayrollImportPreview>;
     onPayrollBatchCreate: (formData: FormData) => Promise<void>;
     onOpenPayrollBatchDetail: (batchId: number) => Promise<void>;
     onSearchPayrollBatchDetail: () => Promise<void>;

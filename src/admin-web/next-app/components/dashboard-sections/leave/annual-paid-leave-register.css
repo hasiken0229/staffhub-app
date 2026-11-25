@@ -1,0 +1,48 @@
+.annual-register { min-width: 0; }
+.annual-register-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.annual-register-controls label { display: grid; gap: 4px; flex: 1 1 145px; min-width: 0; }
+.annual-register-controls label:first-child { flex-basis: 225px; }
+.annual-register-controls select, .annual-register-controls input { min-width: 0; width: 100%; }
+.annual-register-actions { margin: 14px 0; }
+.annual-register-sheet { color: #253549; background: white; border: 1px solid var(--line-strong); border-radius: 12px; padding: clamp(12px, 3vw, 28px); overflow-wrap: anywhere; }
+.annual-register-sheet h2, .annual-register-sheet h3, .annual-register-sheet p { margin: 0; }
+.annual-register-sheet h2 { display: none; font-size: 1.35rem; }
+.annual-register-heading { border-bottom: 2px solid #58718a; padding-bottom: 12px; }
+.annual-register-heading h3 { margin: 8px 0 4px; }
+.annual-register-heading small, .annual-register-table small { display: block; font-size: .8rem; line-height: 1.45; font-weight: normal; color: #45586d; }
+.annual-register-table { margin-top: 16px; max-width: 100%; overflow-x: auto; }
+.annual-register-table caption { padding-bottom: 6px; text-align: left; font-weight: 700; font-size: 1rem; }
+.annual-register-table table { border-collapse: collapse; width: 100%; margin: 0; font-size: .875rem; }
+.annual-register-table th, .annual-register-table td { text-align: left; border-bottom: 1px solid #c1cbd5; padding: 6px 8px; vertical-align: top; }
+.annual-register-table thead th { color: #263a50; background: #eef3f6; }
+.annual-register-table th[scope="colgroup"] { text-align: center; }
+.annual-register-table [scope="row"] { font-weight: normal; }
+.annual-register-table time { font: inherit; color: inherit; white-space: nowrap; }
+.annual-register-table tbody td:nth-child(2), .annual-register-table tbody td:nth-child(4),
+.annual-register-table thead tr:nth-child(2) th:is(:first-child, :nth-child(3)), .annual-register-table th[scope="colgroup"] { border-left: 1px solid #c1cbd5; }
+.annual-register-opening { background: #f4f7fa; font-weight: 600; }
+.annual-register-closing { border-top: 2px solid #8d9eb0; font-weight: 600; }
+@media (max-width: 600px) {
+  .annual-register { padding: 12px; }
+  .annual-register-table table { min-width: 520px; }
+}
+@media print {
+  body:has(.annual-register-sheet) *:not(:has(.annual-register-sheet)):not(.annual-register-sheet):not(.annual-register-sheet *) { display: none !important; }
+  html:has(.annual-register-sheet), body:has(.annual-register-sheet), body:has(.annual-register-sheet) *:has(.annual-register-sheet) {
+    display: block !important; position: static !important; width: auto !important; max-width: none !important; min-width: 0 !important;
+    min-height: 0 !important; height: auto !important; max-height: none !important; overflow: visible !important; margin: 0 !important;
+    padding: 0 !important; background: white !important; border: 0 !important; box-shadow: none !important; transform: none !important; animation: none !important;
+  }
+  .annual-register-sheet { display: block; border: 0; border-radius: 0; padding: 5mm; font-size: 9pt; color: #111; }
+  .annual-register-sheet h2 { display: block; font-size: 15pt; }
+  .annual-register-sheet h3, .annual-register-table caption { break-after: avoid; }
+  .annual-register-table { margin-top: 3mm; overflow: visible; }
+  .annual-register-table caption { font-size: 10pt; }
+  .annual-register-table:focus { outline: none !important; box-shadow: none !important; }
+  .annual-register-table table { min-width: 0; width: 100%; font-size: 8.5pt; }
+  .annual-register-table thead { display: table-header-group; }
+  .annual-register-table tr, .annual-register-heading { break-inside: avoid; }
+  .annual-register-table td, .annual-register-table th { padding: 1.1mm; }
+  .annual-register-sheet small, .annual-register-heading small { font-size: 8pt; }
+}
+

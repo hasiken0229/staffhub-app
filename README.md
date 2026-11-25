@@ -1,9 +1,13 @@
 # 職員打刻・休暇申請・給与明細配信アプリ
 
+このリポジトリでは配布先の設定と個人別の勤務ルールに架空の例を使っています。運用する施設のドメイン、端末接続先、勤務ルールは導入時に設定してください。
+
+Windows共有端末の更新は、[GitHub Releases](https://github.com/hasiken0229/staffhub-app/releases) から更新ZIPを取得し、「すべて展開」して「打刻端末を更新.cmd」を実行します。既存端末では打刻に使っているWindowsユーザーで更新してください。
+
 ## 現在の主構成
 
 - `src/backend-laravel-app`
-  - Laravel 11 の本番 API。勤怠、休暇、給与明細、通知、監査ログを提供します。
+  - Laravel 12 の本番 API。勤怠、休暇、給与明細、通知、監査ログを提供します。
 - `src/admin-web/next-app`
   - 管理画面と職員ポータル。Next.js の静的エクスポート前提です。
 - `src/windows-punch/StaffHub.PunchApp`
@@ -17,6 +21,10 @@
   - 基本設計、画面仕様、API I/O、DB 設計、Xserver 前提の再設計メモを格納しています。
 - `docs/current-architecture.md`
   - 現行の採用構成、旧資産の扱い、セキュリティ運用メモを整理しています。
+- [業務処理の結合テストと本番検証](docs/business-verification.md)
+  - 専用DBでの実API試験、月締め競合、給与公開通知、PDF照合、バックアップと本番検証票をまとめています。
+- [Windows診断と実機検証](docs/windows-business-verification.md)
+  - 打刻を送信しない診断モード、配布パッケージ、別PCの実機検証手順を説明しています。
 - `implementation_plan.md`
   - 現状確認と改善計画のたたき台です。
 
@@ -55,11 +63,11 @@
 1. Laravel API と Next.js 管理画面の互換性を維持したまま、責務分割とテスト整備を進める。
 2. 職員向けは Flutter 新規開発を急がず、既存ポータルをレスポンシブ/PWA として改善する。
 3. 旧 `.NET / prototype / skeleton` は参照用に残し、本番移行後に段階的に整理する。
-4. `.env` と鍵ファイルはワークスペース外で管理し、漏えいの可能性がある資格情報はローテーションする。
+4. `.env` と鍵ファイルはワークスペース外で管理する。ローカルAPIは `src/backend-laravel-app/scripts/start-local.ps1` でSQLite起動する。
 
 ## 通知メール運用メモ
 
-- Laravel 側のメール設定は `src/backend-laravel-app/.env` の `MAIL_*` を Xserver SMTP など実運用値へ設定する。
+- Laravel 側のメール設定は、本番サーバー上の `.env` の `MAIL_*` を Xserver SMTP など実運用値へ設定する。ローカルの `.env.local` には本番資格情報を置かない。
 - 職員メールアドレス列は現行スキーマに未実装のため、`STAFFHUB_NOTIFICATION_FALLBACK_TO` に運用受信箱を設定すると、給与明細公開や承認結果メールを安全に受け取れる。
 - 全体向けお知らせの送信先を固定したい場合は `STAFFHUB_ADMIN_NOTIFICATION_TO` に管理側の宛先をカンマ区切りで設定する。
 

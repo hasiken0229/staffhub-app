@@ -1,6 +1,6 @@
 # 勤怠管理 Backend
 
-`Xserver共有レンタルサーバー` を想定した `Laravel 11 + MySQL` のバックエンド実装です。
+`Xserver共有レンタルサーバー` を想定した `Laravel 12 + MySQL` のバックエンド実装です。
 
 ## 現在入っているもの
 
@@ -23,16 +23,16 @@
 
 ## ローカル確認
 
-1. `php.ini` を指定して Artisan を実行します
-2. `.env` の MySQL 接続先を環境に合わせて更新します
-3. `php artisan migrate` を実行します
+本番 `.env` をローカルへコピーせず、SQLite専用設定で起動します。
 
 例:
 
 ```powershell
-php -c "C:\Users\ikega\OneDrive\デスクトップ\職員打刻有給申請給与明細アプリ\php.ini" artisan route:list
-php -c "C:\Users\ikega\OneDrive\デスクトップ\職員打刻有給申請給与明細アプリ\php.ini" artisan migrate
+.\scripts\start-local.ps1
 ```
+
+初回は `.env.local.example` から `.env.local` を作成し、APP_KEY生成、SQLiteマイグレーション、Seederを実行します。
+`production` 環境かつリモートDBを参照する `php artisan serve` は安全ガードにより停止します。
 
 ## 注意点
 
@@ -67,7 +67,7 @@ STAFFHUB_SEED_SAMPLE=true /usr/bin/php8.3 artisan db:seed --class=Database\\Seed
 サンプル投入を有効にした場合の既定値:
 
 - サンプル職員コード: `E0001`
-- サンプルカードUID: `012E4CE15C908F48`
+- サンプルカードUID: `D0D0D0D0D0D0D0D0`
 
 ## API認証
 
@@ -95,13 +95,13 @@ Bearer トークン認証を実装しています。
 
 管理者認証情報はリポジトリへ固定値を置かず、環境変数を指定した明示的な seed でのみ作成します。
 
-既存の管理者ログインID/パスワードを切り替える場合は、CLI から次を実行します。
+在職中の職員を管理者として追加するには、ログイン用のメールアドレスと氏名を指定します。仮パスワードは、画面に表示されないプロンプトで入力します。
 
-```bash
-/usr/bin/php8.3 scripts/update_admin_credentials.php hasiken0229@gmai.com hasiken0229
+```sh
+php artisan staffhub:admin:add admin@example.org "架空 職員"
 ```
 
-必要に応じて第3引数に表示名も指定できます。
+追加した管理者は、初回ログインで仮パスワードを変更してから管理機能を利用できます。
 
 ## 休暇申請API
 

@@ -28,6 +28,24 @@ export function currentMonthEndValue() {
   return toDateValue(monthEnd(new Date()));
 }
 
+export function monthDateRangeValue(value: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(value);
+  if (!match) {
+    return { from: currentMonthStartValue(), to: currentMonthEndValue() };
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) {
+    return { from: currentMonthStartValue(), to: currentMonthEndValue() };
+  }
+
+  return {
+    from: toDateValue(new Date(year, month - 1, 1)),
+    to: toDateValue(new Date(year, month, 0)),
+  };
+}
+
 export function nextMonthDateValue(day: number) {
   const base = addMonths(new Date(), 1);
   return toDateValue(new Date(base.getFullYear(), base.getMonth(), day));

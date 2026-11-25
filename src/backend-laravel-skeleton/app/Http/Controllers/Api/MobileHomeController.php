@@ -14,7 +14,7 @@ final class MobileHomeController extends Controller
             'employee' => [
                 'id' => 1,
                 'employeeCode' => 'E0001',
-                'name' => '山田 太郎',
+                'name' => '見本姓K 職員J',
             ],
             'pendingLeaveCount' => 0,
             'paidLeaveBalance' => 0,

@@ -22,7 +22,7 @@ trait AttendanceSharedUtilities
             return null;
         }
 
-        if (!preg_match('/^\d{2}:\d{2}$/', $time)) {
+        if (!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time)) {
             throw new ApiException('VALIDATION_ERROR', '時刻は HH:mm 形式で指定してください。', 422);
         }
 
@@ -55,6 +55,7 @@ trait AttendanceSharedUtilities
             $items[] = ['startAt' => $startAt, 'endAt' => $endAt];
         }
 
+        usort($items, static fn (array $a, array $b): int => $a['startAt'] <=> $b['startAt']);
         return $items;
     }
 
@@ -63,7 +64,7 @@ trait AttendanceSharedUtilities
         $minutes = 0;
         foreach ($breaks as $break) {
             if ($break['startAt'] !== null && $break['endAt'] !== null) {
-                $minutes += $break['endAt']->diffInMinutes($break['startAt'], true);
+                $minutes += DailyTimeCalculator::span($break['startAt'], $break['endAt']) ?? 0;
             }
         }
 
@@ -72,11 +73,7 @@ trait AttendanceSharedUtilities
 
     protected function calculateWorkMinutes(?CarbonImmutable $clockInAt, ?CarbonImmutable $clockOutAt, int $breakMinutes): ?int
     {
-        if ($clockInAt === null || $clockOutAt === null) {
-            return null;
-        }
-
-        return max(0, $clockOutAt->diffInMinutes($clockInAt, true) - max(0, $breakMinutes));
+        return DailyTimeCalculator::actual($clockInAt, $clockOutAt, $breakMinutes);
     }
 
     protected function nullableTrim(mixed $value): ?string
@@ -100,17 +97,12 @@ trait AttendanceSharedUtilities
             return (int) $actor->id;
         }
 
-        $configured = (int) env('STAFFHUB_APPROVER_EMPLOYEE_ID', 0);
-        if ($configured > 0 && DB::table('employees')->where('id', $configured)->exists()) {
-            return $configured;
-        }
-
-        $firstActive = DB::table('employees')
-            ->where('status', 'ACTIVE')
-            ->orderBy('id')
-            ->value('id');
-
-        return $firstActive ? (int) $firstActive : $fallbackEmployeeId;
+        // users.id and employees.id are different identity namespaces. Only an
+        // explicit authenticated link may populate the legacy employee FK.
+        $linkedEmployeeId = (int) ($actor->employeeId ?? 0);
+        return $linkedEmployeeId > 0 && DB::table('employees')->where('id', $linkedEmployeeId)->exists()
+            ? $linkedEmployeeId
+            : 0;
     }
 
     protected function validateTargetMonth(string $targetMonth): string
@@ -137,6 +129,7 @@ trait AttendanceSharedUtilities
 
     protected function assertMonthOpen(string $targetMonth): void
     {
+        MonthMutationLock::acquire([$targetMonth]);
         if ($this->isMonthClosed($targetMonth)) {
             throw new ApiException('CLOSED_PERIOD', '対象月は締め済みのため更新できません。', 422, [
                 ['field' => 'targetMonth', 'message' => '締め解除後に再度実行してください。'],

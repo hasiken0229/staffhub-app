@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type {
   AuthAudience,
+  AttendanceDaily,
   AttendanceDailyEditRequestCreatePayload,
   EmployeePortalData,
   LeaveRequestCreatePayload,
@@ -18,15 +19,21 @@ export type EmployeePortalSectionProps = {
     isPending: boolean;
     errorMessage: string;
     selectedPayrollDetailCard?: ReactNode;
+    selectedPayrollDetailId?: number | null;
     currentMode?: AuthAudience;
     canUseEmployeePortal?: boolean;
   };
   actions: {
     onRefresh: () => void;
+    onPortalUpdate?: (update: (current: EmployeePortalData) => EmployeePortalData) => void;
+    onRequestStatusReload?: () => Promise<void>;
+    onAttendanceMonthChange?: (month: string) => Promise<AttendanceDaily[]>;
     onLogout: () => void;
     onModeChange?: (mode: AuthAudience) => void;
-    onLeaveRequestCreate: (payload: LeaveRequestCreatePayload) => Promise<void>;
-    onAttendanceDailyEditRequestCreate: (payload: AttendanceDailyEditRequestCreatePayload) => Promise<void>;
+    onLeaveRequestCreate: (payload: LeaveRequestCreatePayload) => Promise<boolean | void>;
+    onLeaveRequestCancel: (id: number) => Promise<void>;
+    onAttendanceDailyEditRequestCancel?: (id: number) => Promise<void>;
+    onAttendanceDailyEditRequestCreate: (payload: AttendanceDailyEditRequestCreatePayload) => Promise<boolean | void>;
     onLoadEmployeePayrollDetail: (statementId: number) => Promise<void>;
     onPayrollDownload: (statementId: number, fileName?: string) => Promise<void>;
     onNotificationRead: (notificationId: number, sourceType: string) => Promise<void>;

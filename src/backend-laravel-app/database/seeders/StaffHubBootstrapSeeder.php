@@ -80,8 +80,8 @@ class StaffHubBootstrapSeeder extends Seeder
         }
 
         $employeeCode = env('STAFFHUB_SAMPLE_EMPLOYEE_CODE', 'E0001');
-        $employeeName = env('STAFFHUB_SAMPLE_EMPLOYEE_NAME', '山田 太郎');
-        $cardUid = strtoupper((string) env('STAFFHUB_SAMPLE_CARD_UID', '012E4CE15C908F48'));
+        $employeeName = env('STAFFHUB_SAMPLE_EMPLOYEE_NAME', '見本姓K 職員J');
+        $cardUid = strtoupper((string) env('STAFFHUB_SAMPLE_CARD_UID', 'D0D0D0D0D0D0D0D0'));
 
         $employee = DB::table('employees')
             ->where('employee_code', $employeeCode)

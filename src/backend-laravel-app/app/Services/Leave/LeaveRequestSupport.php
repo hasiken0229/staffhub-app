@@ -16,7 +16,7 @@ abstract class LeaveRequestSupport
     protected function validateLeavePayload(array $payload, ?int $employeeId = null): array
     {
         $requestCategory = strtoupper((string) ($payload['requestCategory'] ?? 'LEAVE'));
-        if (!in_array($requestCategory, ['LEAVE', 'TIME_LEAVE'], true)) {
+        if (! in_array($requestCategory, ['LEAVE', 'TIME_LEAVE'], true)) {
             throw new ApiException('VALIDATION_ERROR', '届出カテゴリが不正です。', 422, [
                 ['field' => 'requestCategory', 'message' => 'LEAVE または TIME_LEAVE を指定してください。'],
             ]);
@@ -49,7 +49,7 @@ abstract class LeaveRequestSupport
         }
 
         if ($requestCategory === 'TIME_LEAVE') {
-            if (!in_array($timeLeaveType, ['PAID_HOURLY', 'CHILD_CARE_HOURLY', 'NURSING_CARE_HOURLY'], true)) {
+            if (! in_array($timeLeaveType, ['PAID_HOURLY', 'CHILD_CARE_HOURLY', 'NURSING_CARE_HOURLY'], true)) {
                 throw new ApiException('VALIDATION_ERROR', '時間休暇種別が不正です。', 422, [
                     ['field' => 'timeLeaveType', 'message' => '時間休暇種別を選択してください。'],
                 ]);
@@ -58,15 +58,20 @@ abstract class LeaveRequestSupport
             $targetDate = CarbonImmutable::parse((string) $payload['targetDate']);
             $startTime = $this->validateTimeString($payload['startTime'] ?? null, 'startTime');
             $endTime = $this->validateTimeString($payload['endTime'] ?? null, 'endTime');
-            $startAt = CarbonImmutable::parse($targetDate->toDateString() . ' ' . $startTime . ':00');
-            $endAt = CarbonImmutable::parse($targetDate->toDateString() . ' ' . $endTime . ':00');
+            $startAt = CarbonImmutable::parse($targetDate->toDateString().' '.$startTime.':00');
+            $endAt = CarbonImmutable::parse($targetDate->toDateString().' '.$endTime.':00');
             if ($endAt->lessThanOrEqualTo($startAt)) {
                 throw new ApiException('VALIDATION_ERROR', '時間休暇の終了時刻が不正です。', 422, [
                     ['field' => 'endTime', 'message' => '終了時刻は開始時刻より後にしてください。'],
                 ]);
             }
 
-            $quantityMinutes = (int) ($payload['quantityMinutes'] ?? $endAt->diffInMinutes($startAt, true));
+            $quantityMinutes = (int) $endAt->diffInMinutes($startAt, true);
+            if (isset($payload['quantityMinutes']) && (int) $payload['quantityMinutes'] !== $quantityMinutes) {
+                throw new ApiException('VALIDATION_ERROR', '時間帯と申請分数が一致しません。', 422, [
+                    ['field' => 'quantityMinutes', 'message' => '開始・終了時刻から計算した分数と一致させてください。'],
+                ]);
+            }
             if ($quantityMinutes <= 0 || $quantityMinutes > 24 * 60) {
                 throw new ApiException('VALIDATION_ERROR', '時間休暇の分数が不正です。', 422, [
                     ['field' => 'quantityMinutes', 'message' => '1分以上で指定してください。'],
@@ -76,11 +81,11 @@ abstract class LeaveRequestSupport
             $standardDayMinutes = $this->standardDayMinutes($employeeId, $targetDate);
             if ($quantityMinutes > $standardDayMinutes) {
                 throw new ApiException('VALIDATION_ERROR', '時間休暇の分数が1日の所定時間を超えています。', 422, [
-                    ['field' => 'quantityMinutes', 'message' => '所定1日分（' . $standardDayMinutes . '分）以内で指定してください。'],
+                    ['field' => 'quantityMinutes', 'message' => '所定1日分（'.$standardDayMinutes.'分）以内で指定してください。'],
                 ]);
             }
 
-            $quantityDays = round($quantityMinutes / $standardDayMinutes, 2);
+            $quantityDays = $quantityMinutes / $standardDayMinutes;
 
             return [
                 'type' => $type,
@@ -92,6 +97,7 @@ abstract class LeaveRequestSupport
                 'startTime' => $startTime,
                 'endTime' => $endTime,
                 'quantityMinutes' => $quantityMinutes,
+                'standardDayMinutes' => $standardDayMinutes,
                 'dayUnit' => 'HOURLY',
                 'quantityDays' => $quantityDays,
             ];
@@ -110,32 +116,32 @@ abstract class LeaveRequestSupport
         }
 
         $dayUnit = strtoupper((string) ($payload['dayUnit'] ?? ''));
-        if (!in_array($dayUnit, ['FULL', 'HALF'], true)) {
+        if (! in_array($dayUnit, ['FULL', 'HALF'], true)) {
             throw new ApiException('VALIDATION_ERROR', '休暇単位が不正です。', 422, [
                 ['field' => 'dayUnit', 'message' => 'FULL または HALF を指定してください。'],
             ]);
         }
 
         if ($dayUnit === 'HALF') {
-            if (!(bool) $type->allows_half_day) {
+            if (! (bool) $type->allows_half_day) {
                 throw new ApiException('VALIDATION_ERROR', 'この休暇区分は半日申請できません。', 422, [
                     ['field' => 'dayUnit', 'message' => 'この休暇区分は半日申請できません。'],
                 ]);
             }
 
-            if (!$startDate->isSameDay($endDate)) {
+            if (! $startDate->isSameDay($endDate)) {
                 throw new ApiException('VALIDATION_ERROR', '半日申請は同日のみ指定できます。', 422, [
                     ['field' => 'endDate', 'message' => '半日申請は同日のみ指定できます。'],
                 ]);
             }
 
             $halfDayType = strtoupper((string) ($payload['halfDayType'] ?? ''));
-            if (!in_array($halfDayType, ['AM', 'PM'], true)) {
+            if (! in_array($halfDayType, ['AM', 'PM'], true)) {
                 throw new ApiException('VALIDATION_ERROR', '半日区分は AM または PM を指定してください。', 422, [
                     ['field' => 'halfDayType', 'message' => 'AM または PM を指定してください。'],
                 ]);
             }
-        } elseif (!empty($payload['halfDayType'])) {
+        } elseif (! empty($payload['halfDayType'])) {
             throw new ApiException('VALIDATION_ERROR', '半日区分は半日申請時のみ指定できます。', 422, [
                 ['field' => 'halfDayType', 'message' => '半日申請時のみ指定してください。'],
             ]);
@@ -160,7 +166,6 @@ abstract class LeaveRequestSupport
         ];
     }
 
-
     protected function loadRequestDetail(int $requestId): ?object
     {
         return DB::table('leave_requests as lr')
@@ -175,12 +180,12 @@ abstract class LeaveRequestSupport
                 'e.location_name',
                 'e.employment_type',
                 'lr.leave_type_code',
-                'lt.name as leave_type_name',
+                DB::raw('COALESCE(lr.attendance_label, lt.name) as leave_type_name'),
                 'lr.start_date',
                 'lr.end_date',
                 'lr.day_unit',
                 'lr.half_day_type',
-                'lr.quantity_days',
+                'lr.quantity_days', 'lr.hourly_day_minutes', 'lr.effective_dates',
                 'lr.request_category',
                 'lr.time_leave_type',
                 'lr.target_date',
@@ -208,7 +213,8 @@ abstract class LeaveRequestSupport
             'endDate' => $row->end_date,
             'dayUnit' => $row->day_unit,
             'halfDayType' => $row->half_day_type,
-            'quantityDays' => (float) $row->quantity_days,
+            'quantityDays' => !empty($row->hourly_day_minutes) ? (int) $row->quantity_minutes / $row->hourly_day_minutes : (float) $row->quantity_days,
+            'effectiveDates' => isset($row->effective_dates) ? LeaveWorkdays::dates($row) : null,
             'requestCategory' => $row->request_category ?? 'LEAVE',
             'timeLeaveType' => $row->time_leave_type ?? null,
             'targetDate' => $row->target_date ?? null,
@@ -217,6 +223,7 @@ abstract class LeaveRequestSupport
             'quantityMinutes' => $row->quantity_minutes !== null ? (int) $row->quantity_minutes : null,
             'status' => $row->status,
             'reason' => $row->reason,
+            'decisionComment' => $row->decision_comment,
             'createdAt' => CarbonImmutable::parse($row->created_at)->toIso8601String(),
             'approvedAt' => $row->approved_at ? CarbonImmutable::parse($row->approved_at)->toIso8601String() : null,
         ];
@@ -225,10 +232,13 @@ abstract class LeaveRequestSupport
     protected function mapLeaveDetail(object $request): array
     {
         $actions = DB::table('leave_request_actions as lra')
-            ->join('employees as e', 'e.id', '=', 'lra.action_by')
+            ->leftJoin('employees as e', 'e.id', '=', 'lra.action_by')
+            ->leftJoin('users as action_admin', function ($join) {
+                $join->on('action_admin.id', '=', 'lra.actor_id')->where('lra.actor_type', 'ADMIN');
+            })
             ->select([
                 'lra.action_type',
-                'e.name as action_by_name',
+                DB::raw("COALESCE(action_admin.name, e.name, '管理者') as action_by_name"),
                 'lra.acted_at',
                 'lra.comment',
             ])
@@ -259,7 +269,8 @@ abstract class LeaveRequestSupport
             'endDate' => $request->end_date,
             'dayUnit' => $request->day_unit,
             'halfDayType' => $request->half_day_type,
-            'quantityDays' => (float) $request->quantity_days,
+            'quantityDays' => !empty($request->hourly_day_minutes) ? (int) $request->quantity_minutes / $request->hourly_day_minutes : (float) $request->quantity_days,
+            'effectiveDates' => isset($request->effective_dates) ? LeaveWorkdays::dates($request) : null,
             'requestCategory' => $request->request_category ?? 'LEAVE',
             'timeLeaveType' => $request->time_leave_type ?? null,
             'targetDate' => $request->target_date ?? null,
@@ -274,134 +285,38 @@ abstract class LeaveRequestSupport
         ];
     }
 
-
-    protected function syncAttendanceDailyFromApprovedLeaves(int $employeeId): void
+    protected function assertNoOverlappingLeave(int $employeeId, object $candidate, ?int $excludeId = null): void
     {
-        $requests = DB::table('leave_requests')
-            ->where('employee_id', $employeeId)
-            ->whereIn('leave_type_code', ['PAID', 'ABSENCE', 'SPECIAL'])
-            ->get();
-
-        $touchedDates = [];
-        foreach ($requests as $request) {
-            foreach (CarbonPeriod::create($request->start_date, $request->end_date) as $date) {
-                $touchedDates[$date->format('Y-m-d')] = true;
+        $query = DB::table('leave_requests')->where('employee_id', $employeeId)
+            ->whereIn('status', ['PENDING', 'RETURNED', 'APPROVED'])
+            ->where('start_date', '<=', $candidate->end_date)->where('end_date', '>=', $candidate->start_date);
+        if ($excludeId !== null) { $query->where('id', '<>', $excludeId); }
+        $dates = LeaveWorkdays::dates($candidate);
+        $others = $query->lockForUpdate()->get()->filter(fn ($other) => array_intersect($dates, LeaveWorkdays::dates($other)) !== []);
+        foreach ($others as $other) {
+            $bothHourly = ($candidate->request_category ?? 'LEAVE') === 'TIME_LEAVE' && ($other->request_category ?? 'LEAVE') === 'TIME_LEAVE';
+            $otherStart = substr((string) $other->start_time, 0, 5);
+            $otherEnd = substr((string) $other->end_time, 0, 5);
+            $knownInterval = preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $otherStart)
+                && preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $otherEnd) && $otherEnd > $otherStart;
+            if (!$bothHourly || !$knownInterval || (substr($candidate->start_time, 0, 5) < $otherEnd && substr($candidate->end_time, 0, 5) > $otherStart)) {
+                throw new ApiException('LEAVE_OVERLAP', '同日または同じ時間帯の申請があります。既存申請を確認・取消してください。半日同士も同日重複は受け付けません。', 422);
             }
         }
-
-        if ($touchedDates === []) {
-            return;
+        if (($candidate->request_category ?? 'LEAVE') === 'TIME_LEAVE') {
+            $totalMinutes = (int) $candidate->quantity_minutes + (int) $others->sum('quantity_minutes');
+            if ($totalMinutes > $this->standardDayMinutes($employeeId, CarbonImmutable::parse($candidate->start_date))) {
+                throw new ApiException('LEAVE_DAILY_LIMIT', '同日の申請中・承認済み時間休暇の合計が所定1日分を超えます。', 422);
+            }
         }
-
-        $dates = array_keys($touchedDates);
-
-        DB::table('attendance_daily')
-            ->where('employee_id', $employeeId)
-            ->whereIn('target_date', $dates)
-            ->update([
-                'absence_flag' => 0,
-                'special_leave_flag' => 0,
-                'paid_leave_unit' => null,
-                'hour_paid_leave_minutes' => 0,
-                'child_care_leave_minutes' => 0,
-                'nursing_care_leave_minutes' => 0,
-                'updated_at' => now(),
-            ]);
-
-        $approved = $requests->filter(fn (object $request) => $request->status === 'APPROVED');
-        foreach ($approved as $request) {
-            foreach (CarbonPeriod::create($request->start_date, $request->end_date) as $date) {
-                $targetDate = $date->format('Y-m-d');
-                $existing = DB::table('attendance_daily')
-                    ->where('employee_id', $employeeId)
-                    ->where('target_date', $targetDate)
-                    ->first();
-
-                $values = [
-                    'employee_id' => $employeeId,
-                    'target_date' => $targetDate,
-                    'updated_at' => now(),
-                ];
-
-                if (($request->request_category ?? 'LEAVE') === 'TIME_LEAVE') {
-                    if ($request->time_leave_type === 'PAID_HOURLY') {
-                        $values['hour_paid_leave_minutes'] = (int) ($existing?->hour_paid_leave_minutes ?? 0) + (int) $request->quantity_minutes;
-                    }
-                    if ($request->time_leave_type === 'CHILD_CARE_HOURLY') {
-                        $values['child_care_leave_minutes'] = (int) ($existing?->child_care_leave_minutes ?? 0) + (int) $request->quantity_minutes;
-                    }
-                    if ($request->time_leave_type === 'NURSING_CARE_HOURLY') {
-                        $values['nursing_care_leave_minutes'] = (int) ($existing?->nursing_care_leave_minutes ?? 0) + (int) $request->quantity_minutes;
-                    }
-                } elseif ($request->leave_type_code === 'PAID') {
-                    $values['paid_leave_unit'] = $request->day_unit === 'HALF' ? 0.5 : 1.0;
-                }
-                if (($request->request_category ?? 'LEAVE') === 'LEAVE' && $request->leave_type_code === 'ABSENCE') {
-                    $values['absence_flag'] = 1;
-                }
-                if (($request->request_category ?? 'LEAVE') === 'LEAVE' && $request->leave_type_code === 'SPECIAL') {
-                    $values['special_leave_flag'] = 1;
-                }
-
-                if ($existing === null) {
-                    DB::table('attendance_daily')->insert([
-                        'employee_id' => $employeeId,
-                        'target_date' => $targetDate,
-                        'schedule_name' => null,
-                        'clock_in_at' => null,
-                        'clock_out_at' => null,
-                        'break_minutes' => 0,
-                        'work_minutes' => null,
-                        'late_flag' => 0,
-                        'early_leave_flag' => 0,
-                        'absence_flag' => $values['absence_flag'] ?? 0,
-                        'special_leave_flag' => $values['special_leave_flag'] ?? 0,
-                        'paid_leave_unit' => $values['paid_leave_unit'] ?? null,
-                        'hour_paid_leave_minutes' => $values['hour_paid_leave_minutes'] ?? 0,
-                        'child_care_leave_minutes' => $values['child_care_leave_minutes'] ?? 0,
-                        'nursing_care_leave_minutes' => $values['nursing_care_leave_minutes'] ?? 0,
-                        'raw_clock_in_at' => null,
-                        'raw_clock_out_at' => null,
-                        'is_manually_edited' => 0,
-                        'work_type_id' => null,
-                        'supervisor_comment' => null,
-                        'manual_edited_by' => null,
-                        'manual_edited_at' => null,
-                        'remark' => null,
-                        'approval_status' => 'APPROVED',
-                        'approval_comment' => '休暇承認により自動反映',
-                        'approved_by' => $request->approved_by,
-                        'approved_at' => $request->approved_at,
-                        'close_status' => 'OPEN',
-                        'updated_at' => now(),
-                    ]);
-
-                    continue;
-                }
-
-                DB::table('attendance_daily')
-                    ->where('id', $existing->id)
-                    ->update([
-                        'absence_flag' => $values['absence_flag'] ?? $existing->absence_flag,
-                        'special_leave_flag' => $values['special_leave_flag'] ?? $existing->special_leave_flag,
-                        'paid_leave_unit' => $values['paid_leave_unit'] ?? $existing->paid_leave_unit,
-                        'hour_paid_leave_minutes' => $values['hour_paid_leave_minutes'] ?? $existing->hour_paid_leave_minutes,
-                        'child_care_leave_minutes' => $values['child_care_leave_minutes'] ?? $existing->child_care_leave_minutes,
-                        'nursing_care_leave_minutes' => $values['nursing_care_leave_minutes'] ?? $existing->nursing_care_leave_minutes,
-                        'approval_status' => ($existing->clock_in_at === null && $existing->clock_out_at === null)
-                            ? 'APPROVED'
-                            : $existing->approval_status,
-                        'approval_comment' => ($existing->clock_in_at === null && $existing->clock_out_at === null)
-                            ? '休暇承認により自動反映'
-                            : $existing->approval_comment,
-                        'approved_by' => ($existing->clock_in_at === null && $existing->clock_out_at === null)
-                            ? $request->approved_by
-                            : $existing->approved_by,
-                        'approved_at' => ($existing->clock_in_at === null && $existing->clock_out_at === null)
-                            ? $request->approved_at
-                            : $existing->approved_at,
-                        'updated_at' => now(),
-                    ]);
+        // Imported/manual quantities have no reliable time interval. Never guess that they do not overlap.
+        foreach ($dates as $date) {
+            $p = DB::table('attendance_leave_projections')->where('employee_id', $employeeId)->where('target_date', $date)->first();
+            $baseline = $p ? json_decode($p->baseline_json, true) : app(LeaveAttendanceProjection::class)->fields(
+                DB::table('attendance_daily')->where('employee_id', $employeeId)->where('target_date', $date)->first());
+            if (array_sum(array_map(static fn ($v) => (float) $v, $baseline)) > 0
+                && ($p !== null || app(LeaveAttendanceProjection::class)->requests($employeeId, $date) === [])) {
+                throw new ApiException('LEAVE_OVERLAP_WITH_RECORDED', $date.' に移行・手修正の休暇記録があります。原本と既存記録を確認してください。', 422);
             }
         }
     }
@@ -416,7 +331,7 @@ abstract class LeaveRequestSupport
 
         DB::table('notifications')->insert([
             'employee_id' => $employeeId,
-            'notification_type' => 'LEAVE_' . $decision,
+            'notification_type' => 'LEAVE_'.$decision,
             'title' => $titleMap[$decision] ?? '休暇申請が更新されました',
             'body' => $comment ?: '休暇申請の状態が更新されました。',
             'related_type' => 'LEAVE_REQUEST',
@@ -439,7 +354,7 @@ abstract class LeaveRequestSupport
     protected function validateTimeString(mixed $value, string $field): string
     {
         $time = trim((string) ($value ?? ''));
-        if (!preg_match('/^\d{2}:\d{2}$/', $time)) {
+        if (! preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time)) {
             throw new ApiException('VALIDATION_ERROR', '時刻は HH:mm 形式で指定してください。', 422, [
                 ['field' => $field, 'message' => 'HH:mm 形式で入力してください。'],
             ]);
@@ -498,25 +413,15 @@ abstract class LeaveRequestSupport
         }
     }
 
-    protected function resolveOperatorEmployeeId(GenericUser $actor, int $fallbackEmployeeId): int
+    protected function resolveOperatorEmployeeId(GenericUser $actor, int $fallbackEmployeeId): ?int
     {
         if (strtoupper((string) $actor->role) === 'EMPLOYEE') {
             return (int) $actor->id;
         }
 
-        $configured = (int) env('STAFFHUB_APPROVER_EMPLOYEE_ID', 0);
-        if ($configured > 0 && DB::table('employees')->where('id', $configured)->exists()) {
-            return $configured;
-        }
-
-        $firstActive = DB::table('employees')
-            ->where('status', 'ACTIVE')
-            ->orderBy('id')
-            ->value('id');
-
-        return $firstActive ? (int) $firstActive : $fallbackEmployeeId;
+        $linked = (int) ($actor->employeeId ?? 0);
+        return $linked > 0 && DB::table('employees')->where('id', $linked)->exists() ? $linked : null;
     }
-
 
     protected function addAudit(string $actorType, int $actorId, string $action, string $targetType, ?string $targetId, array $detail): void
     {
@@ -526,7 +431,7 @@ abstract class LeaveRequestSupport
     protected function assertEmployeeExists(int $employeeId): void
     {
         $exists = DB::table('employees')->where('id', $employeeId)->exists();
-        if (!$exists) {
+        if (! $exists) {
             throw new ApiException('NOT_FOUND', '職員が見つかりません。', 404);
         }
     }

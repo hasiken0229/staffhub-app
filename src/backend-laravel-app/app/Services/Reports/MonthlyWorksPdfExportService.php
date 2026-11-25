@@ -6,30 +6,34 @@ use App\Services\ApiException;
 use App\Services\AttendanceService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
-use TCPDF;
-use TCPDF_FONTS;
 
 final class MonthlyWorksPdfExportService
 {
     use ReportFormatting;
 
     private const DEFAULT_COMPANY_NAME = '社会福祉法人 誠心福祉会 池上わかばこども園';
+
     private const DEFAULT_LOCATION_NAME = '池上わかばこども園';
 
-    public function __construct(private readonly AttendanceService $attendanceService)
-    {
-    }
+    public function __construct(private readonly AttendanceService $attendanceService) {}
 
     public function exportMonthlyWorksPdf(int $employeeId, string $targetMonth): array
     {
-        $employee = DB::table('employees')
-            ->where('id', $employeeId)
+        $employee = DB::table('employees as e')
+            ->leftJoin('employment_type_settings as ets', 'ets.code', '=', 'e.employment_type')
+            ->where('e.id', $employeeId)
+            ->selectRaw(\Illuminate\Support\Facades\Schema::hasColumn('employees', 'is_dependent_within') ? 'e.is_dependent_within' : '0 as is_dependent_within')
+            ->addSelect(['legacy_calendar_month' => AttendancePeriod::legacyMonthFor($targetMonth, 'e.id')])
+            ->addSelect([
+                'e.id', 'e.employee_code', 'e.name', 'e.department_name', 'e.employment_type', 'ets.label as employment_type_label',
+            ])
             ->first([
-                'id',
-                'employee_code',
-                'name',
-                'department_name',
-                'employment_type',
+                'e.id',
+                'e.employee_code',
+                'e.name',
+                'e.department_name',
+                'e.employment_type',
+                'ets.label as employment_type_label',
             ]);
 
         if ($employee === null) {
@@ -38,6 +42,7 @@ final class MonthlyWorksPdfExportService
 
         $calendar = $this->attendanceService->listMonthlyCalendar([
             'targetMonth' => $targetMonth,
+            'periodBasis' => 'PAYROLL',
             'employeeCode' => (string) $employee->employee_code,
         ]);
 
@@ -45,32 +50,39 @@ final class MonthlyWorksPdfExportService
             $calendar['items'],
             static fn (array $item): bool => (int) ($item['employeeId'] ?? 0) === $employeeId
         ));
-        $rows = $this->buildFullMonthRows($targetMonth, $rows);
+        [$periodStart, $periodEnd] = AttendancePeriod::forEmployee($targetMonth, (string) $employee->employment_type, (bool) $employee->is_dependent_within, $employee->legacy_calendar_month ?? null);
+        $rows = $this->buildFullMonthRows($targetMonth, $rows, $periodStart, $periodEnd);
         $summary = $this->buildMonthlyWorksSummary($rows);
         $this->ensureTcpdfCurlConstants();
 
-        $pdf = new TCPDF('L', 'mm', 'A4', true, 'UTF-8', false);
+        $fontFamily = $this->resolveReportPdfFontFamily();
+        $pdf = new MonthlyWorksReportPdf([
+            'code' => (string) $employee->employee_code,
+            'name' => (string) $employee->name,
+            'month' => $targetMonth,
+            'start' => $periodStart->format('Y/m/d'),
+            'end' => $periodEnd->format('Y/m/d'),
+        ], $fontFamily);
         $pdf->SetCreator('勤怠管理');
         $pdf->SetAuthor('勤怠管理');
         $pdf->SetTitle('月次勤務表');
-        $pdf->setPrintHeader(false);
-        $pdf->setPrintFooter(false);
         $pdf->SetMargins(8, 8, 8);
-        $pdf->SetAutoPageBreak(true, 8);
+        $pdf->SetAutoPageBreak(true, 19);
         $pdf->AddPage();
-        $fontFamily = $this->resolveMonthlyWorksPdfFontFamily();
         $pdf->SetFont($fontFamily, '', 7.2);
         $pdf->writeHTML($this->buildMonthlyWorksPdfHtml($employee, $targetMonth, $rows, $summary, $fontFamily), true, false, true, false, '');
 
         return [
             'content' => $pdf->Output('', 'S'),
-            'fileName' => 'works_' . $employee->employee_code . '_' . $targetMonth . '.pdf',
+            'fileName' => 'works_'.$employee->employee_code.'_'.$targetMonth.'.pdf',
             'contentType' => 'application/pdf',
             'summary' => [
                 'employeeId' => (int) $employee->id,
                 'employeeCode' => (string) $employee->employee_code,
                 'employeeName' => (string) $employee->name,
                 'targetMonth' => $targetMonth,
+                'periodStart' => $periodStart->toDateString(),
+                'periodEnd' => $periodEnd->toDateString(),
                 'calendarDays' => count($rows),
                 'workDays' => $summary['attendance']['出勤日数'] ?? 0,
                 'totalActualWorkMinutes' => $summary['time']['実働時間'] ?? 0,
@@ -89,7 +101,7 @@ final class MonthlyWorksPdfExportService
             '差戻し' => 0,
         ];
         $timeSummary = [
-            '拘束時間' => 0,
+            '勤務時間' => 0,
             '休憩時間' => 0,
             '実働時間' => 0,
             '普通残業' => 0,
@@ -99,11 +111,13 @@ final class MonthlyWorksPdfExportService
             '時間有給休暇' => 0,
             '子の看護等休暇' => 0,
             '介護休暇' => 0,
+            '子の看護等休暇（日）' => 0.0,
+            '介護休暇（日）' => 0.0,
         ];
         $workStyleCounts = [];
 
         foreach ($rows as $row) {
-            if (!empty($row['_isBlankCalendarDay'])) {
+            if (! empty($row['_isBlankCalendarDay'])) {
                 continue;
             }
 
@@ -116,13 +130,15 @@ final class MonthlyWorksPdfExportService
             if ($actualWorkMinutes > 0) {
                 $attendanceSummary['出勤日数']++;
             }
-            if (!empty($row['absenceFlag'])) {
-                $attendanceSummary['欠勤日数']++;
+            if (! empty($row['absenceFlag'])) {
+                $attendanceSummary['欠勤日数'] += $row['requestLeaveDays'] ?? 1;
             }
-            if (!empty($row['specialLeaveFlag'])) {
-                $attendanceSummary['特別休暇']++;
+            if (! empty($row['specialLeaveFlag'])) {
+                $attendanceSummary['特別休暇'] += $row['requestLeaveDays'] ?? 1;
             }
-            if (($row['clockInAt'] && !$row['clockOutAt']) || (!$row['clockInAt'] && $row['clockOutAt'])) {
+            if (($row['approvalStatus'] ?? null) === 'PENDING' && str_contains((string)($row['approvalReviewReason'] ?? ''), '原打刻')
+                || ($row['clockInAt'] && ! $row['clockOutAt']) || (! $row['clockInAt'] && $row['clockOutAt'])
+                || (($row['requestLeaveDays'] ?? null) === 0.5 && ($row['dayState'] ?? '') === 'MISSING')) {
                 $attendanceSummary['打刻漏れ']++;
             }
             if (($row['approvalStatus'] ?? null) === 'APPROVED') {
@@ -132,18 +148,21 @@ final class MonthlyWorksPdfExportService
                 $attendanceSummary['差戻し']++;
             }
 
-            $timeSummary['拘束時間'] += $spanMinutes ?? ($workMinutes + $breakMinutes);
+            $timeSummary['勤務時間'] += $spanMinutes ?? ($workMinutes + $breakMinutes);
             $timeSummary['休憩時間'] += $breakMinutes;
-            $timeSummary['実働時間'] += $actualWorkMinutes;
-            $timeSummary['普通残業'] += max(0, $actualWorkMinutes - 8 * 60);
+            $timeSummary['実働時間'] += array_key_exists('reportWorkMinutes', $row) ? (int) $row['reportWorkMinutes'] : $actualWorkMinutes;
+            $timeSummary['普通残業'] += $this->overtimeMinutes($row, $actualWorkMinutes);
 
-            $leaveSummary['有給休暇'] += (float) ($row['paidLeaveUnit'] ?? 0);
-            $leaveSummary['時間有給休暇'] += max(0, (int) ($row['hourPaidLeaveMinutes'] ?? 0));
-            $leaveSummary['子の看護等休暇'] += max(0, (int) ($row['childCareLeaveMinutes'] ?? 0));
-            $leaveSummary['介護休暇'] += max(0, (int) ($row['nursingCareLeaveMinutes'] ?? 0));
+            $leave = $this->leaveQuantities($row);
+            $leaveSummary['有給休暇'] += $leave['paidLeaveDays'];
+            $leaveSummary['時間有給休暇'] += $leave['hourPaidLeaveMinutes'];
+            $leaveSummary['子の看護等休暇'] += $leave['childCareLeaveMinutes'];
+            $leaveSummary['子の看護等休暇（日）'] += $leave['childCareLeaveDays'];
+            $leaveSummary['介護休暇（日）'] += $leave['nursingCareLeaveDays'];
+            $leaveSummary['介護休暇'] += $leave['nursingCareLeaveMinutes'];
 
             $workStyleCounts[$workStyleName] ??= 0;
-            $workStyleCounts[$workStyleName]++;
+            $workStyleCounts[$workStyleName] += $row['requestLeaveDays'] ?? 1;
         }
 
         arsort($workStyleCounts, SORT_NUMERIC);
@@ -158,14 +177,17 @@ final class MonthlyWorksPdfExportService
 
     private function buildMonthlyWorksPdfHtml(object $employee, string $targetMonth, array $rows, array $summary, string $fontFamily): string
     {
-        $monthStart = CarbonImmutable::parse($targetMonth . '-01')->startOfMonth();
-        $monthEnd = $monthStart->endOfMonth();
+        $monthStart = CarbonImmutable::parse($targetMonth.'-01')->startOfMonth();
+        [$periodStart, $monthEnd] = AttendancePeriod::forEmployee($targetMonth, (string) $employee->employment_type, (bool) $employee->is_dependent_within, $employee->legacy_calendar_month ?? null);
         $companyName = $this->escape((string) config('staffhub.company_name', self::DEFAULT_COMPANY_NAME));
         $locationName = $this->escape((string) config('staffhub.location_name', self::DEFAULT_LOCATION_NAME));
-        $monthLabel = $this->escape($monthStart->format('Y年m月') . '度（' . $monthStart->format('m/d') . '～' . $monthEnd->format('m/d') . '） 日次勤怠');
+        $monthLabel = $this->escape($monthStart->format('Y年m月').'度（'.$periodStart->format('Y/m/d').'～'.$monthEnd->format('Y/m/d').'） 日次勤怠');
         $employeeCode = $this->escape((string) $employee->employee_code);
         $employeeName = $this->escape((string) $employee->name);
-        $employmentType = $this->escape((string) ($employee->employment_type ?? '-'));
+        $employmentType = $this->escape($this->employmentTypeDisplayLabel(
+            $employee->employment_type ?? null,
+            $employee->employment_type_label ?? null,
+        ));
         $departmentName = $this->escape((string) ($employee->department_name ?? '-'));
         $targetMonthLabel = $this->escape($targetMonth);
         $resolvedFontFamily = $this->escape($fontFamily);
@@ -174,69 +196,73 @@ final class MonthlyWorksPdfExportService
         $workStyleWidth = $dailyWidths['workStyle'];
         $clockInWidth = $dailyWidths['clockIn'];
         $clockOutWidth = $dailyWidths['clockOut'];
-        $workMinutesWidth = $dailyWidths['workMinutes'];
         $breakMinutesWidth = $dailyWidths['breakMinutes'];
         $paidLeaveWidth = $dailyWidths['paidLeave'];
         $hourPaidLeaveWidth = $dailyWidths['hourPaidLeave'];
-        $childCareWidth = $dailyWidths['childCare'];
-        $nursingCareWidth = $dailyWidths['nursingCare'];
         $overtimeWidth = $dailyWidths['overtime'];
         $actualWorkWidth = $dailyWidths['actualWork'];
         $remarkWidth = $dailyWidths['remark'];
+        $childCareWidth = $dailyWidths['childCare'];
+        $nursingCareWidth = $dailyWidths['nursingCare'];
 
         if ($rows === []) {
-            $dailyRowsHtml = '<tr><td colspan="13">対象月の勤務データがありません。</td></tr>';
+            $dailyRowsHtml = '<tr><td colspan="12">対象月の勤務データがありません。</td></tr>';
         } else {
             $dailyRowsHtml = implode('', array_map(function (array $row) use ($dailyWidths): string {
-                $isBlankCalendarDay = !empty($row['_isBlankCalendarDay']);
-                $actualWorkMinutes = $this->actualWorkMinutes($row);
-                $overtimeMinutes = max(0, $actualWorkMinutes - 8 * 60);
-                $spanMinutes = $this->clockSpanMinutes($row);
+                $isBlankCalendarDay = ! empty($row['_isBlankCalendarDay']);
+                $actualWorkMinutes = ($row['workMinutes'] ?? null) !== null ? (int) $row['workMinutes'] : null;
+                $overtimeMinutes = $actualWorkMinutes !== null ? $this->overtimeMinutes($row, $actualWorkMinutes) : null;
                 $className = $this->monthlyWorksPdfRowClass($row);
-                $trClass = $className !== '' ? ' class="' . $className . '"' : '';
+                $trClass = $className !== '' ? ' class="'.$className.'"' : '';
                 $empty = '-';
+                $leave = $this->leaveQuantities($row);
 
-                return '<tr' . $trClass . '>'
-                    . '<td width="' . $dailyWidths['date'] . '" nowrap="nowrap">' . $this->escape($this->formatMonthDayWithWeekday($row['targetDate'] ?? null)) . '</td>'
-                    . '<td width="' . $dailyWidths['workStyle'] . '" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : (string) ($row['workStyleName'] ?? '-')) . '</td>'
-                    . '<td width="' . $dailyWidths['clockIn'] . '" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : ($this->formatTimeOnly($row['clockInAt'] ?? null) ?: '-')) . '</td>'
-                    . '<td width="' . $dailyWidths['clockOut'] . '" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : ($this->formatTimeOnly($row['clockOutAt'] ?? null) ?: '-')) . '</td>'
-                    . '<td width="' . $dailyWidths['workMinutes'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($spanMinutes)) . '</td>'
-                    . '<td width="' . $dailyWidths['breakMinutes'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($row['breakMinutes'] ?? null)) . '</td>'
-                    . '<td width="' . $dailyWidths['paidLeave'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatDayUnitCell($row['paidLeaveUnit'] ?? null)) . '</td>'
-                    . '<td width="' . $dailyWidths['hourPaidLeave'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($row['hourPaidLeaveMinutes'] ?? null)) . '</td>'
-                    . '<td width="' . $dailyWidths['childCare'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($row['childCareLeaveMinutes'] ?? null)) . '</td>'
-                    . '<td width="' . $dailyWidths['nursingCare'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($row['nursingCareLeaveMinutes'] ?? null)) . '</td>'
-                    . '<td width="' . $dailyWidths['overtime'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($overtimeMinutes)) . '</td>'
-                    . '<td width="' . $dailyWidths['actualWork'] . '" class="amount" nowrap="nowrap">' . $this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($actualWorkMinutes)) . '</td>'
-                    . '<td width="' . $dailyWidths['remark'] . '">' . $this->escape($isBlankCalendarDay ? ($row['_holidayName'] ?? '-') : (string) ($row['remark'] ?? '-')) . '</td>'
-                    . '</tr>';
+                return '<tr'.$trClass.'>'
+                    .'<td width="'.$dailyWidths['date'].'" nowrap="nowrap">'.$this->escape($this->formatMonthDayWithWeekday($row['targetDate'] ?? null)).'</td>'
+                    .'<td width="'.$dailyWidths['workStyle'].'" nowrap="nowrap">'.$this->escape($isBlankCalendarDay ? $empty : (string) ($row['workStyleName'] ?? '-')).'</td>'
+                    .'<td width="'.$dailyWidths['clockIn'].'" nowrap="nowrap">'.$this->adoptedAndRawTime($row, 'clockInAt', 'rawClockInAt', $isBlankCalendarDay).'</td>'
+                    .'<td width="'.$dailyWidths['clockOut'].'" nowrap="nowrap">'.$this->adoptedAndRawTime($row, 'clockOutAt', 'rawClockOutAt', $isBlankCalendarDay).'</td>'
+                    .'<td width="'.$dailyWidths['breakMinutes'].'" class="amount" nowrap="nowrap">'.$this->escape(($isBlankCalendarDay || (empty($row['breakMinutes']) && (!empty($row['hourPaidLeaveMinutes']) || !empty($row['paidLeaveUnit'])))) ? $empty : $this->formatMinutesCell($row['breakMinutes'] ?? null)).'</td>'
+                    .'<td width="'.$dailyWidths['overtime'].'" class="amount" nowrap="nowrap">'.$this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($overtimeMinutes)).'</td>'
+                    .'<td width="'.$dailyWidths['actualWork'].'" class="amount" nowrap="nowrap">'.$this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell(array_key_exists('reportWorkMinutes', $row) ? $row['reportWorkMinutes'] : $actualWorkMinutes)).'</td>'
+                    .'<td width="'.$dailyWidths['paidLeave'].'" class="amount" nowrap="nowrap">'.$this->escape($isBlankCalendarDay ? $empty : $this->formatDayUnitCell($row['paidLeaveUnit'] ?? null)).'</td>'
+                    .'<td width="'.$dailyWidths['hourPaidLeave'].'" class="amount" nowrap="nowrap">'.$this->escape($isBlankCalendarDay ? $empty : $this->formatMinutesCell($row['hourPaidLeaveMinutes'] ?? null)).'</td>'
+                    .'<td width="'.$dailyWidths['childCare'].'" class="amount">'.$this->escape($isBlankCalendarDay ? $empty : $this->formatCareLeaveQuantity($leave['childCareLeaveDays'], $leave['childCareLeaveMinutes'])).'</td>'
+                    .'<td width="'.$dailyWidths['nursingCare'].'" class="amount">'.$this->escape($isBlankCalendarDay ? $empty : $this->formatCareLeaveQuantity($leave['nursingCareLeaveDays'], $leave['nursingCareLeaveMinutes'])).'</td>'
+                    .'<td width="'.$dailyWidths['remark'].'">'.$this->escape($isBlankCalendarDay ? ($row['_holidayName'] ?? '-') : $this->provenanceRemark($row)).'</td>'
+                    .'</tr>';
             }, $rows));
         }
 
         $attendanceSummaryHtml = $this->buildSummaryTableRows($summary['attendance'], false);
         $timeSummaryHtml = $this->buildSummaryTableRows($summary['time'], true);
-        $leaveSummaryHtml = $this->buildSummaryTableRows($summary['leave'], true, ['有給休暇' => 'DAY']);
+        $leaveSummaryHtml = $this->buildSummaryTableRows($summary['leave'], true, ['有給休暇' => 'DAY', '子の看護等休暇（日）' => 'DAY', '介護休暇（日）' => 'DAY']);
         $workStyleSummaryHtml = $this->buildSummaryTableRows($summary['workStyles'], false, [], '日');
 
         return <<<HTML
 <style>
     body, table, th, td, h1, h2 { font-family: {$resolvedFontFamily}; font-weight: normal; }
-    h1 { font-size: 16px; text-align: center; margin: 0 0 4px; }
-    h2 { font-size: 11px; text-align: center; margin: 0 0 8px; }
+    h1 { font-size: 13px; text-align: center; margin: 0 0 4px; }
+    h2 { font-size: 8px; text-align: center; margin: 0 0 6px; color: #475569; }
     table { border-collapse: collapse; }
-    .meta td, .meta th { border: 1px solid #666; padding: 3px 5px; font-size: 7px; }
+    .report-title td { font-size: 8px; color: #475569; }
+    .report-title .report-name { font-size: 13px; color: #0f172a; }
+    .meta td, .meta th { border: 0.45px solid #94a3b8; padding: 2.6px 4px; font-size: 7px; }
+    .meta th { background-color: #eaf0f7; color: #334155; }
     .daily { table-layout: fixed; }
-    .daily td, .daily th { border: 1px solid #777; padding: 1px 2px; font-size: 5.7px; line-height: 1.25; }
-    .daily th, .summary th { background-color: #f1f5f9; }
+    .daily td, .daily th { border: 0.35px solid #b6c2cf; padding: 2.1px 2px; font-size: 6.3px; line-height: 1.15; }
+    .daily th, .summary th { background-color: #eaf0f7; color: #1e3a5f; }
     .daily tr.sunday td, .daily tr.holiday td { background-color: #fff1f2; color: #e11d48; }
     .daily tr.saturday td { background-color: #eff6ff; color: #111827; }
-    .summary td, .summary th { border: 1px solid #777; padding: 3px 5px; font-size: 7px; }
+    .summary td, .summary th { border: 0.4px solid #b6c2cf; padding: 2.5px 3px; font-size: 6.5px; line-height: 1.25; }
     .amount { text-align: right; }
-    .summary-wrap td { vertical-align: top; }
+    .summary-layout > tbody > tr > td { vertical-align: top; padding-right: 3px; }
 </style>
-<h1>{$companyName}</h1>
-<h2>{$monthLabel}</h2>
+<table class="report-title" width="100%" cellpadding="0" cellspacing="0">
+    <tr><td width="65%">{$companyName}</td><td width="35%" align="right" class="report-name">月次勤務表</td></tr>
+</table>
+<h1>{$monthLabel}</h1>
+<h2>個別職員の月間勤怠・休暇・勤務時間の集計</h2>
 <table class="meta" width="100%" cellpadding="0" cellspacing="0">
     <tr>
         <th width="12%">社員番号</th>
@@ -261,17 +287,16 @@ final class MonthlyWorksPdfExportService
         <tr>
             <th width="{$dateWidth}" nowrap="nowrap">日付</th>
             <th width="{$workStyleWidth}" nowrap="nowrap">勤務区分</th>
-            <th width="{$clockInWidth}" nowrap="nowrap">出勤時刻</th>
-            <th width="{$clockOutWidth}" nowrap="nowrap">退勤時刻</th>
-            <th width="{$workMinutesWidth}" nowrap="nowrap">拘束時間</th>
+            <th width="{$clockInWidth}" nowrap="nowrap">出勤時間/<br />元の打刻</th>
+            <th width="{$clockOutWidth}" nowrap="nowrap">退勤時間/<br />元の打刻</th>
             <th width="{$breakMinutesWidth}" nowrap="nowrap">休憩時間</th>
-            <th width="{$paidLeaveWidth}" nowrap="nowrap">休暇</th>
-            <th width="{$hourPaidLeaveWidth}" nowrap="nowrap">時間有給</th>
-            <th width="{$childCareWidth}" nowrap="nowrap">子の看護等</th>
-            <th width="{$nursingCareWidth}" nowrap="nowrap">介護休暇</th>
-            <th width="{$overtimeWidth}" nowrap="nowrap">残業時間</th>
-            <th width="{$actualWorkWidth}" nowrap="nowrap">実働時間</th>
-            <th width="{$remarkWidth}">備考</th>
+            <th width="{$overtimeWidth}" nowrap="nowrap">残業</th>
+            <th width="{$actualWorkWidth}" nowrap="nowrap">実働</th>
+            <th width="{$paidLeaveWidth}" nowrap="nowrap">有休</th>
+            <th width="{$hourPaidLeaveWidth}" nowrap="nowrap">時間有休</th>
+            <th width="{$childCareWidth}">子の看護等</th>
+            <th width="{$nursingCareWidth}">介護休暇</th>
+            <th width="{$remarkWidth}">採用元・備考</th>
         </tr>
     </thead>
     <tbody>
@@ -279,30 +304,28 @@ final class MonthlyWorksPdfExportService
     </tbody>
 </table>
 <br />
-<table class="summary-wrap" width="100%" cellpadding="0" cellspacing="0">
+<table class="summary-layout" width="100%" cellpadding="0" cellspacing="0" nobr="true">
     <tr>
-        <td width="50%">
-            <table class="summary" width="98%" cellpadding="0" cellspacing="0">
+        <td width="25%">
+            <table class="summary" width="100%" cellpadding="0" cellspacing="0">
                 <tr><th colspan="2">出勤状況</th></tr>
                 {$attendanceSummaryHtml}
             </table>
         </td>
-        <td width="50%">
-            <table class="summary" width="98%" cellpadding="0" cellspacing="0">
+        <td width="25%">
+            <table class="summary" width="100%" cellpadding="0" cellspacing="0">
                 <tr><th colspan="2">勤務時間</th></tr>
                 {$timeSummaryHtml}
             </table>
         </td>
-    </tr>
-    <tr>
-        <td width="50%">
-            <table class="summary" width="98%" cellpadding="0" cellspacing="0">
+        <td width="25%">
+            <table class="summary" width="100%" cellpadding="0" cellspacing="0">
                 <tr><th colspan="2">休日・休暇取得</th></tr>
                 {$leaveSummaryHtml}
             </table>
         </td>
-        <td width="50%">
-            <table class="summary" width="98%" cellpadding="0" cellspacing="0">
+        <td width="25%">
+            <table class="summary" width="100%" cellpadding="0" cellspacing="0">
                 <tr><th colspan="2">勤務区分</th></tr>
                 {$workStyleSummaryHtml}
             </table>
@@ -325,44 +348,44 @@ HTML;
             } elseif ($minutesAsTime) {
                 $formattedValue = $this->formatMinutesCell((int) $value);
             } elseif ($defaultSuffix !== '') {
-                $formattedValue = (string) $value . $defaultSuffix;
+                $formattedValue = (string) $value.$defaultSuffix;
             } else {
                 $formattedValue = (string) $value;
             }
 
-            $rows[] = '<tr><td width="65%">' . $this->escape((string) $label) . '</td><td width="35%" class="amount">' . $this->escape($formattedValue) . '</td></tr>';
+            $rows[] = '<tr><td width="65%">'.$this->escape((string) $label).'</td><td width="35%" class="amount">'.$this->escape($formattedValue).'</td></tr>';
         }
 
         return implode('', $rows);
     }
 
-    private function buildFullMonthRows(string $targetMonth, array $rows): array
+    private function buildFullMonthRows(string $targetMonth, array $rows, ?CarbonImmutable $periodStart = null, ?CarbonImmutable $periodEnd = null): array
     {
         try {
-            $monthStart = CarbonImmutable::createFromFormat('Y-m-d', $targetMonth . '-01')->startOfDay();
+            $monthStart = CarbonImmutable::createFromFormat('Y-m-d', $targetMonth.'-01')->startOfDay();
         } catch (\Throwable) {
             return $rows;
         }
 
         $rowByDate = [];
         foreach ($rows as $row) {
-            if (!empty($row['targetDate'])) {
+            if (! empty($row['targetDate'])) {
                 $rowByDate[(string) $row['targetDate']] = $row;
             }
         }
 
-        $holidays = $this->buildJapaneseHolidayMap((int) $monthStart->format('Y'));
-        $daysInMonth = $monthStart->daysInMonth;
+        $periodStart ??= $monthStart;
+        $periodEnd ??= $monthStart->endOfMonth()->startOfDay();
         $fullRows = [];
-        for ($day = 1; $day <= $daysInMonth; $day++) {
-            $date = $monthStart->setDay($day);
+        for ($date = $periodStart; $date->lessThanOrEqualTo($periodEnd); $date = $date->addDay()) {
             $dateKey = $date->toDateString();
             $row = $rowByDate[$dateKey] ?? [
                 'targetDate' => $dateKey,
                 '_isBlankCalendarDay' => true,
             ];
+            if (empty($row['id'])) { $row['_isBlankCalendarDay'] = true; }
             $row['_dayOfWeek'] = $date->dayOfWeek;
-            $row['_holidayName'] = $holidays[$dateKey] ?? null;
+            $row['_holidayName'] = JapaneseHolidayCalendar::name($dateKey);
             $fullRows[] = $row;
         }
 
@@ -371,7 +394,7 @@ HTML;
 
     private function monthlyWorksPdfRowClass(array $row): string
     {
-        if (!empty($row['_holidayName'])) {
+        if (! empty($row['_holidayName'])) {
             return 'holiday';
         }
 
@@ -386,144 +409,55 @@ HTML;
         return '';
     }
 
-    private function buildJapaneseHolidayMap(int $year): array
-    {
-        $holidays = [];
-        $add = function (int $month, int $day, string $name) use (&$holidays, $year): void {
-            $holidays[sprintf('%04d-%02d-%02d', $year, $month, $day)] = $name;
-        };
-        $addHappyMonday = function (int $month, int $week, string $name) use ($add, $year): void {
-            $add($month, $this->nthWeekdayOfMonth($year, $month, $week, 1), $name);
-        };
-
-        $add(1, 1, '元日');
-        $addHappyMonday(1, 2, '成人の日');
-        $add(2, 11, '建国記念の日');
-        $add(2, 23, '天皇誕生日');
-        $add(3, $this->vernalEquinoxDay($year), '春分の日');
-        $add(4, 29, '昭和の日');
-        $add(5, 3, '憲法記念日');
-        $add(5, 4, 'みどりの日');
-        $add(5, 5, 'こどもの日');
-        $addHappyMonday(7, 3, '海の日');
-        $add(8, 11, '山の日');
-        $addHappyMonday(9, 3, '敬老の日');
-        $add(9, $this->autumnalEquinoxDay($year), '秋分の日');
-        $addHappyMonday(10, 2, 'スポーツの日');
-        $add(11, 3, '文化の日');
-        $add(11, 23, '勤労感謝の日');
-
-        return $this->addSubstituteHolidays($year, $holidays);
-    }
-
-    private function addSubstituteHolidays(int $year, array $holidays): array
-    {
-        ksort($holidays);
-        foreach (array_keys($holidays) as $dateKey) {
-            $date = CarbonImmutable::parse($dateKey);
-            if ($date->dayOfWeek !== 0) {
-                continue;
-            }
-
-            $substitute = $date;
-            do {
-                $substitute = $substitute->addDay();
-            } while (isset($holidays[$substitute->toDateString()]));
-
-            if ((int) $substitute->format('Y') === $year) {
-                $holidays[$substitute->toDateString()] = '振替休日';
-            }
-        }
-
-        return $holidays;
-    }
-
-    private function nthWeekdayOfMonth(int $year, int $month, int $week, int $weekday): int
-    {
-        $firstDay = CarbonImmutable::create($year, $month, 1);
-        $offset = ($weekday - $firstDay->dayOfWeek + 7) % 7;
-        return 1 + $offset + (($week - 1) * 7);
-    }
-
-    private function vernalEquinoxDay(int $year): int
-    {
-        return (int) floor(20.8431 + (0.242194 * ($year - 1980)) - floor(($year - 1980) / 4));
-    }
-
-    private function autumnalEquinoxDay(int $year): int
-    {
-        return (int) floor(23.2488 + (0.242194 * ($year - 1980)) - floor(($year - 1980) / 4));
-    }
-
     private function monthlyWorksDailyColumnWidths(): array
     {
         return [
-            'date' => '8%',
-            'workStyle' => '10%',
-            'clockIn' => '7%',
-            'clockOut' => '7%',
-            'workMinutes' => '7%',
-            'breakMinutes' => '6%',
+            'date' => '6%',
+            'workStyle' => '13%',
+            'clockIn' => '8%',
+            'clockOut' => '8%',
+            'breakMinutes' => '7%',
+            'overtime' => '7%',
+            'actualWork' => '8%',
             'paidLeave' => '5%',
             'hourPaidLeave' => '6%',
-            'childCare' => '8%',
+            'childCare' => '6%',
             'nursingCare' => '6%',
-            'overtime' => '7%',
-            'actualWork' => '7%',
-            'remark' => '16%',
+            'remark' => '20%',
         ];
     }
 
-    private function resolveMonthlyWorksPdfFontFamily(): string
+    private function adoptedAndRawTime(array $row, string $adoptedKey, string $rawKey, bool $blank): string
     {
-        static $fontFamily = null;
-
-        if (is_string($fontFamily) && $fontFamily !== '') {
-            return $fontFamily;
-        }
-
-        $configuredFontPath = $this->resolvePdfFontPath((string) config('staffhub.pdf_font_path', ''));
-        $candidates = array_filter(array_unique([
-            $configuredFontPath,
-            storage_path('app/fonts/BIZUDGothic-Regular.ttf'),
-            storage_path('app/fonts/BIZUDGothic-Regular.otf'),
-            resource_path('fonts/BIZUDGothic-Regular.ttf'),
-            resource_path('fonts/BIZUDGothic-Regular.otf'),
-            public_path('fonts/BIZUDGothic-Regular.ttf'),
-            public_path('fonts/BIZUDGothic-Regular.otf'),
-        ]));
-
-        foreach ($candidates as $candidate) {
-            if (!is_string($candidate) || $candidate === '' || !is_file($candidate)) {
-                continue;
-            }
-
-            try {
-                $registered = TCPDF_FONTS::addTTFfont($candidate);
-                if (is_string($registered) && $registered !== '') {
-                    $fontFamily = $registered;
-                    return $fontFamily;
-                }
-            } catch (\Throwable) {
-                continue;
-            }
-        }
-
-        $fontFamily = 'kozminproregular';
-        return $fontFamily;
+        if ($blank) return '-';
+        if (empty($row[$adoptedKey]) && empty($row[$rawKey])) return '-';
+        return $this->escape($this->formatTimeOnly($row[$adoptedKey] ?? null) ?: '-')
+            .'<br /><span style="color:#58677b;font-size:6pt">'.$this->escape($this->formatTimeOnly($row[$rawKey] ?? null) ?: '-').'</span>';
     }
 
-    private function resolvePdfFontPath(string $value): string
+    private function provenanceRemark(array $row): string
     {
-        $path = trim($value);
-        if ($path === '') {
-            return '';
+        $label = match ($row['timeSource'] ?? '') {
+            'MANUAL' => '手動修正', 'SCHEDULE' => '予定補完', 'RULE' => '勤務ルール適用',
+            'IMPORTED' => ($row['sourceSystem'] ?? '外部').'取込', default => '',
+        };
+        return trim(($label ? '['.$label.'] ' : '').($row['remark'] ?? '' )) ?: '-';
+    }
+
+    private function employmentTypeDisplayLabel(?string $code, ?string $masterLabel): string
+    {
+        $label = trim((string) $masterLabel);
+        if ($label !== '') {
+            return $label;
         }
 
-        if (str_starts_with($path, DIRECTORY_SEPARATOR) || preg_match('/^[A-Za-z]:\\\\/', $path) === 1) {
-            return $path;
-        }
-
-        return base_path($path);
+        return match (trim((string) $code)) {
+            'FULL_TIME' => '常勤',
+            'PART_TIME' => '非常勤',
+            'CONTRACT' => '契約',
+            'TEMPORARY' => '臨時',
+            '' => '-',
+            default => (string) $code,
+        };
     }
 }

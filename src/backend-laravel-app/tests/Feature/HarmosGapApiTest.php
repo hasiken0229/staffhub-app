@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Services\Attendance\DailyAttendanceService;
+use App\Services\Attendance\PunchService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -10,6 +12,313 @@ use Tests\TestCase;
 final class HarmosGapApiTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_report_credits_imported_and_requested_birthdays_and_all_hourly_leave_once(): void
+    {
+        $employee = $this->employee('970019');
+        $base = ['employee_id' => $employee, 'approval_status' => 'APPROVED', 'updated_at' => now()];
+        foreach ([
+            '2026-10-01' => ['schedule_name' => '誕生日休暇5.5', 'source_system' => 'HARMOS', 'work_minutes' => 0, 'harmos_total_work_minutes' => 330],
+            '2026-10-02' => ['request_leave_name' => '誕生日休暇（午後）', 'request_leave_days' => 0.5, 'work_minutes' => 200],
+            '2026-10-05' => ['work_minutes' => 240, 'hour_paid_leave_minutes' => 60, 'child_care_leave_minutes' => 90, 'nursing_care_leave_minutes' => 30],
+            '2026-10-06' => ['schedule_name' => '誕生日休暇', 'source_system' => 'HARMOS', 'work_minutes' => 425, 'harmos_total_work_minutes' => 905],
+            '2026-10-07' => ['request_leave_name' => '誕生日休暇', 'paid_leave_unit' => 1, 'paid_leave_credit_minutes' => 405, 'work_minutes' => 0],
+        ] as $date => $values) {
+            DB::table('attendance_daily')->insert($base + ['target_date' => $date] + $values);
+        }
+        $rows = collect(app(DailyAttendanceService::class)->listMonthlyCalendar(['targetMonth' => '2026-10'])['items'])->keyBy('targetDate');
+        foreach (['01'=>330, '02'=>403, '05'=>420, '06'=>905, '07'=>405] as $day => $minutes) {
+            $this->assertSame($minutes, $rows['2026-10-'.$day]['reportWorkMinutes']);
+        }
+        $this->assertSame(240, $rows['2026-10-05']['workMinutes']);
+    }
+
+    public function test_missing_punch_exceptions_keep_schedules_and_independent_review_reasons(): void
+    {
+        $this->travelTo(now()->setDate(2026, 10, 23));
+        $duty = DB::table('work_type_settings')->insertGetId(['name'=>'打刻任意の試験勤務','start_time'=>'08:00','end_time'=>'17:00']);
+        foreach (['970012','970005','970019','970026'] as $code) {
+            $employee = $this->employee($code);
+            DB::table('attendance_shift_schedules')->insert(['employee_id'=>$employee,'target_date'=>'2026-10-19','work_type_id'=>$duty]);
+            DB::table('attendance_daily')->insert(['employee_id'=>$employee, 'target_date'=>'2026-10-20','raw_clock_in_at'=>'2026-10-20 08:00:00','updated_at'=>now()]);
+            DB::table('attendance_daily')->insert(['employee_id'=>$employee, 'target_date'=>'2026-10-21',
+                'raw_clock_in_at'=>'2026-10-21 17:00:00','raw_clock_out_at'=>'2026-10-21 08:00:00','updated_at'=>now()]);
+        }
+        $review = app(\App\Services\Attendance\DailyApprovalReview::class)->pending();
+        $this->assertEqualsCanonicalizing(['970026'], $review->where('target_date','2026-10-19')->pluck('employee_code')->all());
+        $this->assertEqualsCanonicalizing(['970026'], $review->where('target_date','2026-10-20')->pluck('employee_code')->all());
+        $this->assertCount(4, $review->where('target_date','2026-10-21'));
+        $calendar = collect(app(DailyAttendanceService::class)->listMonthlyCalendar(['targetMonth'=>'2026-10','employeeCode'=>'970005'])['items'])->keyBy('targetDate');
+        $this->assertSame('打刻任意の試験勤務', $calendar['2026-10-19']['scheduleName']);
+        $this->assertSame('NOT_REQUIRED', $calendar['2026-10-19']['approvalStatus']);
+    }
+
+    public function test_individual_shift_keeps_daily_end_then_work_type_then_personal_end_for_the_additional_break(): void
+    {
+        $this->travelTo(now()->setDate(2026, 10, 22));
+        $employeeId = $this->employee('970019');
+        $this->assignPunchCard($employeeId, 'CARD290');
+        DB::table('employee_attendance_settings')->insert([
+            'employee_id' => $employeeId, 'standard_clock_in_time' => '08:00', 'standard_clock_out_time' => '17:00',
+        ]);
+        $workTypeId = DB::table('work_type_settings')->insertGetId([
+            'name' => '早番試験', 'start_time' => '07:45', 'end_time' => '16:45',
+        ]);
+        DB::table('attendance_shift_schedules')->insert([
+            ['employee_id' => $employeeId, 'target_date' => '2026-10-19', 'work_type_id' => $workTypeId, 'scheduled_clock_out_time' => null],
+            ['employee_id' => $employeeId, 'target_date' => '2026-10-20', 'work_type_id' => $workTypeId, 'scheduled_clock_out_time' => '16:50'],
+        ]);
+
+        $cases = [
+            ['2026-10-19', '16:52', '16:45', 52, 480],
+            ['2026-10-20', '16:52', '16:50', 47, 485],
+            ['2026-10-21', '17:07', '17:00', 52, 495],
+        ];
+        foreach ($cases as [$date, $end, $breakStart, $breakMinutes, $workMinutes]) {
+            $this->punch('CARD290', $date.' 07:55:00', $date.'-in')->assertOk();
+            if ($date === '2026-10-19') {
+                // The daily work type supplies both reference times for a single punch.
+                $this->assertDatabaseHas('attendance_daily', [
+                    'employee_id' => $employeeId, 'target_date' => $date, 'raw_clock_out_at' => null,
+                    'clock_out_at' => $date.' 16:45:00', 'break_minutes' => 45,
+                ]);
+            }
+            $this->punch('CARD290', $date.' '.$end.':00', $date.'-out')->assertOk();
+            $daily = DB::table('attendance_daily')->where('employee_id', $employeeId)->where('target_date', $date)->first();
+            $this->assertSame([$date.' 08:00:00', $date.' '.$end.':00', $breakMinutes, $workMinutes],
+                [$daily->clock_in_at, $daily->clock_out_at, (int) $daily->break_minutes, (int) $daily->work_minutes]);
+            $this->assertDatabaseHas('attendance_daily_breaks', [
+                'attendance_daily_id' => $daily->id, 'segment_no' => 2,
+                'break_start_at' => $date.' '.$breakStart.':00', 'break_end_at' => $date.' '.$end.':00',
+            ]);
+        }
+    }
+
+    public function test_regular_preview_and_saved_punches_apply_the_same_nine_hour_threshold(): void
+    {
+        $this->travelTo(now()->setDate(2026, 10, 26));
+        $employeeId = $this->employee('E291');
+        $this->assignPunchCard($employeeId, 'CARD291');
+        DB::table('employee_attendance_settings')->insert([
+            'employee_id' => $employeeId, 'standard_clock_in_time' => '08:00', 'standard_clock_out_time' => '17:00',
+        ]);
+        $workTypeId = DB::table('work_type_settings')->insertGetId([
+            'name' => '通常勤務試験', 'start_time' => '09:30', 'end_time' => '18:30', 'standard_day_minutes' => 480,
+        ]);
+        $service = app(PunchService::class);
+        $cases = [
+            // Use the work type's start even when the roster has an earlier end than the 18:15 window.
+            ['2026-10-20', null, '18:05', '09:26:00', '18:16:00', '09:30:00', 46, 480],
+            // The explicit daily start supersedes the work type.
+            ['2026-10-21', '09:00', null, '08:58:00', '17:55:00', '09:00:00', 55, 480],
+            ['2026-10-22', null, null, '09:26:00', '18:26:59', '09:30:00', 56, 480],
+            ['2026-10-23', null, null, '09:26:00', '18:27:00', '09:26:00', 60, 481],
+        ];
+        foreach ($cases as [$date, $plannedIn, $plannedOut, $in, $out, $acceptedIn, $break, $work]) {
+            DB::table('attendance_shift_schedules')->insert([
+                'employee_id' => $employeeId, 'target_date' => $date, 'work_type_id' => $workTypeId,
+                'scheduled_clock_in_time' => $plannedIn, 'scheduled_clock_out_time' => $plannedOut,
+            ]);
+            $preview = $service->previewAutomaticPunches($employeeId, $date, "$date $in", "$date $out");
+            $this->assertSame(["$date $acceptedIn", "$date $out", $break, $work],
+                [$preview['clockInAt'], $preview['clockOutAt'], $preview['breakMinutes'], $preview['workMinutes']]);
+            $this->punch('CARD291', "$date $in", $date.'-threshold-in')->assertOk();
+            $this->punch('CARD291', "$date $out", $date.'-threshold-out')->assertOk();
+            $this->assertDatabaseHas('attendance_daily', [
+                'employee_id' => $employeeId, 'target_date' => $date,
+                'raw_clock_in_at' => "$date $in", 'raw_clock_out_at' => "$date $out",
+                'clock_in_at' => $preview['clockInAt'], 'clock_out_at' => $preview['clockOutAt'],
+                'break_minutes' => $preview['breakMinutes'], 'work_minutes' => $preview['workMinutes'],
+            ]);
+            $dailyId = DB::table('attendance_daily')->where('employee_id', $employeeId)->where('target_date', $date)->value('id');
+            $detail = app(DailyAttendanceService::class)->detail($dailyId);
+            $reason = implode(' ', $detail['adoptionReasons']);
+            $this->assertStringContainsString($work > 480 ? '原打刻の始業・退勤と休憩60分' : 'から追加休憩', $reason);
+            $this->assertStringNotContainsString('予定まで切り上げ', $reason);
+        }
+        $this->assertDatabaseHas('attendance_daily_breaks', [
+            'break_start_at' => '2026-10-20 18:15:00', 'break_end_at' => '2026-10-20 18:16:00',
+        ]);
+        $recorded = $service->previewAutomaticPunches($employeeId, $date, "$date $in", "$date $out", 35);
+        $this->assertSame(["$date $in", 35, 506], [$recorded['clockInAt'], $recorded['breakMinutes'], $recorded['workMinutes']]);
+    }
+
+    public function test_individual_review_days_preserve_their_rule_and_late_punches_cannot_rebuild_a_confirmed_day(): void
+    {
+        $this->travelTo(now()->setDate(2026, 10, 27));
+        $employeeId = $this->employee('E292');
+        $this->assignPunchCard($employeeId, 'CARD292');
+        DB::table('employee_attendance_settings')->insert([
+            'employee_id' => $employeeId, 'standard_clock_in_time' => '09:30', 'standard_clock_out_time' => '18:30',
+        ]);
+        foreach (['2026-10-21' => '宿直応援', '2026-10-22' => '夜勤当番'] as $date => $label) {
+            $type = DB::table('work_type_settings')->insertGetId([
+                'name' => $label, 'start_time' => '09:30', 'end_time' => '18:30', 'standard_day_minutes' => 480,
+            ]);
+            if ($date === '2026-10-21') {
+                DB::table('attendance_shift_schedules')->insert(['employee_id' => $employeeId, 'target_date' => $date, 'work_type_id' => $type]);
+            }
+            $this->punch('CARD292', "$date 09:26:00", $date.'-in')->assertOk();
+            $daily = DB::table('attendance_daily')->where('employee_id', $employeeId)->where('target_date', $date);
+            if ($date === '2026-10-22') {
+                $daily->update(['work_type_id' => $type, 'schedule_name' => $label]);
+            }
+            $preview = app(PunchService::class)->previewAutomaticPunches($employeeId, $date, "$date 09:26:00", "$date 18:27:00");
+            $this->assertSame(["$date 09:30:00", 45, 492], [$preview['clockInAt'], $preview['breakMinutes'], $preview['workMinutes']]);
+            $this->punch('CARD292', "$date 18:27:00", $date.'-out')->assertOk();
+            $saved = $daily->first();
+            $this->assertSame([$label, "$date 09:30:00", 45, 492], [$saved->schedule_name, $saved->clock_in_at, (int) $saved->break_minutes, (int) $saved->work_minutes]);
+            $detail = app(DailyAttendanceService::class)->detail($saved->id);
+            $this->assertStringNotContainsString('原打刻の始業・退勤と休憩60分', implode(' ', $detail['adoptionReasons']));
+        }
+
+        // Older records may carry the confirmation receipt without the newer edit flag.
+        $daily->update(['break_overtime_review' => json_encode(['confirmationSource' => 'ACTUAL']), 'is_manually_edited' => false]);
+        $before = (array) $daily->first();
+        $this->punch('CARD292', "$date 18:40:00", 'confirmed-extra')->assertOk()->assertJsonPath('data.resultType', 'WARNING');
+        $this->assertSame($before, (array) $daily->first());
+        $this->assertDatabaseHas('attendance_events', ['dedupe_key' => 'confirmed-extra', 'rejection_reason' => 'CONFIRMED_DAY_PUNCH']);
+    }
+
+    public function test_complete_punches_on_three_shift_days_use_day_specific_plans_or_the_nearest_candidate(): void
+    {
+        $this->travelTo(now()->setDate(2026, 11, 20));
+        $type = DB::table('work_type_settings')->insertGetId([
+            'name' => '当日早番', 'start_time' => '08:30', 'standard_day_minutes' => 480,
+        ]);
+        foreach (['970045','970008'] as $code) {
+            $employee = $this->employee($code);
+            $this->assignPunchCard($employee, 'three-'.$code);
+            DB::table('employee_attendance_settings')->insert(['employee_id' => $employee, 'standard_clock_in_time' => '07:45:00']);
+            $cases = [
+                ['2026-11-09','08:55:00','17:55:59','09:00:00',55,480],
+                ['2026-11-10','08:55:00','17:56:00','08:55:00',60,481],
+                ['2026-11-11','08:55:00','18:00:00','08:55:00',60,485],
+                ['2026-11-12','08:55:00','12:10:00','09:00:00',10,180],
+                ['2026-11-13','08:27:00','17:27:00','08:30:00',57,480],
+            ];
+            foreach ($cases as [$date,$in,$out,$start,$rest,$work]) {
+                $this->punch('three-'.$code, "$date $in", "$date-$code-in")->assertOk();
+                if ($date === '2026-11-13') {
+                    DB::table('attendance_daily')->where('employee_id',$employee)->where('target_date',$date)
+                        ->update(['work_type_id'=>$type,'schedule_name'=>'当日早番']);
+                }
+                $this->punch('three-'.$code, "$date $out", "$date-$code-out")->assertOk();
+                $daily = DB::table('attendance_daily')->where('employee_id',$employee)->where('target_date',$date)->first();
+                $this->assertSame(["$date $start", "$date $out", $rest, $work],
+                    [$daily->clock_in_at, $daily->clock_out_at, (int) $daily->break_minutes, (int) $daily->work_minutes], "$code $date");
+                $detail = app(DailyAttendanceService::class)->detail($daily->id);
+                $this->assertSame(max(0, $work - 480), $detail['overtimeMinutes']);
+                $this->assertStringContainsString($work > 480 ? '原打刻の始業・退勤と休憩60分' : '個別勤務ルールの休憩',
+                    implode(' ', $detail['adoptionReasons']));
+            }
+        }
+    }
+
+    public function test_regular_clock_out_uses_raw_pair_without_a_plan_and_day_type_precedes_personal_default(): void
+    {
+        $this->travelTo(now()->setDate(2026, 11, 20));
+        $employee = $this->employee('E236');
+        $this->assignPunchCard($employee, 'any-plan');
+        $type = DB::table('work_type_settings')->insertGetId(['name'=>'日別通常','start_time'=>'09:30','standard_day_minutes'=>480]);
+        $cases = [
+            ['2026-11-09','08:55:00','17:56:00','08:55:00',60,481],
+            ['2026-11-10','09:26:00','18:16:00','09:30:00',46,480],
+            ['2026-11-11','09:26:00','18:16:00','09:30:00',46,480],
+        ];
+        foreach ($cases as [$date,$in,$out,$start,$rest,$work]) {
+            if ($date === '2026-11-10') {
+                DB::table('employee_attendance_settings')->insert(['employee_id'=>$employee,'standard_clock_in_time'=>'10:00']);
+            }
+            $this->punch('any-plan', "$date $in", "$date-in")->assertOk();
+            if ($date !== '2026-11-09') {
+                DB::table('attendance_daily')->where('employee_id',$employee)->where('target_date',$date)
+                    ->update(['work_type_id'=>$date === '2026-11-10' ? $type : null, 'schedule_name'=>'日別通常']);
+            }
+            $this->punch('any-plan', "$date $out", "$date-out")->assertOk();
+            $daily=DB::table('attendance_daily')->where('employee_id',$employee)->where('target_date',$date)->first();
+            $this->assertSame(["$date $start","$date $out",$rest,$work],[$daily->clock_in_at,$daily->clock_out_at,(int)$daily->break_minutes,(int)$daily->work_minutes]);
+            $detail = app(DailyAttendanceService::class)->detail($daily->id);
+            $this->assertSame(max(0, $work - 480), $detail['overtimeMinutes']);
+            $this->assertStringContainsString($work > 480 ? '原打刻の始業・退勤と休憩60分' : '18:15から追加休憩1分', implode(' ', $detail['adoptionReasons']));
+        }
+    }
+
+    public function test_early_start_exception_keeps_its_short_day_and_applies_sixty_to_a_long_day(): void
+    {
+        $this->travelTo(now()->setDate(2026, 11, 20));
+        $employee = $this->employee('970035');
+        $this->assignPunchCard($employee, 'early-160');
+        DB::table('employee_attendance_settings')->insert(['employee_id'=>$employee,'standard_clock_in_time'=>'09:00','standard_clock_out_time'=>'18:00']);
+        foreach ([
+            ['2026-11-09','17:55:59',45,495],
+            ['2026-11-10','17:56:00',60,481],
+        ] as [$date,$out,$rest,$work]) {
+            $this->punch('early-160', "$date 08:55:00", "$date-in")->assertOk();
+            $this->punch('early-160', "$date $out", "$date-out")->assertOk();
+            $this->assertDatabaseHas('attendance_daily', [
+                'employee_id'=>$employee,'target_date'=>$date,'clock_in_at'=>"$date 08:55:00",'clock_out_at'=>"$date $out",
+                'break_minutes'=>$rest,'work_minutes'=>$work,
+            ]);
+        }
+
+        $date = '2026-11-11';
+        $this->punch('early-160', "$date 08:55:00", "$date-in")->assertOk();
+        DB::table('attendance_daily')->where('employee_id',$employee)->where('target_date',$date)->update(['hour_paid_leave_minutes'=>60]);
+        $this->punch('early-160', "$date 17:56:00", "$date-out")->assertOk();
+        $this->assertDatabaseHas('attendance_daily', ['employee_id'=>$employee,'target_date'=>$date,'break_minutes'=>45,'work_minutes'=>496,'hour_paid_leave_minutes'=>60]);
+    }
+
+    public function test_late_device_event_does_not_rebuild_an_imported_historical_punch_pair(): void
+    {
+        $this->travelTo(now()->setDate(2026, 11, 20));
+        $employee = $this->employee('E237');
+        $this->assignPunchCard($employee, 'imported-original');
+        $date = '2026-11-16';
+        $id = DB::table('attendance_daily')->insertGetId([
+            'employee_id'=>$employee, 'target_date'=>$date, 'source_system'=>'HARMOS',
+            'raw_clock_in_at'=>"$date 08:55:00", 'raw_clock_out_at'=>"$date 18:00:00",
+            'clock_in_at'=>"$date 09:00:00", 'clock_out_at'=>"$date 18:00:00",
+            'break_minutes'=>60, 'work_minutes'=>480, 'remark'=>'出勤時刻は業務記録で再確認', 'updated_at'=>now(),
+        ]);
+        $query = DB::table('attendance_daily')->where('id',$id);
+        $before = (array) $query->first();
+        foreach ([1,2] as $attempt) {
+            $this->punch('imported-original', "$date 18:09:00", 'imported-extra')
+                ->assertOk()->assertJsonPath('data.resultType','WARNING');
+        }
+        $this->assertSame($before,(array) $query->first());
+        $this->assertDatabaseHas('attendance_events',['employee_id'=>$employee,'dedupe_key'=>'imported-extra',
+            'occurred_at'=>"$date 18:09:00",'rejection_reason'=>'IMPORTED_DAY_PUNCH','receive_status'=>'REJECTED']);
+        $this->assertSame(1,DB::table('attendance_events')->where('dedupe_key','imported-extra')->count());
+        $this->assertTrue(app(\App\Services\Attendance\DailyApprovalReview::class)->pending([])->contains('id',$id));
+        $query->update(['raw_clock_out_at'=>null, 'source_import_type'=>'HARMOS_SINGLE_PUNCH_RECONCILIATION']);
+        $reconciled=(array)$query->first();
+        $this->punch('imported-original', "$date 18:15:00", 'reconciled-extra')->assertOk()->assertJsonPath('data.resultType','WARNING');
+        $this->assertSame($reconciled,(array) $query->first());
+        $this->assertDatabaseHas('attendance_events',['dedupe_key'=>'reconciled-extra','rejection_reason'=>'IMPORTED_DAY_PUNCH']);
+    }
+
+    public function test_single_punch_uses_the_observed_side_and_the_scheduled_shift_break(): void
+    {
+        $this->travelTo(now()->setDate(2026,11,24));
+        $service=app(PunchService::class);
+        foreach (['970008','E296'] as $code) {
+            $employee=$this->employee($code);
+            DB::table('attendance_shift_schedules')->insert([
+                'employee_id'=>$employee,'target_date'=>'2026-11-17','scheduled_clock_in_time'=>'07:45','scheduled_clock_out_time'=>'16:30',
+            ]);
+            $date='2026-11-17';
+            $morning=$service->previewAutomaticPunches($employee,$date,"$date 07:37:56",null);
+            $expected=[45,480];
+            $this->assertSame(['CLOCK_OUT',"$date 07:45:00","$date 16:30:00",...$expected],[$morning['inferredSide'],$morning['clockInAt'],$morning['clockOutAt'],$morning['breakMinutes'],$morning['workMinutes']]);
+            $evening=$service->previewAutomaticPunches($employee,$date,"$date 16:38:00",null);
+            $this->assertSame(['CLOCK_IN',"$date 07:45:00","$date 16:38:00"],[$evening['inferredSide'],$evening['clockInAt'],$evening['clockOutAt']]);
+            $this->assertSame(53,$evening['breakMinutes']);
+            $actual=$service->previewAutomaticPunches($employee,$date,"$date 16:38:00",null,50);
+            $this->assertSame(50,$actual['breakMinutes']);
+        }
+    }
 
     public function test_punch_rebuild_adds_post_schedule_break_up_to_sixty_minutes(): void
     {
@@ -260,7 +569,7 @@ final class HarmosGapApiTest extends TestCase
         ]);
     }
 
-    public function test_manual_daily_edit_is_not_overwritten_by_punch_rebuild(): void
+    public function test_manual_daily_edit_is_preserved_and_new_punches_are_saved_for_review(): void
     {
         $employeeId = $this->employee('E092');
         $this->assignPunchCard($employeeId, 'CARD092');
@@ -292,19 +601,21 @@ final class HarmosGapApiTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $this->punch('CARD092', '2026-04-22 08:10:00', 'manual-in')->assertOk();
-        $this->punch('CARD092', '2026-04-22 18:50:00', 'manual-out')->assertOk();
+        $this->punch('CARD092', '2026-04-22 08:10:00', 'manual-in')->assertOk()->assertJsonPath('data.resultType', 'WARNING');
+        $this->punch('CARD092', '2026-04-22 18:50:00', 'manual-out')->assertOk()->assertJsonPath('data.resultType', 'WARNING');
 
         $this->assertDatabaseHas('attendance_daily', [
             'id' => $dailyId,
-            'raw_clock_in_at' => '2026-04-22 08:10:00',
-            'raw_clock_out_at' => '2026-04-22 18:50:00',
+            'raw_clock_in_at' => '2026-04-22 08:30:00',
+            'raw_clock_out_at' => '2026-04-22 18:30:00',
             'clock_in_at' => '2026-04-22 09:15:00',
             'clock_out_at' => '2026-04-22 17:45:00',
             'break_minutes' => 30,
             'work_minutes' => 480,
             'approval_status' => 'APPROVED',
         ]);
+        $this->assertDatabaseHas('attendance_events', ['dedupe_key' => 'manual-in', 'occurred_at' => '2026-04-22 08:10:00', 'event_type' => null, 'rejection_reason' => 'CONFIRMED_DAY_PUNCH']);
+        $this->assertDatabaseHas('attendance_events', ['dedupe_key' => 'manual-out', 'occurred_at' => '2026-04-22 18:50:00', 'event_type' => null, 'rejection_reason' => 'CONFIRMED_DAY_PUNCH']);
     }
 
     public function test_admin_can_edit_daily_attendance_without_changing_raw_punches_and_history_is_recorded(): void
@@ -888,6 +1199,7 @@ final class HarmosGapApiTest extends TestCase
             [
                 'name' => 'テスト端末',
                 'location_name' => '本園',
+                'device_secret_hash' => Hash::make('secret'),
                 'is_active' => 1,
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -897,7 +1209,7 @@ final class HarmosGapApiTest extends TestCase
             'employee_id' => $employeeId,
             'card_uid' => $cardUid,
             'is_active' => 1,
-            'assigned_at' => now(),
+            'assigned_at' => '2026-04-01 00:00:00',
             'created_at' => now(),
             'updated_at' => now(),
         ]);

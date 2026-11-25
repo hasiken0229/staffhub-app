@@ -22,7 +22,7 @@
 
 例:
 
-- `NEXT_PUBLIC_API_BASE_URL=https://ikegami-wakaba.jp/dakoku`
+- `NEXT_PUBLIC_API_BASE_URL=https://attendance.example.org/dakoku`
 - `NEXT_PUBLIC_BASE_PATH=/dakoku/admin`
 
 ## ローカル起動
@@ -30,7 +30,7 @@
 ```powershell
 cd src/admin-web/next-app
 npm install
-$env:NEXT_PUBLIC_API_BASE_URL="https://ikegami-wakaba.jp/dakoku"
+$env:NEXT_PUBLIC_API_BASE_URL="https://attendance.example.org/dakoku"
 $env:NEXT_PUBLIC_BASE_PATH=""
 npm run dev
 ```
@@ -42,7 +42,7 @@ npm run dev
 ```powershell
 cd src/admin-web/next-app
 npm install
-$env:NEXT_PUBLIC_API_BASE_URL="https://ikegami-wakaba.jp/dakoku"
+$env:NEXT_PUBLIC_API_BASE_URL="https://attendance.example.org/dakoku"
 $env:NEXT_PUBLIC_BASE_PATH="/dakoku/admin"
 npm run build
 ```
@@ -53,7 +53,7 @@ npm run build
 
 ## Xserver反映先の例
 
-管理画面を `https://ikegami-wakaba.jp/dakoku/admin/` で公開する場合:
+管理画面を `https://attendance.example.org/dakoku/admin/` で公開する場合:
 
 - `out` の中身を `public_html/dakoku/admin/` にアップロード
 - `out-login` の中身を `public_html/dakoku/login/` にアップロード
@@ -87,7 +87,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\upload-xserver-via-winscp.ps1
 補足:
 
 - 既定の WinSCP 実行ファイルは `C:\Program Files (x86)\WinSCP\WinSCP.com`
-- 既定の反映先は `/home/iwakaba/ikegami-wakaba.jp/public_html/dakoku`
+- 既定の反映先は `/home/deploy/attendance.example.org/public_html/dakoku`
 - 保存済みサイトをフォルダ配下に置いている場合は `フォルダ名/サイト名` 形式で指定可能
 - 別の反映先にしたい場合は `-RemoteRoot` で変更可能
 

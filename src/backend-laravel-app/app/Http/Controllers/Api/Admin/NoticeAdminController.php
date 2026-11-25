@@ -29,14 +29,15 @@ final class NoticeAdminController extends Controller
     public function store(Request $request)
     {
         $payload = $request->validate([
-            'noticeType' => ['required', 'string', 'max:30'],
-            'title' => ['required', 'string', 'max:120'],
+            'noticeType' => ['required', 'string', 'in:GENERAL,PAYROLL_INFO,SYSTEM'],
+            'title' => ['required', 'string', 'max:100'],
             'body' => ['required', 'string'],
             'publishStartAt' => ['required', 'date'],
             'publishEndAt' => ['nullable', 'date'],
-            'targetEmployeeId' => ['nullable', 'integer', 'min:1'],
+            'targetEmployeeId' => ['nullable', 'integer', 'min:1', 'exists:employees,id'],
             'relatedType' => ['nullable', 'string', 'max:30'],
             'relatedId' => ['nullable', 'integer', 'min:1'],
+            'requestId' => ['nullable', 'uuid'],
         ]);
 
         try {
@@ -49,5 +50,29 @@ final class NoticeAdminController extends Controller
                 $exception->details,
             );
         }
+    }
+
+    public function show(int $id)
+    {
+        try { return ApiResponse::ok($this->noticeService->detailForAdmin($id)); }
+        catch (ApiException $error) { return ApiResponse::error($error->errorCode, $error->getMessage(), $error->status, $error->details); }
+    }
+
+    public function update(Request $request, int $id)
+    {
+        $payload = $request->validate([
+            'noticeType' => ['required', 'string', 'in:GENERAL,PAYROLL_INFO,SYSTEM'], 'title' => ['required', 'string', 'max:100'],
+            'body' => ['required', 'string'], 'publishStartAt' => ['required', 'date'], 'publishEndAt' => ['nullable', 'date'],
+            'revision' => ['required', 'integer', 'min:1'],
+        ]);
+        try { return ApiResponse::ok($this->noticeService->updateForAdmin($id, $payload, $request->user())); }
+        catch (ApiException $error) { return ApiResponse::error($error->errorCode, $error->getMessage(), $error->status, $error->details); }
+    }
+
+    public function stop(Request $request, int $id)
+    {
+        $payload = $request->validate(['revision' => ['required', 'integer', 'min:1']]);
+        try { return ApiResponse::ok($this->noticeService->stopForAdmin($id, (int) $payload['revision'], $request->user())); }
+        catch (ApiException $error) { return ApiResponse::error($error->errorCode, $error->getMessage(), $error->status, $error->details); }
     }
 }

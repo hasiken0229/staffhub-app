@@ -13,12 +13,11 @@ final class LeaveRequestService
         private readonly LeaveApplyService $applyService,
         private readonly LeaveApprovalService $approvalService,
         private readonly LeaveLedgerService $ledgerService,
-    ) {
-    }
+    ) {}
 
-    public function balance(int $employeeId): array
+    public function balance(int $employeeId, ?string $asOf = null): array
     {
-        return $this->ledgerService->balance($employeeId);
+        return $this->ledgerService->balance($employeeId, $asOf);
     }
 
     public function listForEmployee(int $employeeId, array $filters): array
@@ -34,6 +33,11 @@ final class LeaveRequestService
     public function detailForEmployee(int $employeeId, int $requestId): array
     {
         return $this->applyService->detailForEmployee($employeeId, $requestId);
+    }
+
+    public function standardDayMinutesForEmployee(int $employeeId, ?string $targetDate = null): int
+    {
+        return $this->applyService->standardDayMinutesForEmployee($employeeId, $targetDate);
     }
 
     public function detailForAdmin(int $requestId): array

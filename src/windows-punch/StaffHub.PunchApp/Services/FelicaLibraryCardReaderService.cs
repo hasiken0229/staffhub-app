@@ -3,40 +3,36 @@ using StaffHub.PunchApp.Models;
 
 namespace StaffHub.PunchApp.Services;
 
-public sealed class FelicaLibraryCardReaderService : ICardReaderService
+public sealed class FelicaLibraryCardReaderService : ICardReaderService, IReaderWorkerStatus
 {
     private readonly AppSettings _settings;
-    private readonly CancellationTokenSource _cts = new();
-    private Task? _worker;
+    private readonly CardReaderWorker _worker;
+    private readonly Func<bool> _initialize;
+    private string _status = "FeliCaライブラリ 初期化待ち";
     private string? _lastIdm;
     private DateTimeOffset _lastSeenAt;
 
-    public FelicaLibraryCardReaderService(AppSettings settings)
+    public FelicaLibraryCardReaderService(AppSettings settings, Func<bool>? initialize = null)
     {
         _settings = settings;
+        _initialize = initialize ?? FelicaNative.initialize_library;
+        _worker = new CardReaderWorker(PollLoopAsync, () => _status);
     }
 
     public event EventHandler<string>? CardScanned;
 
-    public string StatusText { get; private set; } = "FeliCaライブラリ 初期化待ち";
+    public string StatusText { get => _worker.Failure ?? _status; private set => _status = value; }
+    public bool IsWorkerActive => _worker.IsWorkerActive;
+    public bool NeedsReconnect => _worker.NeedsReconnect;
 
     public void Start()
     {
-        _worker ??= Task.Run(() => PollLoopAsync(_cts.Token));
+        _worker.Start();
     }
 
     public void Dispose()
     {
-        _cts.Cancel();
-        try
-        {
-            _worker?.Wait(TimeSpan.FromSeconds(3));
-        }
-        catch
-        {
-        }
-
-        _cts.Dispose();
+        _worker.Dispose();
     }
 
     private async Task PollLoopAsync(CancellationToken cancellationToken)
@@ -44,7 +40,7 @@ public sealed class FelicaLibraryCardReaderService : ICardReaderService
         // Inference: function names and structure layout are based on commonly published
         // FeliCa SDK samples that use initialize_library/open_reader_writer_auto/
         // polling_and_get_card_information with RC-S380.
-        if (!FelicaNative.initialize_library())
+        if (!_initialize())
         {
             StatusText = "FeliCaライブラリ初期化失敗";
             return;

@@ -22,13 +22,15 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PayrollController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('/auth/login', [AuthController::class, 'login']);
-Route::post('/auth/refresh', [AuthController::class, 'refresh']);
-Route::post('/auth/password/forgot', [AuthController::class, 'forgotPassword']);
-Route::post('/auth/password/reset', [AuthController::class, 'resetPassword']);
+Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:auth-login');
+Route::post('/auth/refresh', [AuthController::class, 'refresh'])->middleware('throttle:auth-refresh');
+Route::post('/auth/password/initial', [AuthController::class, 'initialPassword'])->middleware('throttle:password-reset');
+Route::post('/auth/password/forgot', [AuthController::class, 'forgotPassword'])->middleware('throttle:password-forgot');
+Route::post('/auth/password/reset', [AuthController::class, 'resetPassword'])->middleware('throttle:password-reset');
 
-Route::prefix('attendance')->group(function () {
+Route::prefix('attendance')->middleware('throttle:attendance-device')->group(function () {
     Route::post('/punch', [AttendancePunchController::class, 'store']);
+    Route::post('/devices/today-receipts', [AttendancePunchController::class, 'todayReceipts']);
     Route::post('/devices/heartbeat', [AttendancePunchController::class, 'heartbeat']);
     Route::post('/card-registration/employees', [AttendancePunchController::class, 'cardRegistrationEmployees']);
     Route::post('/card-registration/assign', [AttendancePunchController::class, 'assignCard']);
@@ -44,6 +46,7 @@ Route::middleware(['auth.api', 'employee'])->group(function () {
 
     Route::prefix('leave')->group(function () {
         Route::get('/balance', [LeaveController::class, 'balance']);
+        Route::get('/standard-day-minutes', [LeaveController::class, 'standardDayMinutes']);
         Route::get('/ledger', [LeaveController::class, 'ledger']);
         Route::get('/requests', [LeaveController::class, 'index']);
         Route::post('/requests', [LeaveController::class, 'store']);
@@ -55,6 +58,7 @@ Route::middleware(['auth.api', 'employee'])->group(function () {
         Route::get('/daily', [AttendanceDailyEditRequestController::class, 'daily']);
         Route::get('/daily-edit-requests', [AttendanceDailyEditRequestController::class, 'index']);
         Route::post('/daily-edit-requests', [AttendanceDailyEditRequestController::class, 'store']);
+        Route::post('/daily-edit-requests/{id}/cancel', [AttendanceDailyEditRequestController::class, 'cancel']);
     });
 
     Route::prefix('payroll')->group(function () {
@@ -89,6 +93,7 @@ Route::middleware(['auth.api', 'admin'])->prefix('admin')->group(function () {
     Route::post('/cards/delete', [CardAdminController::class, 'delete']);
 
     Route::get('/attendance/events', [AttendanceAdminController::class, 'events']);
+    Route::get('/attendance/devices', [AttendanceAdminController::class, 'devices']);
     Route::get('/attendance/daily', [AttendanceAdminController::class, 'daily']);
     Route::get('/attendance/daily-grid', [AttendanceAdminController::class, 'dailyGrid']);
     Route::post('/attendance/daily', [AttendanceAdminController::class, 'storeDaily']);
@@ -100,6 +105,8 @@ Route::middleware(['auth.api', 'admin'])->prefix('admin')->group(function () {
     Route::post('/attendance/shift-schedules', [AttendanceAdminController::class, 'saveShiftSchedule']);
     Route::get('/attendance/daily/{id}', [AttendanceAdminController::class, 'show']);
     Route::patch('/attendance/daily/{id}', [AttendanceAdminController::class, 'updateDaily']);
+    Route::post('/attendance/daily/{id}/break-overtime/{operation}', [AttendanceAdminController::class, 'breakOvertime'])
+        ->whereNumber('id')->whereIn('operation', ['preview', 'apply']);
     Route::delete('/attendance/daily/{id}/manual-edit', [AttendanceAdminController::class, 'resetDailyManualEdit']);
     Route::get('/attendance/daily/{id}/histories', [AttendanceAdminController::class, 'histories']);
     Route::get('/attendance/month-close', [AttendanceAdminController::class, 'monthClose']);
@@ -114,6 +121,8 @@ Route::middleware(['auth.api', 'admin'])->prefix('admin')->group(function () {
     Route::get('/attendance/approvals', [AttendanceAdminController::class, 'approvals']);
     Route::post('/attendance/approvals/{id}/approve', [AttendanceAdminController::class, 'approve']);
     Route::post('/attendance/approvals/bulk-approve', [AttendanceAdminController::class, 'bulkApprove']);
+    Route::get('/attendance/month-close/approval-preview', [AttendanceAdminController::class, 'monthApprovalPreview']);
+    Route::post('/attendance/month-close/approve-candidates', [AttendanceAdminController::class, 'approveMonthCandidates']);
     Route::post('/attendance/approvals/{id}/return', [AttendanceAdminController::class, 'return']);
     Route::post('/attendance/approvals/bulk-return', [AttendanceAdminController::class, 'bulkReturn']);
 
@@ -122,7 +131,15 @@ Route::middleware(['auth.api', 'admin'])->prefix('admin')->group(function () {
     Route::post('/leave/requests/{id}/reject', [LeaveAdminController::class, 'reject']);
     Route::post('/leave/requests/{id}/return', [LeaveAdminController::class, 'return']);
     Route::post('/leave/grants', [LeaveAdminController::class, 'grant']);
+    Route::get('/leave/employees/{employeeId}/balance', [LeaveAdminController::class, 'employeeBalance']);
+    Route::post('/leave/grants/{id}/review-preview', [LeaveAdminController::class, 'previewGrantReview']);
+    Route::post('/leave/grants/{id}/review', [LeaveAdminController::class, 'confirmGrantReview']);
+    Route::get('/leave/attendance-baseline', [LeaveAdminController::class, 'attendanceBaseline']);
+    Route::post('/leave/attendance-baseline', [LeaveAdminController::class, 'confirmAttendanceBaseline']);
     Route::post('/leave/adjustments', [LeaveAdminController::class, 'adjust']);
+    Route::post('/leave/hourly-balances', [LeaveAdminController::class, 'hourlyBalance']);
+    Route::get('/leave/care-balances', [\App\Http\Controllers\Api\Admin\CareLeaveAdminController::class, 'index']);
+    Route::post('/leave/care-balances', [\App\Http\Controllers\Api\Admin\CareLeaveAdminController::class, 'store']);
 
     Route::get('/work-procedures', [WorkProcedureAdminController::class, 'index']);
     Route::get('/work-procedures/{id}', [WorkProcedureAdminController::class, 'show']);
@@ -140,6 +157,7 @@ Route::middleware(['auth.api', 'admin'])->prefix('admin')->group(function () {
     Route::post('/payroll/definitions', [PayrollAdminController::class, 'saveDefinition']);
     Route::get('/payroll/definitions/template-csv', [PayrollAdminController::class, 'downloadDefinitionTemplateCsv']);
     Route::get('/payroll/import-batches', [PayrollAdminController::class, 'importBatches']);
+    Route::post('/payroll/import-batches/preview', [PayrollAdminController::class, 'previewImportBatch']);
     Route::post('/payroll/import-batches', [PayrollAdminController::class, 'storeImportBatch']);
     Route::get('/payroll/import-batches/{id}', [PayrollAdminController::class, 'showImportBatch']);
     Route::delete('/payroll/import-batches/{id}', [PayrollAdminController::class, 'deleteImportBatch']);
@@ -162,9 +180,11 @@ Route::middleware(['auth.api', 'admin'])->prefix('admin')->group(function () {
     Route::post('/system-masters/daily-fields', [SystemMasterAdminController::class, 'storeDailyField']);
 
     Route::get('/reports/hub', [ReportAdminController::class, 'hub']);
+    Route::get('/reports/rounding-review', [ReportAdminController::class, 'roundingReview']);
     Route::get('/reports/today-attendance', [ReportAdminController::class, 'todayAttendance']);
     Route::get('/reports/attendance-approvals', [ReportAdminController::class, 'attendanceApprovals']);
     Route::get('/reports/paid-leave', [ReportAdminController::class, 'paidLeave']);
+    Route::get('/reports/paid-leave-register', [\App\Http\Controllers\Api\Admin\PaidLeaveRegisterController::class, 'show']);
     Route::get('/reports/monthly-csv', [ReportAdminController::class, 'monthlyCsv']);
     Route::get('/reports/daily-csv', [ReportAdminController::class, 'dailyCsv']);
     Route::get('/reports/daily-pdf', [ReportAdminController::class, 'dailyPdf']);
@@ -176,6 +196,9 @@ Route::middleware(['auth.api', 'admin'])->prefix('admin')->group(function () {
     Route::get('/files/history/{id}/download', [ImportHistoryAdminController::class, 'download']);
     Route::get('/notices', [NoticeAdminController::class, 'index']);
     Route::post('/notices', [NoticeAdminController::class, 'store']);
+    Route::get('/notices/{id}', [NoticeAdminController::class, 'show']);
+    Route::patch('/notices/{id}', [NoticeAdminController::class, 'update']);
+    Route::post('/notices/{id}/stop', [NoticeAdminController::class, 'stop']);
 
     Route::get('/audit-logs', [AuditLogAdminController::class, 'index']);
 });

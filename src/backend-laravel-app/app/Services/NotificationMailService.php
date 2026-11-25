@@ -20,7 +20,8 @@ final class NotificationMailService
         string $title,
         string $body,
         array $context = [],
-    ): void {
+        ?string $requestId = null,
+    ): array {
         $title = trim($title);
         $body = trim($body);
         $baseContext = array_filter([
@@ -43,7 +44,7 @@ final class NotificationMailService
                     'reason' => 'missing_google_chat_user_id',
                 ]);
 
-                return;
+                return ['ok' => false, 'status' => 'skipped', 'reason' => 'missing_google_chat_user_id', 'message_name' => null];
             }
 
             $result = $this->googleChatNotificationService->sendDirectMessage(
@@ -55,7 +56,8 @@ final class NotificationMailService
                         ? trim(($employee->employee_code ?? '') . ' ' . ($employee->name ?? ''))
                         : null,
                     ...$baseContext,
-                ], static fn (mixed $value): bool => $value !== null && $value !== '')
+                ], static fn (mixed $value): bool => $value !== null && $value !== ''),
+                $requestId,
             );
 
             $this->logResult('NOTICE_TARGETED', $result, [
@@ -63,7 +65,7 @@ final class NotificationMailService
                 'title' => $title,
             ]);
 
-            return;
+            return $result;
         }
 
         $message = $this->buildTemplateMessage('notice_all_staff', [
@@ -77,19 +79,21 @@ final class NotificationMailService
                 'reason' => 'all_staff_space_not_configured',
             ]);
 
-            return;
+            return ['ok' => false, 'status' => 'skipped', 'reason' => 'all_staff_space_not_configured', 'message_name' => null];
         }
 
         $result = $this->googleChatNotificationService->sendAllStaffSpaceMessage(
             $message['title'],
             $message['lines'],
-            $baseContext
+            $baseContext,
+            $requestId,
         );
 
         $this->logResult('NOTICE_ALL_STAFF', $result, [
             'title' => $title,
             'spaceId' => $spaceId,
         ]);
+        return $result;
     }
 
     public function sendPayrollPublished(
@@ -97,7 +101,8 @@ final class NotificationMailService
         string $statementType,
         string $targetYearMonth,
         int $statementId,
-    ): void {
+        ?string $requestId = null,
+    ): array {
         $statementLabel = strtoupper($statementType) === 'BONUS' ? '賞与明細' : '給与明細';
         $employee = $this->loadEmployee($employeeId);
         $recipient = $this->recipientResolver->resolveEmployeeUserId($employeeId);
@@ -113,7 +118,7 @@ final class NotificationMailService
                 'reason' => 'missing_google_chat_user_id',
             ]);
 
-            return;
+            return ['ok' => false, 'status' => 'skipped', 'reason' => 'missing_google_chat_user_id', 'message_name' => null];
         }
 
         $result = $this->googleChatNotificationService->sendDirectMessage(
@@ -127,13 +132,15 @@ final class NotificationMailService
                 '対象年月' => $targetYearMonth,
                 '明細種別' => strtoupper($statementType),
                 '関連ID' => (string) $statementId,
-            ], static fn (mixed $value): bool => $value !== null && $value !== '')
+            ], static fn (mixed $value): bool => $value !== null && $value !== ''),
+            $requestId,
         );
 
         $this->logResult('PAYROLL_PUBLISHED', $result, [
             'employeeId' => $employeeId,
             'statementId' => $statementId,
         ]);
+        return $result;
     }
 
     public function sendLeaveDecision(

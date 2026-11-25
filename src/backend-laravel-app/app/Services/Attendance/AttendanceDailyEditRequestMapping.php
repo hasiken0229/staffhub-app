@@ -30,6 +30,7 @@ trait AttendanceDailyEditRequestMapping
                 'ader.clock_in_at',
                 'ader.clock_out_at',
                 'ader.breaks_json',
+                'ader.daily_baseline',
                 'ader.remark',
                 'ader.employee_comment',
                 'ader.status',
@@ -60,6 +61,33 @@ trait AttendanceDailyEditRequestMapping
     {
         $targetDate = CarbonImmutable::parse((string) $row->target_date)->toDateString();
         $breaks = json_decode((string) ($row->breaks_json ?? '[]'), true);
+        $current = $this->dailyDetailQuery()->where('ad.employee_id', $row->employee_id)->where('ad.target_date', $targetDate)->first();
+        $review = DailyEditRequestReview::compare($row, DailyEditRequestReview::snapshot($current));
+        $normalized = $this->normalizeBreakPayload(is_array($breaks) ? $breaks : [], CarbonImmutable::parse($targetDate));
+        $proposedBreak = $this->sumBreakMinutes($normalized);
+        $proposedIn = $row->clock_in_at ? CarbonImmutable::parse($row->clock_in_at) : null;
+        $proposedOut = $row->clock_out_at ? CarbonImmutable::parse($row->clock_out_at) : null;
+        if ($current !== null) {
+            if (in_array('clock_in_at', $review['keep'], true)) { $proposedIn = $current->clock_in_at ? CarbonImmutable::parse($current->clock_in_at) : null; }
+            if (in_array('clock_out_at', $review['keep'], true)) { $proposedOut = $current->clock_out_at ? CarbonImmutable::parse($current->clock_out_at) : null; }
+            foreach (['proposedIn'=>'clock_in_at', 'proposedOut'=>'clock_out_at'] as $variable=>$field) {
+                $original = $current->$field ? CarbonImmutable::parse($current->$field) : null;
+                if ($original !== null && $$variable?->format('Y-m-d H:i') === $original->format('Y-m-d H:i')) { $$variable = $original; }
+            }
+            $storedBreaks = DB::table('attendance_daily_breaks')->where('attendance_daily_id', $current->id)->orderBy('segment_no')->get();
+            $sameBreaks = $storedBreaks->count() === count($normalized);
+            foreach ($normalized as $i=>&$break) {
+                $stored = $storedBreaks[$i] ?? null;
+                foreach (['startAt'=>'break_start_at', 'endAt'=>'break_end_at'] as $field=>$column) {
+                    if ($stored !== null && !empty($stored->$column) && $break[$field]?->format('Y-m-d H:i') === CarbonImmutable::parse($stored->$column)->format('Y-m-d H:i')) { $break[$field] = CarbonImmutable::parse($stored->$column); }
+                    else { $sameBreaks = false; }
+                }
+            }
+            unset($break);
+            if (in_array('breaks', $review['keep'], true)) { $sameBreaks = true; }
+            $proposedBreak = $sameBreaks ? (int) $current->break_minutes : $this->sumBreakMinutes($normalized);
+        }
+        $unchangedTimes = $current !== null && $proposedIn?->format('Y-m-d H:i:s') === $current->clock_in_at && $proposedOut?->format('Y-m-d H:i:s') === $current->clock_out_at && $sameBreaks;
 
         return [
             'id' => (int) $row->id,
@@ -81,6 +109,13 @@ trait AttendanceDailyEditRequestMapping
             'clockOutTime' => $row->clock_out_at ? CarbonImmutable::parse((string) $row->clock_out_at)->format('H:i') : null,
             'clockOutNextDay' => $row->clock_out_at ? CarbonImmutable::parse((string) $row->clock_out_at)->toDateString() > $targetDate : false,
             'breaks' => is_array($breaks) ? $breaks : [],
+            'currentDaily' => $current ? $this->mapDailyDetailRow($current) : null,
+            'effectiveClockInAt' => $proposedIn?->toIso8601String(),
+            'effectiveClockOutAt' => $proposedOut?->toIso8601String(),
+            'reviewChanges' => $review['changes'],
+            'reviewConflict' => $row->status === 'PENDING' ? $review['conflict'] : null,
+            'proposedBreakMinutes' => $proposedBreak,
+            'proposedWorkMinutes' => $unchangedTimes ? ($current->work_minutes !== null ? (int) $current->work_minutes : null) : DailyTimeCalculator::actual($proposedIn, $proposedOut, $proposedBreak),
             'remark' => $row->remark,
             'employeeComment' => $row->employee_comment,
             'status' => $row->status,

@@ -41,11 +41,16 @@ type SetValue<T> = (value: T) => void;
 export type UseDashboardSectionPropsParams = {
   dashboard: DashboardData;
   employeePortal: EmployeePortalData;
+  setEmployeePortal?: EmployeePortalSectionProps["actions"]["onPortalUpdate"];
   currentUser: CurrentUser | null;
   currentAudience: AuthAudience | "";
   currentSubNavId: string;
+  handleDashboardNavigation: (section: "attendance" | "leave", targetId: string) => void;
   isPending: boolean;
   errorMessage: string;
+  attendanceLoadError: string;
+  attendanceIsLoading: boolean;
+  attendanceMonthDataFresh: boolean;
   canUseEmployeePortal: boolean;
   employeeImportResult: string;
   systemResult: string;
@@ -128,6 +133,7 @@ export type UseDashboardSectionPropsParams = {
   setAssignEmployeeId: SetValue<string>;
   setAssignCardUid: SetValue<string>;
   setAttendanceFilterMonth: SetValue<string>;
+  onAttendanceFilterMonthChange: SetValue<string>;
   setAttendanceFilterEmployeeCode: SetValue<string>;
   setAttendanceFilterDepartmentName: SetValue<string>;
   setAttendanceApprovalStatus: SetValue<string>;
@@ -188,6 +194,7 @@ export type UseDashboardSectionPropsParams = {
   handleEmployeeImport: EmployeesSectionProps["actions"]["onEmployeeImport"];
   handleTemplateDownload: (kind: "employees" | "payroll" | "bonus") => Promise<void>;
   handleEmployeeUpdate: (id: number, payload: EmployeeUpdatePayload) => Promise<void>;
+  setHasUnsavedEmployeeEdit: SetValue<boolean>;
   handleAssignCard: CardsSectionProps["actions"]["onAssignCard"];
   handleRevokeCard: CardsSectionProps["actions"]["onRevokeCard"];
   handleDeleteCard: CardsSectionProps["actions"]["onDeleteCard"];
@@ -198,6 +205,8 @@ export type UseDashboardSectionPropsParams = {
   handleAttendanceDailyEditRequestDecision: AttendanceSectionProps["actions"]["onAttendanceDailyEditRequestDecision"];
   handleBulkAttendanceDecision: AttendanceSectionProps["actions"]["onBulkAttendanceDecision"];
   handleAttendanceErrorStatus: AttendanceSectionProps["actions"]["onAttendanceErrorStatus"];
+  retryAttendanceLoad: AttendanceSectionProps["actions"]["onRetryAttendanceLoad"];
+  refreshHourlyPaidLeave: () => Promise<void>;
   applyWorkProcedureFilters: LeaveSectionProps["actions"]["onApplyWorkProcedureFilters"];
   resetWorkProcedureFilters: LeaveSectionProps["actions"]["onResetWorkProcedureFilters"];
   handleWorkProcedureDecision: LeaveSectionProps["actions"]["onWorkProcedureDecision"];
@@ -206,6 +215,7 @@ export type UseDashboardSectionPropsParams = {
   handleAdjustPaidLeave: LeaveSectionProps["actions"]["onAdjustPaidLeave"];
   handleCreateNotice: NoticesSectionProps["actions"]["onCreateNotice"];
   handlePayrollDefinitionSave: PayrollSectionProps["actions"]["onPayrollDefinitionSave"];
+  handlePayrollBatchPreview: PayrollSectionProps["actions"]["onPayrollBatchPreview"];
   handlePayrollBatchCreate: PayrollSectionProps["actions"]["onPayrollBatchCreate"];
   openPayrollBatchDetail: PayrollSectionProps["actions"]["onOpenPayrollBatchDetail"];
   searchPayrollBatchDetail: PayrollSectionProps["actions"]["onSearchPayrollBatchDetail"];
@@ -217,6 +227,7 @@ export type UseDashboardSectionPropsParams = {
   handleDeletePayrollStatement: PayrollSectionProps["actions"]["onDeletePayrollStatement"];
   handleFileHistoryDownload: PayrollSectionProps["actions"]["onFileHistoryDownload"];
   handleMonthlyAttendanceCsvDownload: ReportsSectionProps["actions"]["onDownloadMonthlyAttendanceCsv"];
+  handleReportMonthCloseNavigation: ReportsSectionProps["actions"]["onOpenMonthClose"];
   handleDailyAttendanceCsvDownload: ReportsSectionProps["actions"]["onDownloadDailyAttendanceCsv"];
   handleDailyAttendancePdfDownload: ReportsSectionProps["actions"]["onDownloadDailyAttendancePdf"];
   handleMonthlyPayrollCsvDownload: ReportsSectionProps["actions"]["onDownloadMonthlyPayrollCsv"];
@@ -224,8 +235,13 @@ export type UseDashboardSectionPropsParams = {
   handleSystemForm: SystemSectionProps["actions"]["onSystemForm"];
   applyAuditFilters: AuditSectionProps["actions"]["onApplyAuditFilters"];
   resetAuditFilters: AuditSectionProps["actions"]["onResetAuditFilters"];
-  handleEmployeeLeaveRequestCreate: (payload: LeaveRequestCreatePayload) => Promise<void>;
-  handleEmployeeAttendanceDailyEditRequestCreate: (payload: AttendanceDailyEditRequestCreatePayload) => Promise<void>;
+  loadAuditPage: AuditSectionProps["actions"]["onAuditPageChange"];
+  handleEmployeeAttendanceDailyEditRequestCancel: (id: number) => Promise<void>;
+  handleEmployeeRequestStatusReload: () => Promise<void>;
+  handleEmployeeLeaveRequestCancel: (id: number) => Promise<void>;
+  handleEmployeeAttendanceMonthChange: NonNullable<EmployeePortalSectionProps["actions"]["onAttendanceMonthChange"]>;
+  handleEmployeeLeaveRequestCreate: EmployeePortalSectionProps["actions"]["onLeaveRequestCreate"];
+  handleEmployeeAttendanceDailyEditRequestCreate: EmployeePortalSectionProps["actions"]["onAttendanceDailyEditRequestCreate"];
   handleLoadEmployeePayrollDetail: EmployeePortalSectionProps["actions"]["onLoadEmployeePayrollDetail"];
   handleNotificationRead: EmployeePortalSectionProps["actions"]["onNotificationRead"];
 };

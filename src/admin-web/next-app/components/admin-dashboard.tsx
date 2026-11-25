@@ -1,7 +1,8 @@
 "use client";
 
-import { type ReactNode, useEffect, useState, useTransition } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { AdminDashboardView } from "@/components/admin-dashboard-view";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useAdminDashboardDerivedData } from "@/hooks/use-admin-dashboard-derived-data";
 import { useAdminDashboardEffects } from "@/hooks/use-admin-dashboard-effects";
 import { useAdminUtilityActions } from "@/hooks/use-admin-utility-actions";
@@ -21,7 +22,9 @@ import { usePayrollActions } from "@/hooks/use-payroll-actions";
 import { useReportState } from "@/hooks/use-report-state";
 import { useSystemActions } from "@/hooks/use-system-actions";
 import { useDashboardSectionProps } from "@/hooks/use-dashboard-section-props";
-import { loadAdminSectionData } from "@/lib/api";
+import { downloadFileHistory, loadAdminSectionData, type AttendanceSectionLoadOptions } from "@/lib/api";
+import { hasAvailableMonthClosePrecheck } from "@/lib/attendance-utils";
+import { monthDateRangeValue } from "@/lib/date-defaults";
 import { emptyData, emptyEmployeePortal, sectionLabels, sectionSubNavItems, type AdminSectionKey } from "@/lib/dashboard-defaults";
 import { AttendanceSection } from "@/components/dashboard-sections/attendance-section";
 import { AuditSection } from "@/components/dashboard-sections/audit-section";
@@ -43,6 +46,13 @@ import type {
 } from "@/types";
 
 export function AdminDashboard() {
+  const [downloadMessage, setDownloadMessage] = useState("");
+  useEffect(() => {
+    const handleDownload = (event: Event) => setDownloadMessage(`${(event as CustomEvent<{ fileName: string }>).detail.fileName} のダウンロードを開始しました。保存先でファイルを確認してください。`);
+    window.addEventListener("staffhub:download-started", handleDownload);
+    return () => window.removeEventListener("staffhub:download-started", handleDownload);
+  }, []);
+
   const initialActiveSection = (): AdminSectionKey => {
     if (typeof window === "undefined") {
       return "dashboard";
@@ -65,15 +75,35 @@ export function AdminDashboard() {
   };
 
   const [dashboard, setDashboard] = useState<DashboardData>(emptyData);
+  const updateAttentionTotal = useCallback((total: number) => {
+    setDashboard(current => current.reportsHub.pendingAttendanceApprovalCount === total ? current : {
+      ...current, reportsHub: {...current.reportsHub, pendingAttendanceApprovalCount: total},
+    });
+  }, []);
   const [employeePortal, setEmployeePortal] = useState<EmployeePortalData>(emptyEmployeePortal);
+  const employeeAttendanceMonthRef = useRef(new Date().toLocaleDateString("sv-SE").slice(0, 7));
+  const getEmployeeAttendanceMonth = useCallback(() => employeeAttendanceMonthRef.current, []);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [activeSection, setActiveSection] = useState<AdminSectionKey>(initialActiveSection);
   const [loadedAdminSections, setLoadedAdminSections] = useState<Partial<Record<AdminSectionKey, boolean>>>({ dashboard: true });
   const [activeSubSectionBySection, setActiveSubSectionBySection] = useState<Partial<Record<AdminSectionKey, string>>>(initialSubSections);
+  const [reportsMenuResetKey, setReportsMenuResetKey] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
+  const [attendanceLoadError, setAttendanceLoadError] = useState("");
+  const [attendancePrecheckReadyMonth, setAttendancePrecheckReadyMonth] = useState<string | null>(null);
+  const [attendanceIsLoading, setAttendanceIsLoading] = useState(false);
+  const [hasUnsavedEmployeeEdit, setHasUnsavedEmployeeEdit] = useState(false);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const [pendingDiscardAction, setPendingDiscardAction] = useState<(() => void) | null>(null);
   const [employeeImportResult, setEmployeeImportResult] = useState("");
   const [systemResult, setSystemResult] = useState("");
   const [isPending, startTransition] = useTransition();
+  const [isSectionLoading, setIsSectionLoading] = useState(false);
+  const inFlightAdminSectionsRef = useRef(new Set<AdminSectionKey>());
+  const pendingLoadCountRef = useRef(0);
+  const attendanceLoadSequenceRef = useRef(0);
+  const currentAttendanceMonthRef = useRef("");
+  const sectionAudienceRef = useRef<AuthAudience | "">("");
   const {
     auditActorFilter,
     setAuditActorFilter,
@@ -245,13 +275,18 @@ export function AdminDashboard() {
   const {
     adminUrl,
     bootstrap,
+    bootstrapFailure,
+    checkingSession,
     handleLogin,
+    handleInitialPasswordChange,
     handleLogout,
+    handleSessionExpired,
     loginUrl,
     refresh,
     restoreStoredSession,
   } = useDashboardSessionActions({
     currentAudience,
+    getEmployeeAttendanceMonth,
     loginId,
     password,
     assignEmployeeId,
@@ -314,7 +349,7 @@ export function AdminDashboard() {
     setErrorMessage,
     onRefresh: refreshCurrentView,
   });
-  const { applyAuditFilters, resetAuditFilters } = useAuditActions({
+  const { applyAuditFilters, resetAuditFilters, loadAuditPage } = useAuditActions({
     auditActorFilter,
     auditActionFilter,
     auditFrom,
@@ -326,6 +361,15 @@ export function AdminDashboard() {
     setDashboard,
     setErrorMessage,
   });
+  currentAttendanceMonthRef.current = attendanceFilterMonth;
+  sectionAudienceRef.current = currentAudience;
+  const attendanceMonthDataFresh = attendancePrecheckReadyMonth === attendanceFilterMonth
+    && hasAvailableMonthClosePrecheck(dashboard.attendanceMonthClosePrecheck, attendanceFilterMonth)
+    && dashboard.attendanceMonthlyClose.targetYearMonth === attendanceFilterMonth
+    && dashboard.attendanceMonthlyClose.isAvailable !== false
+    && !attendanceLoadError
+    && !attendanceIsLoading;
+  const canCloseAttendanceMonth = attendanceMonthDataFresh && dashboard.attendanceMonthClosePrecheck?.canClose === true;
   const {
     applyAttendanceFilters,
     handleAttendanceDecision,
@@ -347,9 +391,15 @@ export function AdminDashboard() {
     attendanceErrorHandlingStatus,
     attendanceMonthCloseApprovalStatus,
     attendanceMonthCloseStatusFilter,
+    attendanceMonthDataFresh,
+    canCloseAttendanceMonth,
+    onLoadAttendance: (options) => loadAdminSection("attendance", options),
+    setAttendanceIsLoading,
+    setAttendanceLoadError,
+    setAttendancePrecheckReadyMonth,
     setAttendanceDecisionResult,
     setAttendanceCloseResult,
-    setAttendanceFilterMonth,
+    setAttendanceFilterMonth: (month) => { currentAttendanceMonthRef.current = month; setAttendanceFilterMonth(month); },
     setAttendanceFilterEmployeeCode,
     setAttendanceFilterDepartmentName,
     setAttendanceApprovalStatus,
@@ -368,6 +418,7 @@ export function AdminDashboard() {
     onRefresh: refreshCurrentView,
   });
   const {
+    refreshHourlyPaidLeave,
     applyWorkProcedureFilters,
     handleAdjustPaidLeave,
     handleBulkWorkProcedureDecision,
@@ -415,6 +466,7 @@ export function AdminDashboard() {
     handleExportPayrollBatch,
     handleLoadAdminPayrollDetail,
     handleLoadEmployeePayrollDetail,
+    handlePayrollBatchPreview,
     handlePayrollBatchCreate,
     handlePayrollDefinitionSave,
     handlePayrollDownload,
@@ -441,6 +493,10 @@ export function AdminDashboard() {
     setSelectedEmployeePayrollDetail,
     setErrorMessage,
     onRefresh: refreshCurrentView,
+    onRefreshPayroll: refreshPayrollSection,
+    onEmployeePayrollViewed: (id, revision) => setEmployeePortal((current) => ({ ...current,
+      payroll: current.payroll.map((row) => row.id === id && (row.revision ?? 1) === revision ? { ...row, viewed: true } : row),
+    })),
   });
   const {
     filteredPayrollDefinitions,
@@ -460,19 +516,131 @@ export function AdminDashboard() {
   const storedSubNavId = activeSubSectionBySection[activeSection];
   const defaultSubNavId = currentSubNavItems[0]?.targetId ?? "";
   const currentSubNavId = storedSubNavId && currentSubNavItems.some((item) => item.targetId === storedSubNavId) ? storedSubNavId : defaultSubNavId;
+  const attendanceLoadOptions = useMemo<AttendanceSectionLoadOptions>(() => ({
+    targetMonth: attendanceFilterMonth,
+    employeeCode: attendanceFilterEmployeeCode,
+    departmentName: attendanceFilterDepartmentName,
+    approvalStatus: attendanceApprovalStatus,
+    eventFrom: attendanceEventFrom,
+    eventTo: attendanceEventTo,
+    errorCode: attendanceErrorCode,
+    errorHandlingStatus: attendanceErrorHandlingStatus,
+    monthCloseApprovalStatus: attendanceMonthCloseApprovalStatus,
+    monthCloseStatus: attendanceMonthCloseStatusFilter,
+  }), [
+    attendanceApprovalStatus,
+    attendanceErrorCode,
+    attendanceErrorHandlingStatus,
+    attendanceEventFrom,
+    attendanceEventTo,
+    attendanceFilterDepartmentName,
+    attendanceFilterEmployeeCode,
+    attendanceFilterMonth,
+    attendanceMonthCloseApprovalStatus,
+    attendanceMonthCloseStatusFilter,
+  ]);
+  function handleAttendanceFilterMonthChange(value: string) {
+    currentAttendanceMonthRef.current = value;
+    attendanceLoadSequenceRef.current += 1;
+    setAttendanceIsLoading(false);
+    setAttendanceFilterMonth(value);
+    setAttendancePrecheckReadyMonth(null);
+    const range = monthDateRangeValue(value);
+    setAttendanceEventFrom(range.from);
+    setAttendanceEventTo(range.to);
+  }
+
+  const loadAdminSection = useCallback(async (section: AdminSectionKey, options: AttendanceSectionLoadOptions) => {
+    const isAttendance = section === "attendance";
+    if (!isAttendance && inFlightAdminSectionsRef.current.has(section)) return;
+    const sequence = isAttendance ? ++attendanceLoadSequenceRef.current : 0;
+    const isCurrent = () => sectionAudienceRef.current === "ADMIN" && (!isAttendance ||
+      sequence === attendanceLoadSequenceRef.current && options.targetMonth === currentAttendanceMonthRef.current);
+    if (!isAttendance) inFlightAdminSectionsRef.current.add(section);
+    pendingLoadCountRef.current += 1;
+    setIsSectionLoading(true);
+    if (isAttendance) {
+      setAttendanceLoadError("");
+      setAttendancePrecheckReadyMonth(null);
+      setAttendanceIsLoading(true);
+    }
+    try {
+      const partialDashboard = await loadAdminSectionData(section, options);
+      if (!isCurrent()) return;
+      startTransition(() => {
+        setDashboard((current) => isCurrent() ? { ...current, ...partialDashboard } : current);
+        setLoadedAdminSections((current) => isCurrent() ? { ...current, [section]: true } : current);
+      });
+      setErrorMessage("");
+      if (isAttendance && hasAvailableMonthClosePrecheck(partialDashboard.attendanceMonthClosePrecheck, options.targetMonth ?? "")) {
+        setAttendancePrecheckReadyMonth(options.targetMonth ?? null);
+      }
+    } catch (error) {
+      if (!isCurrent()) return;
+      const message = error instanceof Error ? error.message : `${sectionLabels[section]}の読込に失敗しました。`;
+      setErrorMessage(message);
+      if (isAttendance) {
+        setAttendanceLoadError(message);
+        setAttendancePrecheckReadyMonth(null);
+      }
+    } finally {
+      if (!isAttendance) inFlightAdminSectionsRef.current.delete(section);
+      if (isAttendance && sequence === attendanceLoadSequenceRef.current) setAttendanceIsLoading(false);
+      pendingLoadCountRef.current = Math.max(0, pendingLoadCountRef.current - 1);
+      setIsSectionLoading(pendingLoadCountRef.current > 0);
+    }
+  }, [startTransition]);
+
+  async function refreshPayrollSection() {
+    if (inFlightAdminSectionsRef.current.has("payroll")) {
+      return false;
+    }
+
+    inFlightAdminSectionsRef.current.add("payroll");
+    pendingLoadCountRef.current += 1;
+    setIsSectionLoading(true);
+    try {
+      const partialDashboard = await loadAdminSectionData("payroll");
+      startTransition(() => {
+        setDashboard((current) => ({ ...current, ...partialDashboard }));
+        setLoadedAdminSections((current) => ({ ...current, payroll: true }));
+      });
+      setErrorMessage("");
+      return true;
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "給与一覧の再取得に失敗しました。");
+      return false;
+    } finally {
+      inFlightAdminSectionsRef.current.delete("payroll");
+      pendingLoadCountRef.current = Math.max(0, pendingLoadCountRef.current - 1);
+      setIsSectionLoading(pendingLoadCountRef.current > 0);
+    }
+  }
+
   async function refreshCurrentView() {
     if (currentAudience !== "ADMIN") {
-      await refresh();
+      pendingLoadCountRef.current += 1;
+      setIsSectionLoading(true);
+      try {
+        await refresh();
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : "最新情報の読込に失敗しました。");
+      } finally {
+        pendingLoadCountRef.current = Math.max(0, pendingLoadCountRef.current - 1);
+        setIsSectionLoading(pendingLoadCountRef.current > 0);
+      }
       return;
     }
 
-    const partialDashboard = await loadAdminSectionData(activeSection);
-    setDashboard((current) => ({ ...current, ...partialDashboard }));
-    setLoadedAdminSections((current) => ({ ...current, [activeSection]: true }));
-    setErrorMessage("");
+    await loadAdminSection(activeSection, attendanceLoadOptions);
   }
-  const handleRefresh = () => startTransition(() => void refreshCurrentView());
+  const retryAttendanceLoad = useCallback(
+    async () => loadAdminSection("attendance", attendanceLoadOptions),
+    [attendanceLoadOptions, loadAdminSection],
+  );
+  const handleRefresh = () => void refreshCurrentView();
   const canUseEmployeePortal = Boolean(currentUser?.isAdmin && currentUser.canUseEmployeePortal);
+  const isDataPending = isPending || isSectionLoading;
 
   useEffect(() => {
     window.sessionStorage.setItem("staffhub.activeSection", activeSection);
@@ -483,63 +651,74 @@ export function AdminDashboard() {
   }, [activeSubSectionBySection]);
 
   useEffect(() => {
+    window.addEventListener("staffhub:unauthorized", handleSessionExpired);
+    return () => window.removeEventListener("staffhub:unauthorized", handleSessionExpired);
+  }, [handleSessionExpired]);
+
+  useEffect(() => {
     if (currentAudience !== "ADMIN" || loadedAdminSections[activeSection]) {
       return;
     }
 
-    startTransition(() => {
-      void loadAdminSectionData(activeSection)
-        .then((partialDashboard) => {
-          setDashboard((current) => ({ ...current, ...partialDashboard }));
-          setLoadedAdminSections((current) => ({ ...current, [activeSection]: true }));
-          setErrorMessage("");
-        })
-        .catch((error) => {
-          setErrorMessage(error instanceof Error ? error.message : `${sectionLabels[activeSection]}の読込に失敗しました。`);
-        });
-    });
-  }, [activeSection, currentAudience, loadedAdminSections]);
+    void loadAdminSection(activeSection, attendanceLoadOptions);
+  }, [activeSection, attendanceLoadOptions, currentAudience, loadAdminSection, loadedAdminSections]);
 
   function handlePortalModeChange(mode: AuthAudience) {
     if (!canUseEmployeePortal || mode === currentAudience) {
       return;
     }
 
+    if (hasUnsavedEmployeeEdit) {
+      setPendingDiscardAction(() => () => {
+        setErrorMessage("");
+        setCurrentAudience(mode);
+        startTransition(() => {
+          void bootstrap(mode).catch(() => undefined);
+        });
+      });
+      return;
+    }
+
     setErrorMessage("");
     setCurrentAudience(mode);
     startTransition(() => {
-      void bootstrap(mode);
+      void bootstrap(mode).catch(() => undefined);
     });
   }
 
-  function handleAdminSectionChange(section: string) {
+  function handleAdminSectionChange(section: string, targetId?: string) {
     if (!(section in sectionLabels)) {
       return;
     }
 
     const nextSection = section as AdminSectionKey;
-    const nextSubNavItems = sectionSubNavItems[nextSection] ?? [];
-    setActiveSection(nextSection);
-    setActiveSubSectionBySection((current) => ({
-      ...current,
-      [nextSection]: nextSubNavItems.some((item) => item.targetId === current[nextSection])
-        ? current[nextSection]
-        : nextSubNavItems[0]?.targetId ?? "",
-    }));
-
-    if (!loadedAdminSections[nextSection]) {
-      startTransition(() => {
-        void loadAdminSectionData(nextSection)
-          .then((partialDashboard) => {
-            setDashboard((current) => ({ ...current, ...partialDashboard }));
-            setLoadedAdminSections((current) => ({ ...current, [nextSection]: true }));
-            setErrorMessage("");
-          })
-          .catch((error) => {
-            setErrorMessage(error instanceof Error ? error.message : `${sectionLabels[nextSection]}の読込に失敗しました。`);
-          });
-      });
+    if (nextSection !== "employees" && hasUnsavedEmployeeEdit) {
+      setPendingDiscardAction(() => () => applyAdminSectionChange(nextSection, targetId));
+      return;
     }
+    applyAdminSectionChange(nextSection, targetId);
+  }
+
+  function applyAdminSectionChange(nextSection: AdminSectionKey, targetId?: string) {
+    const nextSubNavItems = sectionSubNavItems[nextSection] ?? [];
+    if (nextSection === "reports") {
+      setReportsMenuResetKey((current) => current + 1);
+    }
+    setActiveSection(nextSection);
+    setActiveSubSectionBySection((current) => {
+      const requestedTarget = targetId ?? (nextSection !== activeSection ? current[nextSection] : undefined);
+      const selected = nextSubNavItems.find((item) => item.targetId === requestedTarget) ?? nextSubNavItems[0];
+      return { ...current, [nextSection]: selected?.targetId ?? "" };
+    });
+  }
+
+  function handleLogoutWithUnsavedEditCheck() {
+    if (hasUnsavedEmployeeEdit) {
+      setIsLogoutConfirmOpen(true);
+      return;
+    }
+
+    handleLogout();
   }
 
   function handleSubNavChange(targetId: string) {
@@ -549,11 +728,49 @@ export function AdminDashboard() {
     }));
   }
 
+  function handleDashboardNavigation(section: "attendance" | "leave", targetId: string) {
+    handleAdminSectionChange(section, targetId);
+  }
+
+  function handleAttendanceMonthSelection(targetMonth: string) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(targetMonth) || targetMonth < "1000-01" || targetMonth === attendanceFilterMonth) return;
+    handleAttendanceFilterMonthChange(targetMonth);
+    setAttendanceDecisionResult("");
+    setAttendanceCloseResult("");
+    if (loadedAdminSections.attendance) {
+      const range = monthDateRangeValue(targetMonth);
+      void loadAdminSection("attendance", { ...attendanceLoadOptions, targetMonth, eventFrom: range.from, eventTo: range.to });
+    }
+  }
+
+  function handleReportMonthCloseNavigation(targetMonth: string) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(targetMonth)) return;
+    handleAttendanceFilterMonthChange(targetMonth);
+    setAttendanceFilterEmployeeCode("");
+    setAttendanceFilterDepartmentName("");
+    setAttendanceApprovalStatus("");
+    setAttendanceMonthCloseApprovalStatus("");
+    setAttendanceMonthCloseStatusFilter("");
+    setActiveSection("attendance");
+    setActiveSubSectionBySection((current) => ({ ...current, attendance: "attendance-close" }));
+    // Unloaded sections are fetched by the section effect. Previously loaded sections need an explicit reload.
+    if (loadedAdminSections.attendance) {
+      const range = monthDateRangeValue(targetMonth);
+      void loadAdminSection("attendance", { ...attendanceLoadOptions, targetMonth, employeeCode: "", departmentName: "", approvalStatus: "", monthCloseApprovalStatus: "", monthCloseStatus: "", eventFrom: range.from, eventTo: range.to });
+    }
+  }
+
   const {
+    handleEmployeeAttendanceMonthChange,
     handleEmployeeAttendanceDailyEditRequestCreate,
+    handleEmployeeAttendanceDailyEditRequestCancel,
+    handleEmployeeRequestStatusReload,
+    handleEmployeeLeaveRequestCancel,
     handleEmployeeLeaveRequestCreate,
     handleEmployeeUpdate,
   } = useEmployeePortalActions({
+    getAttendanceTargetMonth: getEmployeeAttendanceMonth,
+    onAttendanceTargetMonthChange: (month) => { employeeAttendanceMonthRef.current = month; },
     setEmployeePortal,
     setErrorMessage,
     onRefresh: refresh,
@@ -587,11 +804,17 @@ export function AdminDashboard() {
   } = useDashboardSectionProps({
     dashboard,
     employeePortal,
+    setEmployeePortal,
     currentUser,
     currentAudience,
     currentSubNavId,
-    isPending,
+    handleDashboardNavigation,
+    handleReportMonthCloseNavigation,
+    isPending: isDataPending,
     errorMessage,
+    attendanceLoadError,
+    attendanceIsLoading: attendanceIsLoading || isPending,
+    attendanceMonthDataFresh,
     canUseEmployeePortal,
     employeeImportResult,
     systemResult,
@@ -674,6 +897,7 @@ export function AdminDashboard() {
     setAssignEmployeeId,
     setAssignCardUid,
     setAttendanceFilterMonth,
+    onAttendanceFilterMonthChange: handleAttendanceMonthSelection,
     setAttendanceFilterEmployeeCode,
     setAttendanceFilterDepartmentName,
     setAttendanceApprovalStatus,
@@ -729,11 +953,12 @@ export function AdminDashboard() {
     setAuditFrom,
     setAuditTo,
     handleRefresh,
-    handleLogout,
+    handleLogout: handleLogoutWithUnsavedEditCheck,
     handlePortalModeChange,
     handleEmployeeImport,
     handleTemplateDownload,
     handleEmployeeUpdate,
+    setHasUnsavedEmployeeEdit,
     handleAssignCard,
     handleRevokeCard,
     handleDeleteCard,
@@ -744,6 +969,8 @@ export function AdminDashboard() {
     handleAttendanceDailyEditRequestDecision,
     handleBulkAttendanceDecision,
     handleAttendanceErrorStatus,
+    retryAttendanceLoad,
+    refreshHourlyPaidLeave,
     applyWorkProcedureFilters,
     resetWorkProcedureFilters,
     handleWorkProcedureDecision,
@@ -752,6 +979,7 @@ export function AdminDashboard() {
     handleAdjustPaidLeave,
     handleCreateNotice,
     handlePayrollDefinitionSave,
+    handlePayrollBatchPreview,
     handlePayrollBatchCreate,
     openPayrollBatchDetail,
     searchPayrollBatchDetail,
@@ -770,8 +998,13 @@ export function AdminDashboard() {
     handleSystemForm,
     applyAuditFilters,
     resetAuditFilters,
+    loadAuditPage,
+    handleEmployeeRequestStatusReload,
+    handleEmployeeLeaveRequestCancel,
     handleEmployeeLeaveRequestCreate,
+    handleEmployeeAttendanceMonthChange,
     handleEmployeeAttendanceDailyEditRequestCreate,
+    handleEmployeeAttendanceDailyEditRequestCancel,
     handleLoadEmployeePayrollDetail,
     handleNotificationRead,
   });
@@ -780,28 +1013,36 @@ export function AdminDashboard() {
     dashboard: <DashboardOverviewSection {...dashboardOverviewSectionProps} />,
     employees: <EmployeesSection {...employeesSectionProps} />,
     cards: <CardsSection {...cardsSectionProps} />,
-    attendance: <AttendanceSection {...attendanceSectionProps} />,
+    attendance: <AttendanceSection {...attendanceSectionProps} onAttentionTotalChange={updateAttentionTotal} />,
     leave: <LeaveSection {...leaveSectionProps} />,
     notices: <NoticesSection {...noticesSectionProps} />,
-    payroll: <PayrollSection {...payrollSectionProps} />,
+    payroll: <PayrollSection {...payrollSectionProps} onPanelChange={handleSubNavChange} />,
     harmosMigration: (
       <HarmosMigrationSection
         data={{ activePanel: currentSubNavId, importHistory: dashboard.importHistory }}
-        actions={{ onRefresh: handleRefresh }}
+        actions={{ onRefresh: handleRefresh, onFileHistoryDownload: downloadFileHistory }}
       />
     ),
-    reports: <ReportsSection {...reportsSectionProps} />,
+    reports: <ReportsSection {...reportsSectionProps} menuResetKey={reportsMenuResetKey} />,
     system: <SystemSection {...systemSectionProps} />,
     audit: <AuditSection {...auditSectionProps} />,
   } satisfies Record<AdminSectionKey, ReactNode>;
   const navBadges = {
-    attendance: dashboard.attendanceApprovals.length,
-    leave: dashboard.reportsHub.pendingLeaveCount || dashboard.workProcedures.filter((row) => row.status === "PENDING").length,
+    attendance: dashboard.reportsHub.pendingAttendanceApprovalCount,
+    ...(dashboard.reportsHub.checkedAt ? {
+      leave: dashboard.reportsHub.pendingLeaveCount,
+    } : {}),
   };
 
   return (
+    <>
+      {downloadMessage ? <div role="status" className="download-status">{downloadMessage}<button type="button" onClick={() => setDownloadMessage("")}>閉じる</button></div> : null}
     <AdminDashboardView
       isAuthenticated={isAuthenticated}
+      recovery={bootstrapFailure}
+      checkingSession={checkingSession}
+      onRetrySession={() => { if (bootstrapFailure) void bootstrap(bootstrapFailure.audience).catch(() => undefined); }}
+      onLogout={handleLogout}
       loginProps={{
         loginId,
         password,
@@ -809,6 +1050,7 @@ export function AdminDashboard() {
         onLoginIdChange: setLoginId,
         onPasswordChange: setPassword,
         onLogin: handleLogin,
+        onInitialPasswordChange: handleInitialPasswordChange,
       }}
       currentAudience={currentAudience}
       employeePortalSectionProps={employeePortalSectionProps}
@@ -820,17 +1062,38 @@ export function AdminDashboard() {
         canUseEmployeePortal,
         subNavItems: currentSubNavItems,
         activeSubNavId: currentSubNavId,
-        isPending,
+        isPending: isDataPending,
         errorMessage,
         navBadges,
         onModeChange: handlePortalModeChange,
         onActiveSectionChange: handleAdminSectionChange,
         onSubNavChange: handleSubNavChange,
         onRefresh: handleRefresh,
-        onLogout: handleLogout,
+        onLogout: handleLogoutWithUnsavedEditCheck,
       }}
       adminSections={adminSections}
       activeSection={activeSection}
     />
+    <ConfirmDialog
+      open={isLogoutConfirmOpen}
+      title="保存していない変更があります"
+      message="ログアウトすると、職員情報の保存していない変更は破棄されます。"
+      confirmLabel="変更を破棄してログアウト"
+      onCancel={() => setIsLogoutConfirmOpen(false)}
+      onConfirm={() => { setIsLogoutConfirmOpen(false); handleLogout(); }}
+    />
+    <ConfirmDialog
+      open={pendingDiscardAction !== null}
+      title="保存していない変更があります"
+      message="画面を移ると、職員情報の保存していない変更は破棄されます。"
+      confirmLabel="変更を破棄して移動"
+      onCancel={() => setPendingDiscardAction(null)}
+      onConfirm={() => {
+        const action = pendingDiscardAction;
+        setPendingDiscardAction(null);
+        action?.();
+      }}
+    />
+    </>
   );
 }

@@ -37,19 +37,19 @@ final class ReportService
         return $this->dashboardService->paidLeaveManagement($filters);
     }
 
-    public function exportMonthlyAttendanceCsv(string $targetMonth): string
+    public function exportMonthlyAttendanceCsv(string $targetMonth, array $filters = [], ?int &$rowCount = null): string
     {
-        return $this->attendanceExportService->exportMonthlyAttendanceCsv($targetMonth);
+        return $this->attendanceExportService->exportMonthlyAttendanceCsv($targetMonth, $filters, $rowCount);
     }
 
-    public function exportDailyAttendanceCsv(array $filters): string
+    public function exportDailyAttendanceCsv(array $filters, ?int &$rowCount = null): string
     {
-        return $this->attendanceExportService->exportDailyAttendanceCsv($filters);
+        return $this->attendanceExportService->exportDailyAttendanceCsv($filters, $rowCount);
     }
 
-    public function exportDailyAttendancePdf(string $targetMonth): string
+    public function exportDailyAttendancePdf(string $targetMonth, array $filters = []): string
     {
-        return $this->attendanceExportService->exportDailyAttendancePdf($targetMonth);
+        return $this->attendanceExportService->exportDailyAttendancePdf($targetMonth, $filters);
     }
 
     public function exportMonthlyPayrollCsv(string $targetMonth): array

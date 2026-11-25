@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import {
   assignCard,
   createNotice,
@@ -37,6 +38,8 @@ type UseAdminUtilityActionsParams = {
 };
 
 export function useAdminUtilityActions(params: UseAdminUtilityActionsParams) {
+  const noticeInFlightRef = useRef(false);
+  const noticeRequestRef = useRef<{ signature: string; requestId: string } | null>(null);
   async function handleAssignCard() {
     try {
       const result = await assignCard(Number(params.assignEmployeeId), params.assignCardUid);
@@ -69,20 +72,30 @@ export function useAdminUtilityActions(params: UseAdminUtilityActionsParams) {
   }
 
   async function handleCreateNotice() {
+    if (noticeInFlightRef.current) return;
+    const payload = {
+      noticeType: params.noticeType, title: params.noticeTitle, body: params.noticeBody,
+      publishStartAt: params.noticeStartAt, publishEndAt: params.noticeEndAt || undefined,
+    };
+    const signature = JSON.stringify(payload);
+    if (noticeRequestRef.current?.signature !== signature) {
+      noticeRequestRef.current = { signature, requestId: crypto.randomUUID() };
+    }
+    noticeInFlightRef.current = true;
     try {
       await createNotice({
-        noticeType: params.noticeType,
-        title: params.noticeTitle,
-        body: params.noticeBody,
-        publishStartAt: params.noticeStartAt,
-        publishEndAt: params.noticeEndAt || undefined,
+        ...payload, requestId: noticeRequestRef.current.requestId,
       });
-      params.setNoticeResult("お知らせを登録しました。");
+      noticeRequestRef.current = null;
+      params.setNoticeResult("お知らせを登録しました。Google Chat通知は公開時刻以降に送信されます。");
       params.setNoticeTitle("");
       params.setNoticeBody("");
-      await params.onRefresh();
+      await params.onRefresh().catch(() => params.setErrorMessage("お知らせは登録済みです。一覧の再読込だけ行ってください。再登録は不要です。"));
     } catch (error) {
       params.setNoticeResult(error instanceof Error ? error.message : "お知らせ登録に失敗しました。");
+      throw error;
+    } finally {
+      noticeInFlightRef.current = false;
     }
   }
 
@@ -121,31 +134,31 @@ export function useAdminUtilityActions(params: UseAdminUtilityActionsParams) {
     }
   }
 
-  async function handleMonthlyAttendanceCsvDownload(targetMonth: string) {
+  async function handleMonthlyAttendanceCsvDownload(targetMonth: string, filters?: { employeeCode?: string; departmentName?: string }) {
     try {
-      await downloadMonthlyAttendanceCsv(targetMonth);
-      params.setReportResult(`月次集計CSVを出力しました。対象月: ${targetMonth}`);
-      await params.onRefresh();
+      await downloadMonthlyAttendanceCsv(targetMonth, filters);
+      params.setReportResult(`月次集計CSVのダウンロードを開始しました。対象月: ${targetMonth}`);
+      await params.onRefresh().catch(() => params.setErrorMessage("ダウンロードは開始しましたが、履歴の再読込に失敗しました。"));
     } catch (error) {
       params.setReportResult(error instanceof Error ? error.message : "月次集計CSVの出力に失敗しました。");
     }
   }
 
-  async function handleDailyAttendanceCsvDownload(from: string, to: string) {
+  async function handleDailyAttendanceCsvDownload(from: string, to: string, filters?: { employeeCode?: string; departmentName?: string }) {
     try {
-      await downloadDailyAttendanceCsv(from, to);
-      params.setReportResult(`日次勤怠CSVを出力しました。対象期間: ${from} - ${to}`);
-      await params.onRefresh();
+      await downloadDailyAttendanceCsv(from, to, filters);
+      params.setReportResult(`日次勤怠CSVのダウンロードを開始しました。対象期間: ${from} - ${to}`);
+      await params.onRefresh().catch(() => params.setErrorMessage("ダウンロードは開始しましたが、履歴の再読込に失敗しました。"));
     } catch (error) {
       params.setReportResult(error instanceof Error ? error.message : "日次勤怠CSVの出力に失敗しました。");
     }
   }
 
-  async function handleDailyAttendancePdfDownload(targetMonth: string) {
+  async function handleDailyAttendancePdfDownload(targetMonth: string, filters?: { employeeCode?: string; departmentName?: string }) {
     try {
-      await downloadDailyAttendancePdf(targetMonth);
-      params.setReportResult(`日次勤怠PDFを出力しました。対象月: ${targetMonth}`);
-      await params.onRefresh();
+      await downloadDailyAttendancePdf(targetMonth, filters);
+      params.setReportResult(`日次勤怠PDFのダウンロードを開始しました。対象月: ${targetMonth}`);
+      await params.onRefresh().catch(() => params.setErrorMessage("ダウンロードは開始しましたが、履歴の再読込に失敗しました。"));
     } catch (error) {
       params.setReportResult(error instanceof Error ? error.message : "日次勤怠PDFの出力に失敗しました。");
     }
@@ -160,8 +173,8 @@ export function useAdminUtilityActions(params: UseAdminUtilityActionsParams) {
 
     try {
       await downloadMonthlyWorksPdf(employeeId, params.reportMonth);
-      params.setReportResult("月次勤務PDFを出力しました。");
-      await params.onRefresh();
+      params.setReportResult("月次勤務PDFのダウンロードを開始しました。");
+      await params.onRefresh().catch(() => params.setErrorMessage("ダウンロードは開始しましたが、履歴の再読込に失敗しました。"));
     } catch (error) {
       params.setReportResult(error instanceof Error ? error.message : "月次勤務PDFの出力に失敗しました。");
     }

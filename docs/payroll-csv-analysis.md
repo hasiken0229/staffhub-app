@@ -2,7 +2,7 @@
 
 ## 対象ファイル
 - 給与: `r8.2kyuyo.csv`
-- 賞与: `r8.3syoyo.csv`
+- 賞与: `sample-bonus.csv`
 
 ## 文字コード
 - `cp932` で正常に読める

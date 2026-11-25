@@ -81,6 +81,12 @@ final class CardAssignmentService
             if ($employee === null) {
                 throw new ApiException('EMPLOYEE_NOT_FOUND', '職員が見つかりません。', 404);
             }
+            $today = now()->toDateString();
+            if (strtoupper((string) $employee->status) !== 'ACTIVE'
+                || $today < (string) $employee->joined_on
+                || (!empty($employee->retired_on) && $today > (string) $employee->retired_on)) {
+                throw new ApiException('EMPLOYEE_NOT_EMPLOYED', '現在在籍している職員にのみカードを登録できます。', 403);
+            }
 
             $existing = DB::table('employee_cards')
                 ->where('employee_id', $employeeId)

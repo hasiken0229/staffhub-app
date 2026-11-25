@@ -13,7 +13,10 @@ use Illuminate\Support\Str;
 final class AuthService
 {
     private const ACCESS_MINUTES = 8 * 60;
+
     private const REFRESH_DAYS = 30;
+    private const INITIAL_CHANGE_MINUTES = 10;
+    private const INITIAL_CHANGE_KIND = 'INITIAL_PASSWORD';
 
     public function login(array $payload): array
     {
@@ -21,7 +24,7 @@ final class AuthService
         $loginId = trim((string) $payload['loginId']);
         $password = (string) $payload['password'];
 
-        if (!in_array($audience, ['AUTO', 'EMPLOYEE', 'ADMIN'], true)) {
+        if (! in_array($audience, ['AUTO', 'EMPLOYEE', 'ADMIN'], true)) {
             throw new ApiException('VALIDATION_ERROR', 'audience は AUTO / EMPLOYEE / ADMIN を指定してください。', 422, [
                 ['field' => 'audience', 'message' => 'EMPLOYEE または ADMIN を指定してください。'],
             ]);
@@ -34,6 +37,10 @@ final class AuthService
                 default => $this->resolveAuto($loginId, $password),
             };
 
+            if ($identity['mustChangePassword'] ?? false) {
+                return $this->issueInitialPasswordChallenge($identity['tokenableId']);
+            }
+
             return $this->issueTokenPair(
                 $identity['tokenableType'],
                 $identity['tokenableId'],
@@ -44,17 +51,75 @@ final class AuthService
         });
     }
 
+    private function issueInitialPasswordChallenge(int $adminId): array
+    {
+        // Login holds this user's row lock. A later login replaces the earlier challenge.
+        DB::table('api_access_tokens')->where('tokenable_type', 'ADMIN')->where('tokenable_id', $adminId)->delete();
+        $plain = $this->generateToken('ipc');
+        $now = CarbonImmutable::now();
+        DB::table('api_access_tokens')->insert([
+            'tokenable_type' => 'ADMIN', 'tokenable_id' => $adminId, 'role' => 'ADMIN',
+            'token_kind' => self::INITIAL_CHANGE_KIND, 'token_hash' => hash('sha256', $plain),
+            'pair_key' => (string) Str::uuid(), 'expires_at' => $now->addMinutes(self::INITIAL_CHANGE_MINUTES),
+            'created_at' => $now, 'updated_at' => $now,
+        ]);
+
+        return ['requiresPasswordChange' => true, 'passwordChangeToken' => $plain, 'expiresInSeconds' => self::INITIAL_CHANGE_MINUTES * 60];
+    }
+
+    public function completeInitialPasswordChange(string $plain, string $password): array
+    {
+        $expired = static fn () => new ApiException('PASSWORD_CHANGE_EXPIRED', '初回変更の期限が切れたか、すでに使用されています。もう一度ログインしてください。', 401);
+        $challenge = DB::table('api_access_tokens')->where('token_hash', hash('sha256', $plain))
+            ->where('tokenable_type', 'ADMIN')->where('token_kind', self::INITIAL_CHANGE_KIND);
+        $adminId = (clone $challenge)->value('tokenable_id');
+        if ($adminId === null) throw $expired();
+
+        return DB::transaction(function () use ($adminId, $challenge, $password, $expired) {
+            // Lock the user before their challenge, in the same order as login.
+            $admin = DB::table('users')->where('id', $adminId)->lockForUpdate()->first();
+            $token = $challenge->where('tokenable_id', $adminId)->lockForUpdate()->first();
+            if (!$admin || !$admin->must_change_password || !$token || CarbonImmutable::parse($token->expires_at)->lessThanOrEqualTo(now())) {
+                throw $expired();
+            }
+            if (str_contains($password, "\0") || (config('hashing.driver', 'bcrypt') === 'bcrypt' && strlen($password) > 72)) {
+                throw new ApiException('VALIDATION_ERROR', 'パスワードは72バイト以内で指定してください。', 422, [['field' => 'password', 'message' => '使用できない文字または長すぎるパスワードです。']]);
+            }
+            if (Hash::check($password, $admin->password)) {
+                throw new ApiException('VALIDATION_ERROR', '仮パスワードと異なるパスワードを入力してください。', 422, [
+                    ['field' => 'password', 'message' => '仮パスワードと異なるパスワードを入力してください。'],
+                ]);
+            }
+            DB::table('users')->where('id', $adminId)->update([
+                'password' => Hash::make($password), 'must_change_password' => false, 'updated_at' => now(),
+            ]);
+            DB::table('api_access_tokens')->where('tokenable_type', 'ADMIN')->where('tokenable_id', $adminId)->delete();
+            $user = $this->resolvePrincipal('ADMIN', (int) $adminId);
+            return $this->issueTokenPair('ADMIN', (int) $adminId, 'ADMIN', $user, $this->serializeUser($user));
+        }, 3);
+    }
+
     public function refresh(string $refreshToken): array
     {
-        $token = $this->findToken($refreshToken, 'REFRESH');
-        if ($token === null) {
-            throw new ApiException('UNAUTHORIZED', 'リフレッシュトークンが無効です。', 401);
-        }
+        return DB::transaction(function () use ($refreshToken) {
+            // Read the single-use token only while holding its row lock. A second
+            // connection must see the first rotation's deletion before issuing a pair.
+            $token = DB::table('api_access_tokens')
+                ->where('token_hash', hash('sha256', trim($refreshToken)))
+                ->where('token_kind', 'REFRESH')
+                ->lockForUpdate()
+                ->first();
+            if ($token === null || CarbonImmutable::parse($token->expires_at)->lessThanOrEqualTo(now())) {
+                throw new ApiException('UNAUTHORIZED', 'リフレッシュトークンが無効です。', 401);
+            }
 
-        return DB::transaction(function () use ($token) {
             $user = $this->resolvePrincipal((string) $token->tokenable_type, (int) $token->tokenable_id);
             if ($user === null) {
-                throw new ApiException('UNAUTHORIZED', '利用者が見つかりません。', 401);
+                DB::table('api_access_tokens')
+                    ->where('pair_key', $token->pair_key)
+                    ->delete();
+
+                throw new ApiException('UNAUTHORIZED', '利用者が無効です。ログインし直してください。', 401);
             }
 
             DB::table('api_access_tokens')
@@ -68,7 +133,7 @@ final class AuthService
                 $user,
                 $this->serializeUser($user)
             );
-        });
+        }, 3);
     }
 
     public function logout(?string $accessToken): void
@@ -98,6 +163,15 @@ final class AuthService
             return null;
         }
 
+        $user = $this->resolvePrincipal((string) $token->tokenable_type, (int) $token->tokenable_id);
+        if ($user === null) {
+            DB::table('api_access_tokens')
+                ->where('pair_key', $token->pair_key)
+                ->delete();
+
+            return null;
+        }
+
         DB::table('api_access_tokens')
             ->where('id', $token->id)
             ->update([
@@ -105,7 +179,7 @@ final class AuthService
                 'updated_at' => now(),
             ]);
 
-        return $this->resolvePrincipal((string) $token->tokenable_type, (int) $token->tokenable_id);
+        return $user;
     }
 
     public function me(GenericUser $user): array
@@ -141,7 +215,7 @@ final class AuthService
                 '心当たりがない場合は、このメールを破棄してください。',
             ],
             [
-                '対象職員' => trim((string) $employee->employee_code . ' ' . (string) $employee->name),
+                '対象職員' => trim((string) $employee->employee_code.' '.(string) $employee->name),
             ],
         ));
     }
@@ -152,7 +226,7 @@ final class AuthService
         $resetToken = DB::table('password_reset_tokens')->where('email', $email)->first();
         if (
             $resetToken === null ||
-            !Hash::check($token, (string) $resetToken->token) ||
+            ! Hash::check($token, (string) $resetToken->token) ||
             CarbonImmutable::parse((string) $resetToken->created_at)->lt(CarbonImmutable::now()->subMinutes(60))
         ) {
             throw new ApiException('VALIDATION_ERROR', '再設定URLが無効または期限切れです。', 422, [
@@ -196,9 +270,10 @@ final class AuthService
                 'linked_employee.status as linked_employee_status',
             ])
             ->where('email', $loginId)
+            ->lockForUpdate()
             ->first();
 
-        if ($admin === null || !Hash::check($password, (string) $admin->password)) {
+        if ($admin === null || ! Hash::check($password, (string) $admin->password)) {
             throw new ApiException('UNAUTHORIZED', 'ログインIDまたはパスワードが正しくありません。', 401);
         }
 
@@ -208,6 +283,7 @@ final class AuthService
         return [
             'tokenableType' => 'ADMIN',
             'tokenableId' => (int) $admin->id,
+            'mustChangePassword' => (bool) $admin->must_change_password,
             'role' => 'ADMIN',
             'user' => new GenericUser([
                 'id' => (int) $admin->id,
@@ -247,7 +323,7 @@ final class AuthService
             ->where('ea.login_id', $loginId)
             ->first();
 
-        if ($employee === null || !Hash::check($password, (string) $employee->password_hash)) {
+        if ($employee === null || ! Hash::check($password, (string) $employee->password_hash)) {
             throw new ApiException('UNAUTHORIZED', 'ログインIDまたはパスワードが正しくありません。', 401);
         }
 
@@ -289,8 +365,7 @@ final class AuthService
         string $role,
         GenericUser $user,
         array $userPayload
-    ): array
-    {
+    ): array {
         $pairKey = (string) Str::uuid();
         $accessToken = $this->generateToken('atk');
         $refreshToken = $this->generateToken('rtk');
@@ -371,7 +446,7 @@ final class AuthService
                 ])
                 ->where('users.id', $tokenableId)
                 ->first();
-            if ($admin === null) {
+            if ($admin === null || $admin->must_change_password) {
                 return null;
             }
 
@@ -391,7 +466,10 @@ final class AuthService
         }
 
         if ($tokenableType === 'EMPLOYEE') {
-            $employee = DB::table('employees')->where('id', $tokenableId)->first();
+            $employee = DB::table('employees')
+                ->where('id', $tokenableId)
+                ->where('status', 'ACTIVE')
+                ->first();
             if ($employee === null) {
                 return null;
             }
@@ -410,7 +488,7 @@ final class AuthService
 
     private function generateToken(string $prefix): string
     {
-        return $prefix . '_' . Str::random(64);
+        return $prefix.'_'.Str::random(64);
     }
 
     private function normalizeEmail(string $value): string
@@ -430,17 +508,20 @@ final class AuthService
 
     private function buildEmployeePasswordResetUrl(string $email, string $token): string
     {
-        $origin = request()?->headers->get('origin');
-        if ($origin === null || trim($origin) === '') {
-            $origin = (string) config('app.url');
+        $configuredUrl = trim((string) config('app.url'));
+        $configured = parse_url($configuredUrl);
+        if (
+            $configured === false ||
+            ! isset($configured['scheme'], $configured['host']) ||
+            ! in_array(strtolower((string) $configured['scheme']), ['http', 'https'], true)
+        ) {
+            throw new ApiException('CONFIGURATION_ERROR', 'パスワード再設定URLのAPP_URL設定が不正です。', 500);
         }
 
-        $originUrl = rtrim($origin, '/');
-        if (str_contains($originUrl, '/dakoku')) {
-            $originUrl = preg_replace('#/dakoku.*$#', '', $originUrl) ?? $originUrl;
-        }
+        $port = isset($configured['port']) ? ':'.$configured['port'] : '';
+        $originUrl = strtolower((string) $configured['scheme']).'://'.$configured['host'].$port;
 
-        return $originUrl . '/dakoku/login/?' . http_build_query([
+        return $originUrl.'/dakoku/login/?'.http_build_query([
             'email' => $email,
             'resetToken' => $token,
         ]);

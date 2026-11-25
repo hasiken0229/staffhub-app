@@ -112,7 +112,9 @@ export function useSystemActions(params: UseSystemActionsParams) {
         await saveLeaveTypeSetting({
           code: readString(formData, "code"),
           name: readString(formData, "name"),
-          requiresBalance: readBoolean(formData, "requiresBalance"),
+          requiresBalance: readString(formData, "balanceSource") === "PAID",
+          balanceSource: readString(formData, "balanceSource"),
+          attendanceEffect: readString(formData, "attendanceEffect"),
           allowsHalfDay: readBoolean(formData, "allowsHalfDay"),
           sortOrder: readNumber(formData, "sortOrder"),
           isActive: readBoolean(formData, "isActive"),

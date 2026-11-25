@@ -22,6 +22,13 @@ final class ReportAdminController extends Controller
         return ApiResponse::ok($this->reportService->hubSummary());
     }
 
+    public function roundingReview(Request $request)
+    {
+        $payload=$request->validate(['targetMonth'=>['required','date_format:Y-m'],'employeeId'=>['nullable','integer','min:1']]);
+        return ApiResponse::ok(app(\App\Services\Reports\AttendanceRoundingReviewService::class)
+            ->review($payload['targetMonth'],isset($payload['employeeId']) ? (int)$payload['employeeId'] : null));
+    }
+
     public function todayAttendance(Request $request)
     {
         $result = $this->reportService->todayAttendance($request->only(['targetDate']));
@@ -52,9 +59,8 @@ final class ReportAdminController extends Controller
             'targetMonth' => ['required', 'string', 'size:7'],
         ]);
 
-        $csv = $this->reportService->exportMonthlyAttendanceCsv((string) $request->query('targetMonth'));
+        $csv = $this->reportService->exportMonthlyAttendanceCsv((string) $request->query('targetMonth'), $request->only(['employeeCode','departmentName']), $rowCount);
         $fileName = 'attendance_monthly_' . $request->query('targetMonth') . '.csv';
-        $rowCount = max(0, substr_count($csv, "\n") - 1);
 
         $this->importHistoryService->storeAndRecord(
             'MONTHLY_ATTENDANCE_CSV',
@@ -79,30 +85,29 @@ final class ReportAdminController extends Controller
 
     public function dailyCsv(Request $request)
     {
-        $request->validate([
+        $dates = $request->validate([
             'from' => ['required', 'date'],
-            'to' => ['required', 'date'],
+            'to' => ['required', 'date', 'after_or_equal:from'],
         ]);
 
-        $csv = $this->reportService->exportDailyAttendanceCsv($request->only([
-            'from',
-            'to',
-            'employeeCode',
-        ]));
-        $fileName = 'attendance_daily_' . $request->query('from') . '_' . $request->query('to') . '.csv';
-        $rowCount = max(0, substr_count($csv, "\n") - 1);
+        $from = \Carbon\CarbonImmutable::parse($dates['from'])->toDateString();
+        $to = \Carbon\CarbonImmutable::parse($dates['to'])->toDateString();
+        $csv = $this->reportService->exportDailyAttendanceCsv([
+            ...$request->only(['employeeCode', 'departmentName']), 'from' => $from, 'to' => $to,
+        ], $rowCount);
+        $fileName = 'attendance_daily_' . $from . '_' . $to . '.csv';
 
         $this->importHistoryService->storeAndRecord(
             'DAILY_ATTENDANCE_CSV',
             $fileName,
-            (string) $request->query('from') . '_' . (string) $request->query('to'),
+            $from . '_' . $to,
             null,
             $rowCount,
             $rowCount,
             0,
             [
-                'from' => (string) $request->query('from'),
-                'to' => (string) $request->query('to'),
+                'from' => $from,
+                'to' => $to,
                 'employeeCode' => $request->query('employeeCode'),
                 'rowCount' => $rowCount,
             ],
@@ -124,7 +129,7 @@ final class ReportAdminController extends Controller
             'targetMonth' => ['required', 'string', 'size:7'],
         ]);
 
-        $pdfBinary = $this->reportService->exportDailyAttendancePdf((string) $request->query('targetMonth'));
+        $pdfBinary = $this->reportService->exportDailyAttendancePdf((string) $request->query('targetMonth'), $request->only(['employeeCode','departmentName']));
         $fileName = 'attendance_daily_' . $request->query('targetMonth') . '.pdf';
 
         $this->importHistoryService->storeAndRecord(

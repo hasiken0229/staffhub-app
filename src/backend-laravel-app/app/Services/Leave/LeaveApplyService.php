@@ -3,15 +3,14 @@
 namespace App\Services\Leave;
 
 use App\Services\ApiException;
+use App\Services\Attendance\MonthMutationLock;
 use App\Services\NotificationMailService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 final class LeaveApplyService extends LeaveRequestSupport
 {
-    public function __construct(private readonly LeaveLedgerService $ledgerService)
-    {
-    }
+    public function __construct(private readonly LeaveLedgerService $ledgerService) {}
 
     public function listForEmployee(int $employeeId, array $filters): array
     {
@@ -24,12 +23,12 @@ final class LeaveApplyService extends LeaveRequestSupport
                 'lr.id',
                 'lr.employee_id',
                 'lr.leave_type_code',
-                'lt.name as leave_type_name',
+                DB::raw('COALESCE(lr.attendance_label, lt.name) as leave_type_name'),
                 'lr.start_date',
                 'lr.end_date',
                 'lr.day_unit',
                 'lr.half_day_type',
-                'lr.quantity_days',
+                'lr.quantity_days', 'lr.hourly_day_minutes', 'lr.effective_dates',
                 'lr.request_category',
                 'lr.time_leave_type',
                 'lr.target_date',
@@ -45,16 +44,16 @@ final class LeaveApplyService extends LeaveRequestSupport
             ])
             ->where('lr.employee_id', $employeeId);
 
-        if (!empty($filters['status'])) {
+        if (! empty($filters['status'])) {
             $query->where('lr.status', strtoupper((string) $filters['status']));
         }
 
-        if (!empty($filters['from'])) {
-            $query->whereDate('lr.start_date', '>=', $filters['from']);
+        if (! empty($filters['from'])) {
+            $query->whereDate('lr.end_date', '>=', $filters['from']);
         }
 
-        if (!empty($filters['to'])) {
-            $query->whereDate('lr.end_date', '<=', $filters['to']);
+        if (! empty($filters['to'])) {
+            $query->whereDate('lr.start_date', '<=', $filters['to']);
         }
 
         $total = (clone $query)->count();
@@ -82,13 +81,49 @@ final class LeaveApplyService extends LeaveRequestSupport
         $quantityDays = $validated['quantityDays'];
 
         return DB::transaction(function () use ($employeeId, $payload, $validated, $type, $startDate, $endDate, $quantityDays) {
-            if ((bool) $type->requires_balance) {
-                $available = $this->ledgerService->calculateAvailablePaidLeave($employeeId);
-                if ($available + 0.0001 < $quantityDays) {
-                    throw new ApiException('INSUFFICIENT_PAID_LEAVE', '有給残数が不足しています。', 422, [
-                        ['field' => 'leaveTypeCode', 'message' => '有給残数が不足しています。'],
-                    ]);
+            MonthMutationLock::acquire(MonthMutationLock::months($startDate->toDateString(), $endDate->toDateString()));
+            DB::table('employees')->where('id', $employeeId)->lockForUpdate()->first();
+            $type = DB::table('leave_types')->where('code', $type->code)->lockForUpdate()->first();
+            if (!$type || !$type->is_active || ($validated['dayUnit'] === 'HALF' && !$type->allows_half_day)) {
+                throw new ApiException('LEAVE_TYPE_CHANGED', '休暇区分の設定が変更されました。再読込してください。', 409);
+            }
+            $effect = $type->attendance_effect ?? (in_array($type->code, ['PAID', 'ABSENCE', 'SPECIAL'], true) ? $type->code : null);
+            if ($effect === null) {
+                throw new ApiException('LEAVE_TYPE_UNCONFIGURED', 'この休暇区分は勤怠への反映方法が未設定です。管理者に確認してください。', 422);
+            }
+            $dates = null;
+            if ($validated['requestCategory'] === 'LEAVE' && ($type->requires_balance || $type->code === 'PAID')) {
+                $plan = LeaveWorkdays::preview($employeeId, $startDate->toDateString(), $endDate->toDateString());
+                $dates = $plan['dates'];
+                if ($dates === []) {
+                    throw new ApiException('NO_LEAVE_WORKDAY', '対象期間はすべて個人の公休日です。', 422);
                 }
+                if (isset($payload['expectedDates']) && $payload['expectedDates'] !== $dates) {
+                    throw new ApiException('LEAVE_DATES_CHANGED', '対象勤務日が変わりました。申請日を再確認してください。', 409);
+                }
+                $quantityDays = $validated['dayUnit'] === 'HALF' ? 0.5 : count($dates);
+            }
+            $encodedDates = $dates === null ? null : json_encode($dates, JSON_THROW_ON_ERROR);
+            $hourlyBasis = null;
+            $this->assertNoOverlappingLeave($employeeId, (object) [
+                'effective_dates' => $encodedDates,
+                'start_date' => $startDate->toDateString(), 'end_date' => $endDate->toDateString(),
+                'request_category' => $validated['requestCategory'], 'start_time' => $validated['startTime'], 'end_time' => $validated['endTime'],
+                'quantity_minutes' => $validated['quantityMinutes'],
+            ]);
+            if ($validated['timeLeaveType'] === 'PAID_HOURLY') {
+                app(HourlyPaidLeaveService::class)->assertAvailable($employeeId, $startDate->toDateString(), (int) $validated['quantityMinutes']);
+                if (app(HourlyPaidLeaveService::class)->balance($employeeId, $startDate->toDateString()) !== null) {
+                    $quantityDays = 0; // Separately granted hours do not also consume days.
+                } else {
+                    $hourlyBasis = $validated['standardDayMinutes'];
+                    $quantityDays = $validated['quantityMinutes'] / $hourlyBasis;
+                }
+            }
+            $balanceSource = $validated['requestCategory'] === 'TIME_LEAVE'
+                ? ($hourlyBasis ? 'PAID' : 'NONE') : (($type->code === 'PAID' || $type->requires_balance) ? 'PAID' : 'NONE');
+            if ($balanceSource === 'PAID') {
+                $this->ledgerService->assertPaidLeaveAvailable($employeeId, $startDate->toDateString(), $endDate->toDateString(), $quantityDays, null, $dates, $hourlyBasis, $validated['quantityMinutes']);
             }
 
             $requestId = (int) DB::table('leave_requests')->insertGetId([
@@ -98,7 +133,12 @@ final class LeaveApplyService extends LeaveRequestSupport
                 'end_date' => $endDate->toDateString(),
                 'day_unit' => $validated['dayUnit'],
                 'half_day_type' => isset($payload['halfDayType']) ? strtoupper((string) $payload['halfDayType']) : null,
-                'quantity_days' => $quantityDays,
+                'quantity_days' => round($quantityDays, 2),
+                'effective_dates' => $encodedDates,
+                'attendance_effect' => $effect,
+                'attendance_label' => $type->name,
+                'balance_source' => $balanceSource,
+                'hourly_day_minutes' => $hourlyBasis,
                 'request_category' => $validated['requestCategory'],
                 'time_leave_type' => $validated['timeLeaveType'],
                 'target_date' => $validated['targetDate']?->toDateString(),
@@ -147,6 +187,7 @@ final class LeaveApplyService extends LeaveRequestSupport
                 'id' => $requestId,
                 'status' => 'PENDING',
                 'quantityDays' => $quantityDays,
+                'effectiveDates' => $dates,
                 'createdAt' => now()->toIso8601String(),
             ];
         });
@@ -162,10 +203,20 @@ final class LeaveApplyService extends LeaveRequestSupport
         return $this->mapLeaveDetail($request);
     }
 
+    public function standardDayMinutesForEmployee(int $employeeId, ?string $targetDate = null): int
+    {
+        return $this->standardDayMinutes(
+            $employeeId,
+            $targetDate ? CarbonImmutable::parse($targetDate) : null,
+        );
+    }
 
     public function cancelForEmployee(int $employeeId, int $requestId, ?string $comment = null): array
     {
-        return DB::transaction(function () use ($employeeId, $requestId, $comment) {
+        $months = MonthMutationLock::forRecord('leave_requests', $requestId, 'start_date', 'end_date');
+        return DB::transaction(function () use ($months, $employeeId, $requestId, $comment) {
+            MonthMutationLock::acquire($months);
+            DB::table('employees')->where('id', $employeeId)->lockForUpdate()->first();
             $request = DB::table('leave_requests')
                 ->where('id', $requestId)
                 ->lockForUpdate()
@@ -175,11 +226,15 @@ final class LeaveApplyService extends LeaveRequestSupport
                 throw new ApiException('NOT_FOUND', '休暇申請が見つかりません。', 404);
             }
 
-            if (!in_array($request->status, ['PENDING', 'RETURNED', 'APPROVED'], true)) {
+            if (! in_array($request->status, ['PENDING', 'RETURNED', 'APPROVED'], true)) {
                 throw new ApiException('VALIDATION_ERROR', 'この休暇申請は取消できません。', 422);
             }
 
             $this->assertRequestMonthOpen($request);
+            $wasApproved = $request->status === 'APPROVED';
+            if ($wasApproved) {
+                app(LeaveAttendanceProjection::class)->prepare($employeeId, LeaveWorkdays::dates($request));
+            }
 
             DB::table('leave_requests')
                 ->where('id', $requestId)
@@ -200,7 +255,7 @@ final class LeaveApplyService extends LeaveRequestSupport
             ]);
 
             $this->ledgerService->recalculatePaidLeaveUsage($employeeId);
-            $this->syncAttendanceDailyFromApprovedLeaves($employeeId);
+            if ($wasApproved) { app(LeaveAttendanceProjection::class)->sync($employeeId, LeaveWorkdays::dates($request)); }
             $this->ledgerService->syncPaidLeaveLedger($employeeId);
 
             $this->addAudit('EMPLOYEE', $employeeId, 'LEAVE_REQUEST_CANCELLED', 'LEAVE_REQUEST', (string) $requestId, [
@@ -214,5 +269,4 @@ final class LeaveApplyService extends LeaveRequestSupport
             ];
         });
     }
-
 }

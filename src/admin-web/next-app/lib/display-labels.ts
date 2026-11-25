@@ -5,6 +5,7 @@ const CODE_LABELS: Record<string, string> = {
   SYSTEM: "システム",
   CARD: "カード",
   CARD_ASSIGNED: "カード割当",
+  CARD_ASSIGNED_FROM_DEVICE: "端末からカード割当",
   CARD_REVOKED: "カード解除",
   ATTENDANCE_ACCEPTED: "打刻受付",
   ATTENDANCE_REJECTED: "打刻拒否",
@@ -36,6 +37,10 @@ const CODE_LABELS: Record<string, string> = {
   NOTICE_TARGETED: "個別お知らせ",
   NOTICE_ALL_STAFF: "全職員お知らせ",
   PAYROLL_STATEMENT: "給与明細",
+  PAYROLL_NOTIFICATION: "給与公開通知",
+  PAYROLL_NOTIFICATION_QUEUED: "給与公開通知の予約",
+  PAYROLL_NOTIFICATION_SENT: "給与公開通知の送信成功",
+  PAYROLL_NOTIFICATION_INCOMPLETE: "給与公開通知の送信未完了",
   PAYROLL_STATEMENT_UPSERT: "給与明細登録",
   PAYROLL_STATEMENT_DELETE: "給与明細削除",
   PAYROLL_VIEWED: "給与明細閲覧",
@@ -66,6 +71,8 @@ const CODE_LABELS: Record<string, string> = {
   CARD_READER: "カード読取",
   CARD_NOT_REGISTERED: "未登録カード",
   PENDING: "承認待ち",
+  NOT_REQUIRED: "承認不要",
+  NOT_DUE: "勤務中・予定",
   APPROVED: "承認済み",
   RETURNED: "差戻し",
   REJECTED: "却下",
@@ -84,6 +91,10 @@ const DETAIL_KEY_LABELS: Record<string, string> = {
   employeeCode: "職員番号",
   employee_name: "職員名",
   employeeName: "職員名",
+  device_name: "端末名",
+  deviceName: "端末名",
+  card_name: "カード名",
+  cardName: "カード名",
   card_uid: "カード番号",
   cardUid: "カード番号",
   old_value: "変更前",
@@ -131,6 +142,22 @@ export function formatDisplayCode(value?: string | null) {
 export function formatAuditActor(actorType?: string | null, actorId?: number | null) {
   const label = formatDisplayCode(actorType);
   return actorId == null ? label : `${label} #${actorId}`;
+}
+
+export function formatAuditTarget(
+  targetType: string,
+  targetId?: string | null,
+  detailJson?: Record<string, unknown> | null,
+) {
+  const detail = detailJson ?? {};
+  const targetName = ["employeeName", "employee_name", "deviceName", "device_name", "cardName", "card_name", "name"]
+    .map((key) => detail[key])
+    .find((value): value is string => typeof value === "string" && value.trim() !== "")
+    ?.trim();
+  const identity = targetName
+    ? `${targetName}${targetId ? ` (#${targetId})` : ""}`
+    : targetId ?? "対象情報なし";
+  return `${formatDisplayCode(targetType)} / ${identity}`;
 }
 
 export function formatAuditDetail(detailJson?: Record<string, unknown> | null, fallback?: string | null) {
@@ -216,7 +243,7 @@ function fallbackCodeLabel(value: string) {
     .map((token) => tokenLabels[token] ?? "")
     .join("");
 
-  return label || "未分類";
+  return label || `その他（${value}）`;
 }
 
 function flattenDetail(value: Record<string, unknown>, prefix = ""): Record<string, unknown> {

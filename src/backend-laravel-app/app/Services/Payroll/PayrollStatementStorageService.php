@@ -5,6 +5,7 @@ namespace App\Services\Payroll;
 use App\Services\ApiException;
 use App\Services\ImportHistoryService;
 use App\Services\NoticeService;
+use App\Services\TransactionFileGuard;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\GenericUser;
 use Illuminate\Http\UploadedFile;
@@ -23,6 +24,11 @@ final class PayrollStatementStorageService
     }
 
     public function storeForAdmin(array $payload, UploadedFile $file, GenericUser $actor): array
+    {
+        return DB::transaction(fn () => $this->storeForAdminWithHistory($payload, $file, $actor));
+    }
+
+    private function storeForAdminWithHistory(array $payload, UploadedFile $file, GenericUser $actor): array
     {
         $employeeId = (int) $payload['employeeId'];
         $statementType = strtoupper((string) ($payload['statementType'] ?? 'PAYROLL'));
@@ -112,8 +118,6 @@ final class PayrollStatementStorageService
             Str::random(8)
         );
 
-        Storage::disk('local')->put($storagePath, $binaryContent);
-
         return DB::transaction(function () use (
             $employeeId,
             $employee,
@@ -128,13 +132,24 @@ final class PayrollStatementStorageService
             $actor,
             $options
         ) {
+            app(TransactionFileGuard::class)->trackLocal($storagePath);
+            if (!Storage::disk('local')->put($storagePath, $binaryContent)) {
+                throw new ApiException('FILE_UPLOAD_ERROR', '給与PDFの保存に失敗しました。登録は行っていません。', 500);
+            }
+            if (!TransactionFileGuard::streamMatches(Storage::disk('local')->readStream($storagePath), $binaryContent)) {
+                throw new ApiException('FILE_UPLOAD_ERROR', '給与PDFの保存内容を確認できませんでした。登録は行っていません。', 500);
+            }
+            DB::table('employees')->where('id', $employeeId)->lockForUpdate()->first();
             $existing = DB::table('payroll_statements')
                 ->where('employee_id', $employeeId)
                 ->where('statement_type', $statementType)
                 ->where('target_year_month', $targetYearMonth)
+                ->lockForUpdate()
                 ->first();
 
             $attributes = [
+                'revision' => $existing === null ? 1 : ((int) $existing->revision + 1),
+                'replaced_at' => $existing === null ? null : now(),
                 'employee_id' => $employeeId,
                 'statement_type' => $statementType,
                 'target_year_month' => $targetYearMonth,
@@ -169,7 +184,21 @@ final class PayrollStatementStorageService
             } else {
                 $statementId = (int) $existing->id;
                 if (!empty($existing->file_path) && Storage::disk('local')->exists($existing->file_path)) {
-                    Storage::disk('local')->delete($existing->file_path);
+                    $oldPath = $existing->file_path;
+                    DB::afterCommit(static function () use ($oldPath): void {
+                        // Cleanup failure must never turn a committed registration into a failed response.
+                        try {
+                            if (!DB::table('payroll_statements')->where('file_path', $oldPath)->exists()
+                                && !Storage::disk('local')->delete($oldPath)) {
+                                TransactionFileGuard::logCleanupWarning('Old payroll file cleanup requires review.', ['reference' => hash('sha256', $oldPath)]);
+                            }
+                        }
+                        catch (\Throwable $error) {
+                            TransactionFileGuard::logCleanupWarning('Old payroll file cleanup deferred.', [
+                                'reference' => hash('sha256', $oldPath), 'errorType' => get_class($error),
+                            ]);
+                        }
+                    });
                 }
 
                 DB::table('payroll_statements')
@@ -183,6 +212,8 @@ final class PayrollStatementStorageService
                 $targetYearMonth,
                 $statementId,
                 $uploaderEmployeeId,
+                $publishedAt,
+                $storagePath,
             );
 
             $this->addAudit(
@@ -200,6 +231,8 @@ final class PayrollStatementStorageService
                     'payDate' => $attributes['pay_date'],
                     'periodStartOn' => $attributes['period_start_on'],
                     'periodEndOn' => $attributes['period_end_on'],
+                    'revision' => $attributes['revision'],
+                    'previousRevision' => $existing === null ? null : (int) $existing->revision,
                 ]
             );
 
@@ -216,6 +249,9 @@ final class PayrollStatementStorageService
                 'periodEndOn' => $attributes['period_end_on'],
                 'originalFileName' => $originalFileName,
                 'publishedAt' => $publishedAt->toIso8601String(),
+                'notificationStatus' => $publishedAt->isFuture() ? 'SCHEDULED' : 'QUEUED',
+                'revision' => $attributes['revision'],
+                'replacedAt' => $attributes['replaced_at']?->toIso8601String(),
             ];
         });
     }

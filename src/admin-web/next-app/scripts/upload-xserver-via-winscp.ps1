@@ -4,7 +4,7 @@ param(
 
     [string]$WinScpPath = "C:\Program Files (x86)\WinSCP\WinSCP.com",
 
-    [string]$RemoteRoot = "/home/iwakaba/ikegami-wakaba.jp/public_html/dakoku",
+    [string]$RemoteRoot = "/home/deploy/attendance.example.org/public_html/dakoku",
 
     [switch]$SkipPrepare,
 

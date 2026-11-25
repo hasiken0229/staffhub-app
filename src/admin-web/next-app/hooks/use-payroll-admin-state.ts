@@ -1,11 +1,10 @@
 import { useState } from "react";
 import {
-  currentDateValue,
   currentMonthEndValue,
   currentMonthStartValue,
   currentMonthValue,
-  nextMonthDateValue,
 } from "@/lib/date-defaults";
+import { payrollDateDefaults, previousDateValue } from "@/lib/payroll-dates";
 import type { PayrollImportBatchDetail, PayrollStatementDetail } from "@/types";
 
 export function usePayrollAdminState() {
@@ -16,11 +15,11 @@ export function usePayrollAdminState() {
   const [payrollDefinitionId, setPayrollDefinitionId] = useState("");
   const [payrollDefinitionName, setPayrollDefinitionName] = useState("");
   const [payrollDefinitionActive, setPayrollDefinitionActive] = useState(true);
-  const [payrollTargetYearMonth, setPayrollTargetYearMonth] = useState(currentMonthValue);
+  const [payrollTargetYearMonth, setPayrollTargetYearMonthValue] = useState(currentMonthValue);
   const [payrollPeriodStartOn, setPayrollPeriodStartOn] = useState(currentMonthStartValue);
   const [payrollPeriodEndOn, setPayrollPeriodEndOn] = useState(currentMonthEndValue);
-  const [payrollPayDate, setPayrollPayDate] = useState(() => nextMonthDateValue(25));
-  const [payrollPublishDate, setPayrollPublishDate] = useState(currentDateValue);
+  const [payrollPayDate, setPayrollPayDateValue] = useState(() => payrollDateDefaults(currentMonthValue()).payDate);
+  const [payrollPublishDate, setPayrollPublishDate] = useState(() => payrollDateDefaults(currentMonthValue()).publishDate);
   const [payrollRemarks, setPayrollRemarks] = useState("");
   const [payrollBatchTargetMonthFilter, setPayrollBatchTargetMonthFilter] = useState("");
   const [selectedPayrollBatchId, setSelectedPayrollBatchId] = useState<number | null>(null);
@@ -29,6 +28,20 @@ export function usePayrollAdminState() {
   const [payrollBatchEmployeeNameFilter, setPayrollBatchEmployeeNameFilter] = useState("");
   const [selectedAdminPayrollDetail, setSelectedAdminPayrollDetail] = useState<PayrollStatementDetail | null>(null);
   const [selectedEmployeePayrollDetail, setSelectedEmployeePayrollDetail] = useState<PayrollStatementDetail | null>(null);
+
+  function setPayrollTargetYearMonth(value: string) {
+    setPayrollTargetYearMonthValue(value);
+    if (payrollStatementType === "PAYROLL") {
+      const dates = payrollDateDefaults(value);
+      setPayrollPayDateValue(dates.payDate);
+      setPayrollPublishDate(dates.publishDate);
+    }
+  }
+
+  function setPayrollPayDate(value: string) {
+    setPayrollPayDateValue(value);
+    if (payrollStatementType === "PAYROLL") setPayrollPublishDate(previousDateValue(value));
+  }
 
   return {
     payrollResult,

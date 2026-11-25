@@ -45,6 +45,10 @@ export function formatMonthDay(value?: string | null) {
   return `${parsed.getMonth() + 1}/${parsed.getDate()}`;
 }
 
+export function formatStatementPayDate(payDate?: string | null) {
+  return payDate?.trim() ? formatMonthDay(payDate) : "未登録";
+}
+
 export function formatTimeOnly(value?: string | null) {
   const parsed = parseDateValue(value);
   if (!parsed) {
@@ -93,6 +97,10 @@ export function formatEmployeeStatus(value?: string | null) {
 
 export function formatApprovalStatus(value?: string | null) {
   switch ((value ?? "").toUpperCase()) {
+    case "NOT_REQUIRED":
+      return "承認不要";
+    case "NOT_DUE":
+      return "勤務中・予定";
     case "PENDING":
       return "承認待ち";
     case "APPROVED":

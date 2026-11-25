@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DataTable } from "@/components/data-table";
 import type { PayrollSectionProps } from "@/components/dashboard-sections/payroll/payroll-section-types";
 import { formatCurrency } from "@/components/dashboard-sections/payroll/payroll-utils";
@@ -10,6 +12,8 @@ type PayrollBatchDetailPanelProps = {
 };
 
 export function PayrollBatchDetailPanel({ data, form, actions, formatters }: PayrollBatchDetailPanelProps) {
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+
   if (!data.selectedPayrollBatchDetail) {
     return null;
   }
@@ -39,7 +43,7 @@ export function PayrollBatchDetailPanel({ data, form, actions, formatters }: Pay
             >
               一括PDF出力
             </button>
-            <button type="button" className="table-action danger" onClick={() => void actions.onDeletePayrollBatch(detail.id)}>
+            <button type="button" className="table-action danger" onClick={() => setIsDeleteConfirmOpen(true)}>
               取込バッチ削除
             </button>
           </div>
@@ -153,6 +157,17 @@ export function PayrollBatchDetailPanel({ data, form, actions, formatters }: Pay
           { key: "employeeCode", header: "職員番号", render: (row) => row.employeeCode ?? "-" },
           { key: "message", header: "内容", render: (row) => row.message },
         ]}
+      />
+      <ConfirmDialog
+        open={isDeleteConfirmOpen}
+        title="取込バッチを削除しますか？"
+        message={`対象: ${detail.statementTypeLabel} ${detail.targetYearMonth}／対象期間: ${formatters.formatDateOnly(detail.periodStartOn)} 〜 ${formatters.formatDateOnly(detail.periodEndOn)}／明細件数: ${detail.successCount}件／取込エラー: ${detail.errors.length}件。関連する給与明細も削除され、この操作は元に戻せません。`}
+        confirmLabel="取込バッチを削除"
+        onCancel={() => setIsDeleteConfirmOpen(false)}
+        onConfirm={() => {
+          setIsDeleteConfirmOpen(false);
+          void actions.onDeletePayrollBatch(detail.id);
+        }}
       />
     </>
   );

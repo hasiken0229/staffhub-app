@@ -343,7 +343,7 @@
 
             <div class="footnote">
                 仮トップを確認できたら、次は Windows 打刻アプリの送信先を
-                <code>https://ikegami-wakaba.jp/dakoku/api/attendance/punch</code>
+                <code>https://attendance.example.org/dakoku/api/attendance/punch</code>
                 に切り替えて、Xserver 上の API まで通るかを確認するのが自然です。
             </div>
         </div>

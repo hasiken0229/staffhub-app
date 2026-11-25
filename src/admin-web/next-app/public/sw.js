@@ -1,16 +1,20 @@
-const CACHE_NAME = "staffhub-static-v2";
+const CACHE_VERSION = 5;
+const CACHE_NAME = `staffhub-static-v${CACHE_VERSION}`;
 const OFFLINE_URLS = ["./manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(OFFLINE_URLS)).then(() => self.skipWaiting()),
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(OFFLINE_URLS)),
   );
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))),
+      Promise.all(keys.filter((key) => {
+        const previous = /^staffhub-static-v(\d+)$/.exec(key);
+        return previous && Number(previous[1]) < CACHE_VERSION;
+      }).map((key) => caches.delete(key))),
     ).then(() => self.clients.claim()),
   );
 });
@@ -25,7 +29,7 @@ self.addEventListener("fetch", (event) => {
   const isApiRequest = url.pathname.includes("/dakoku/api/");
   const isDocumentRequest = request.mode === "navigate" || request.destination === "document";
   if (isApiRequest || isDocumentRequest) {
-    event.respondWith(fetch(request));
+    event.respondWith(fetch(request, { cache: "no-store" }));
     return;
   }
 
@@ -35,7 +39,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   event.respondWith(
-    fetch(request)
+    fetch(new Request(request, { cache: request.destination === "script" || request.destination === "style" ? "reload" : "default" }))
       .then((response) => {
         const cloned = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(request, cloned));

@@ -1,0 +1,98 @@
+{
+  "source": "架空の職員向けの勤怠ルール設定例",
+  "runtimeApplied": false,
+  "effectiveFrom": "2026-09-01",
+  "regular": {
+    "includeBeforeStart": false,
+    "includeAfterEnd": true,
+    "breaks": [
+      "12:00-12:45",
+      "各当番の勤務時間終了後から15分"
+    ],
+    "scheduledWorkSystem": "変形労働制（フレックス含む）",
+    "overtimeBasis": "実働＋みなし時間",
+    "includeWithinStatutoryOvertime": true,
+    "dailyStatutoryOvertimeThresholdMinutes": 480,
+    "additionalBreak": {
+      "start": "scheduledEnd",
+      "durationMinutes": 15,
+      "deductOnlyOverlapWithAcceptedAttendance": true
+    }
+  },
+  "partTime": {
+    "includeBeforeStart": false,
+    "includeAfterEnd": false,
+    "breakThresholds": [
+      {
+        "strictlyOverMinutes": 360,
+        "totalBreakMinutes": 45
+      },
+      {
+        "strictlyOverMinutes": 540,
+        "totalBreakMinutes": 60
+      }
+    ],
+    "overtimeBasis": null,
+    "dailyStatutoryOvertimeThresholdMinutes": null,
+    "breakThresholdBasis": "accepted attendance span before subtracting breaks",
+    "overtimeCalculationEnabled": false,
+    "deemedMinutes": 0
+  },
+  "exceptions": [
+    {
+      "includeBeforeStart": true,
+      "includeAfterEnd": true,
+      "employeeCodes": [
+        "970035"
+      ],
+      "exampleGroup": "架空グループA"
+    },
+    {
+      "includeBeforeStart": true,
+      "includeAfterEnd": true,
+      "employeeCodes": [
+        "970029",
+        "970001"
+      ],
+      "exampleGroup": "架空グループB"
+    }
+  ],
+  "paidLeave": {
+    "grantMonthDay": "04-01",
+    "grantQuantities": null,
+    "annualGrantLastUsableDateRule": "April 1 grant year Y -> March 31 of year Y+2 inclusive"
+  },
+  "shortTimeRegularExceptions": [
+    {
+      "employeeCode": "970017",
+      "breakMinutes": 0,
+      "includeBeforeStart": false,
+      "includeAfterEnd": false,
+      "standardClockIn": "08:30",
+      "standardClockOut": "14:30",
+      "dailyScheduleOverridesStandard": true,
+      "fillMissingOrLateAttendanceToSixHours": false
+    }
+  ],
+  "reconciliationExclusions": [
+    {
+      "employeeCode": "970005",
+      "reason": "架空の個別確認対象"
+    }
+  ],
+  "missingPunchFallback": {
+    "effectiveFrom": "2026-09-01",
+    "fill": "missing side only from daily schedule, falling back to employee standard time",
+    "pastDaysOnly": true,
+    "rawPunchesPreserved": true,
+    "bothMissingUnchanged": true,
+    "manualImportedAndClosedRowsProtected": true,
+    "reversedScheduleUnchanged": true,
+    "excludedEmployeeCodes": [
+      "970005"
+    ],
+    "readOnlyProjection": true,
+    "persistAtApproval": true,
+    "displayLabel": "予定補完"
+  }
+}

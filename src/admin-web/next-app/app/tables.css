@@ -1,8 +1,30 @@
 .table-wrap {
+  position: relative;
   width: 100%;
   max-width: 100%;
   overflow: auto;
   overflow-y: hidden;
+  border-radius: 8px;
+  scrollbar-width: thin;
+}
+
+.table-wrap::after {
+  content: "";
+  position: sticky;
+  right: 0;
+  float: right;
+  width: 22px;
+  height: 1px;
+  pointer-events: none;
+  box-shadow: -18px 0 24px rgba(111, 143, 229, 0.14);
+}
+
+.table-scroll-hint {
+  display: none;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .table-row-alert {
@@ -66,11 +88,11 @@
 }
 
 .employee-table-wrap {
-  overflow-x: visible;
+  overflow-x: auto;
 }
 
 .employee-table-wrap table {
-  min-width: 100%;
+  min-width: 560px;
   table-layout: fixed;
 }
 
@@ -174,7 +196,7 @@
 
 table {
   width: 100%;
-  min-width: 100%;
+  min-width: max(100%, 640px);
   border-collapse: collapse;
 }
 
@@ -226,19 +248,20 @@ tbody tr:hover {
 
 .report-hub-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: 16px;
   align-items: stretch;
 }
 
 .report-output-layout {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
 .report-output-conditions {
   display: grid;
-  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
   gap: 12px;
   align-items: end;
   padding: 16px;
@@ -556,7 +579,29 @@ tbody tr:hover {
 
 .danger-action {
   color: #9f1d32;
-  border-color: rgba(159, 29, 50, 0.22);
-  background: rgba(159, 29, 50, 0.08);
+  border: 1px solid rgba(159, 29, 50, 0.28);
+  background: rgba(159, 29, 50, 0.09);
 }
 
+.danger-action:hover {
+  color: #ffffff;
+  background: #b83a4d;
+  filter: none;
+}
+
+.warning-action {
+  color: #805600;
+  border: 1px solid rgba(164, 105, 22, 0.26);
+  background: rgba(255, 186, 73, 0.16);
+}
+
+.warning-action:hover {
+  color: #ffffff;
+  background: #a46916;
+  filter: none;
+}
+
+.confirm-action:not(:disabled) {
+  border: 1px solid rgba(72, 98, 182, 0.22);
+  background: linear-gradient(135deg, #6586d8 0%, #89a3eb 100%);
+}

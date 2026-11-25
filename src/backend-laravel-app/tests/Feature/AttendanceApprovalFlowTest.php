@@ -42,7 +42,7 @@ final class AttendanceApprovalFlowTest extends TestCase
             'id' => $dailyId,
             'approval_status' => 'APPROVED',
             'approval_comment' => '確認済み',
-            'approved_by' => $employeeId,
+            'approved_by' => null,
         ]);
         $this->assertDatabaseHas('attendance_daily_histories', [
             'attendance_daily_id' => $dailyId,
@@ -50,6 +50,9 @@ final class AttendanceApprovalFlowTest extends TestCase
             'field_key' => 'approvalStatus',
             'old_value' => 'PENDING',
             'new_value' => 'APPROVED',
+            'actor_type' => 'ADMIN',
+            'actor_id' => (int) DB::table('users')->value('id'),
+            'actor_employee_id' => null,
             'comment' => '確認済み',
         ]);
         $this->assertDatabaseHas('audit_logs', [
